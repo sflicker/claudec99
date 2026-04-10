@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 1: Single function with integer return
+ * Stage 2: Integer expressions (+, -, *, /, parentheses)
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -25,12 +25,17 @@ typedef enum {
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_SEMICOLON,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_STAR,
+    TOKEN_SLASH,
     TOKEN_UNKNOWN
 } TokenType;
 
 typedef struct {
     TokenType type;
     char value[256];
+    int int_value;
 } Token;
 
 /* ========================================================================
@@ -41,7 +46,8 @@ typedef enum {
     AST_PROGRAM,
     AST_FUNCTION_DECL,
     AST_RETURN_STATEMENT,
-    AST_INT_LITERAL
+    AST_INT_LITERAL,
+    AST_BINARY_OP
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -114,6 +120,10 @@ static Token lexer_next_token(Lexer *lexer) {
     if (c == '{') { token.type = TOKEN_LBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer->pos++; return token; }
+    if (c == '+') { token.type = TOKEN_PLUS;      token.value[0] = c; lexer->pos++; return token; }
+    if (c == '-') { token.type = TOKEN_MINUS;      token.value[0] = c; lexer->pos++; return token; }
+    if (c == '*') { token.type = TOKEN_STAR;       token.value[0] = c; lexer->pos++; return token; }
+    if (c == '/') { token.type = TOKEN_SLASH;      token.value[0] = c; lexer->pos++; return token; }
 
     /* Integer literals */
     if (isdigit(c)) {
@@ -123,6 +133,7 @@ static Token lexer_next_token(Lexer *lexer) {
         }
         token.value[i] = '\0';
         token.type = TOKEN_INT_LITERAL;
+        token.int_value = atoi(token.value);
         return token;
     }
 
@@ -177,11 +188,60 @@ static Token parser_expect(Parser *parser, TokenType type) {
 }
 
 /*
- * <expression> ::= <integer_literal>
+ * <factor> ::= <int_literal> | "(" <expression> ")"
+ */
+static ASTNode *parse_expression(Parser *parser);
+
+static ASTNode *parse_factor(Parser *parser) {
+    if (parser->current.type == TOKEN_INT_LITERAL) {
+        Token token = parser_expect(parser, TOKEN_INT_LITERAL);
+        return ast_new(AST_INT_LITERAL, token.value);
+    }
+    if (parser->current.type == TOKEN_LPAREN) {
+        parser_expect(parser, TOKEN_LPAREN);
+        ASTNode *expr = parse_expression(parser);
+        parser_expect(parser, TOKEN_RPAREN);
+        return expr;
+    }
+    fprintf(stderr, "error: expected integer literal or '(', got '%s'\n",
+            parser->current.value);
+    exit(1);
+}
+
+/*
+ * <term> ::= <factor> { ("*" | "/") <factor> }*
+ */
+static ASTNode *parse_term(Parser *parser) {
+    ASTNode *left = parse_factor(parser);
+    while (parser->current.type == TOKEN_STAR ||
+           parser->current.type == TOKEN_SLASH) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_factor(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <expression> ::= <term> { ("+" | "-") <term> }*
  */
 static ASTNode *parse_expression(Parser *parser) {
-    Token token = parser_expect(parser, TOKEN_INT_LITERAL);
-    return ast_new(AST_INT_LITERAL, token.value);
+    ASTNode *left = parse_term(parser);
+    while (parser->current.type == TOKEN_PLUS ||
+           parser->current.type == TOKEN_MINUS) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_term(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
 }
 
 /*
@@ -241,6 +301,32 @@ static void codegen_init(CodeGen *cg, FILE *output) {
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
         fprintf(cg->output, "    mov eax, %s\n", node->value);
+        return;
+    }
+    if (node->type == AST_BINARY_OP) {
+        /* Evaluate left into eax, push it */
+        codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    push rax\n");
+        /* Evaluate right into eax */
+        codegen_expression(cg, node->children[1]);
+        /* Pop left into ecx; now ecx=left, eax=right */
+        fprintf(cg->output, "    pop rcx\n");
+        char op = node->value[0];
+        if (op == '+') {
+            fprintf(cg->output, "    add eax, ecx\n");
+        } else if (op == '-') {
+            /* left - right: ecx - eax */
+            fprintf(cg->output, "    sub ecx, eax\n");
+            fprintf(cg->output, "    mov eax, ecx\n");
+        } else if (op == '*') {
+            fprintf(cg->output, "    imul eax, ecx\n");
+        } else if (op == '/') {
+            /* left / right: ecx / eax */
+            fprintf(cg->output, "    xchg eax, ecx\n");
+            fprintf(cg->output, "    cdq\n");
+            fprintf(cg->output, "    idiv ecx\n");
+        }
+        return;
     }
 }
 
