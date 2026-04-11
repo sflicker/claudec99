@@ -14,11 +14,18 @@ mkdir -p "$WORK_DIR"
 pass=0
 fail=0
 total=0
-expected=42
 
 for src in "$SCRIPT_DIR"/*.c; do
     name=$(basename "$src" .c)
     total=$((total + 1))
+
+    # Extract expected exit code from filename: test_<name>__<expected>.c
+    if [[ "$name" == *__* ]]; then
+        expected="${name##*__}"
+    else
+        echo "SKIP  $name  (no __<expected> suffix)"
+        continue
+    fi
 
     # Compile .c -> .asm
     if ! "$COMPILER" "$src" 2>/dev/null; then

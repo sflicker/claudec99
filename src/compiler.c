@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 2: Integer expressions (+, -, *, /, parentheses)
+ * Stage 3: Equality and relational expressions (==, !=, <, <=, >, >=)
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -29,6 +29,12 @@ typedef enum {
     TOKEN_MINUS,
     TOKEN_STAR,
     TOKEN_SLASH,
+    TOKEN_EQ,
+    TOKEN_NE,
+    TOKEN_LT,
+    TOKEN_LE,
+    TOKEN_GT,
+    TOKEN_GE,
     TOKEN_UNKNOWN
 } TokenType;
 
@@ -124,6 +130,15 @@ static Token lexer_next_token(Lexer *lexer) {
     if (c == '-') { token.type = TOKEN_MINUS;      token.value[0] = c; lexer->pos++; return token; }
     if (c == '*') { token.type = TOKEN_STAR;       token.value[0] = c; lexer->pos++; return token; }
     if (c == '/') { token.type = TOKEN_SLASH;      token.value[0] = c; lexer->pos++; return token; }
+
+    /* Two-character or single-character relational/equality tokens */
+    char n = lexer->source[lexer->pos + 1];
+    if (c == '=' && n == '=') { token.type = TOKEN_EQ; strcpy(token.value, "=="); lexer->pos += 2; return token; }
+    if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer->pos += 2; return token; }
+    if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer->pos += 2; return token; }
+    if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer->pos += 2; return token; }
+    if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return token; }
+    if (c == '>') { token.type = TOKEN_GT; token.value[0] = c; lexer->pos++; return token; }
 
     /* Integer literals */
     if (isdigit(c)) {
@@ -227,9 +242,9 @@ static ASTNode *parse_term(Parser *parser) {
 }
 
 /*
- * <expression> ::= <term> { ("+" | "-") <term> }*
+ * <additive_expr> ::= <term> { ("+" | "-") <term> }*
  */
-static ASTNode *parse_expression(Parser *parser) {
+static ASTNode *parse_additive(Parser *parser) {
     ASTNode *left = parse_term(parser);
     while (parser->current.type == TOKEN_PLUS ||
            parser->current.type == TOKEN_MINUS) {
@@ -242,6 +257,51 @@ static ASTNode *parse_expression(Parser *parser) {
         left = binop;
     }
     return left;
+}
+
+/*
+ * <relational_expr> ::= <additive_expr> { ("<" | "<=" | ">" | ">=") <additive_expr> }*
+ */
+static ASTNode *parse_relational(Parser *parser) {
+    ASTNode *left = parse_additive(parser);
+    while (parser->current.type == TOKEN_LT ||
+           parser->current.type == TOKEN_LE ||
+           parser->current.type == TOKEN_GT ||
+           parser->current.type == TOKEN_GE) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_additive(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <equality_expr> ::= <relational_expr> { ("==" | "!=") <relational_expr> }*
+ */
+static ASTNode *parse_equality(Parser *parser) {
+    ASTNode *left = parse_relational(parser);
+    while (parser->current.type == TOKEN_EQ ||
+           parser->current.type == TOKEN_NE) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_relational(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <expression> ::= <equality_expr>
+ */
+static ASTNode *parse_expression(Parser *parser) {
+    return parse_equality(parser);
 }
 
 /*
@@ -311,20 +371,32 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, node->children[1]);
         /* Pop left into ecx; now ecx=left, eax=right */
         fprintf(cg->output, "    pop rcx\n");
-        char op = node->value[0];
-        if (op == '+') {
+        const char *op = node->value;
+        if (strcmp(op, "+") == 0) {
             fprintf(cg->output, "    add eax, ecx\n");
-        } else if (op == '-') {
+        } else if (strcmp(op, "-") == 0) {
             /* left - right: ecx - eax */
             fprintf(cg->output, "    sub ecx, eax\n");
             fprintf(cg->output, "    mov eax, ecx\n");
-        } else if (op == '*') {
+        } else if (strcmp(op, "*") == 0) {
             fprintf(cg->output, "    imul eax, ecx\n");
-        } else if (op == '/') {
+        } else if (strcmp(op, "/") == 0) {
             /* left / right: ecx / eax */
             fprintf(cg->output, "    xchg eax, ecx\n");
             fprintf(cg->output, "    cdq\n");
             fprintf(cg->output, "    idiv ecx\n");
+        } else {
+            /* Comparisons: compare ecx (left) with eax (right), set al, zero-extend */
+            const char *setcc = NULL;
+            if      (strcmp(op, "==") == 0) setcc = "sete";
+            else if (strcmp(op, "!=") == 0) setcc = "setne";
+            else if (strcmp(op, "<")  == 0) setcc = "setl";
+            else if (strcmp(op, "<=") == 0) setcc = "setle";
+            else if (strcmp(op, ">")  == 0) setcc = "setg";
+            else if (strcmp(op, ">=") == 0) setcc = "setge";
+            fprintf(cg->output, "    cmp ecx, eax\n");
+            fprintf(cg->output, "    %s al\n", setcc);
+            fprintf(cg->output, "    movzx eax, al\n");
         }
         return;
     }

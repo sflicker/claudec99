@@ -11,8 +11,17 @@ if [ $# -lt 1 ]; then
 fi
 
 SOURCE="$1"
-EXPECTED="${2:-}"
 BASENAME="$(basename "$SOURCE" .c)"
+
+# Extract expected exit code from filename: test_<name>__<expected>.c
+# An explicit second arg overrides the filename-derived value.
+if [ $# -ge 2 ]; then
+    EXPECTED="$2"
+elif [[ "$BASENAME" == *__* ]]; then
+    EXPECTED="${BASENAME##*__}"
+else
+    EXPECTED=""
+fi
 
 # Compile C -> ASM
 echo "compiling: $SOURCE"

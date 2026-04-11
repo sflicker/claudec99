@@ -1,4 +1,4 @@
-I am building a C99 comiler in stages.
+I am building a C99 compiler in stages.
 
 The stage 3 specification is defined in docs/stages/ClaudeC99-spec-stage-03-equality-expressions.md
 
