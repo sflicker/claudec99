@@ -23,10 +23,7 @@ If any tests fail, analyze why and propose minimal fixes consistent with the Sta
 
 Do not introduce new features beyond the spec.
 
-● Bash(bash test/run_tests.sh 2>&1 | tail -30)
-⎿  compiled: /home/scott/code/claude/claudec99/test/test_expr_lt_true__1.c -> test_expr_lt_true__1.asm
-PASS  test_expr_lt_true__1  (exit code: 1)
-compiled: /home/scott/code/claude/claudec99/test/test_ge_false__0.c -> test_ge_false__0.asm
-… +27 lines (ctrl+o to expand)
+--- running -----
+--- finished ----
 
 ● All 21 tests pass, 0 failures. No fixes needed — Stage 3 is complete and spec-compliant.
