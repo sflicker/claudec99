@@ -5,7 +5,7 @@
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp"
 
