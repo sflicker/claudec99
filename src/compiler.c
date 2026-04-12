@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 4: Unary expressions, if/else, block statements
+ * Stage 5: Integer variables (declarations, assignments, scoping)
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -32,6 +32,7 @@ typedef enum {
     TOKEN_STAR,
     TOKEN_SLASH,
     TOKEN_BANG,
+    TOKEN_ASSIGN,
     TOKEN_EQ,
     TOKEN_NE,
     TOKEN_LT,
@@ -60,7 +61,10 @@ typedef enum {
     AST_UNARY_OP,
     AST_IF_STATEMENT,
     AST_BLOCK,
-    AST_EXPRESSION_STMT
+    AST_EXPRESSION_STMT,
+    AST_DECLARATION,
+    AST_ASSIGNMENT,
+    AST_VAR_REF
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64
@@ -143,6 +147,7 @@ static Token lexer_next_token(Lexer *lexer) {
     /* Two-character or single-character relational/equality tokens */
     char n = lexer->source[lexer->pos + 1];
     if (c == '=' && n == '=') { token.type = TOKEN_EQ; strcpy(token.value, "=="); lexer->pos += 2; return token; }
+    if (c == '=') { token.type = TOKEN_ASSIGN; token.value[0] = c; lexer->pos++; return token; }
     if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer->pos += 2; return token; }
     if (c == '!') { token.type = TOKEN_BANG; token.value[0] = c; lexer->pos++; return token; }
     if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer->pos += 2; return token; }
@@ -226,13 +231,17 @@ static ASTNode *parse_primary(Parser *parser) {
         Token token = parser_expect(parser, TOKEN_INT_LITERAL);
         return ast_new(AST_INT_LITERAL, token.value);
     }
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        Token token = parser_expect(parser, TOKEN_IDENTIFIER);
+        return ast_new(AST_VAR_REF, token.value);
+    }
     if (parser->current.type == TOKEN_LPAREN) {
         parser_expect(parser, TOKEN_LPAREN);
         ASTNode *expr = parse_expression(parser);
         parser_expect(parser, TOKEN_RPAREN);
         return expr;
     }
-    fprintf(stderr, "error: expected integer literal or '(', got '%s'\n",
+    fprintf(stderr, "error: expected expression, got '%s'\n",
             parser->current.value);
     exit(1);
 }
@@ -374,12 +383,27 @@ static ASTNode *parse_if_statement(Parser *parser) {
 }
 
 /*
- * <statement> ::= <return_statement>
+ * <statement> ::= <declaration>
+ *               | <assignment_statement>
+ *               | <return_statement>
  *               | <if_statement>
  *               | <block>
  *               | <expression_stmt>
  */
 static ASTNode *parse_statement(Parser *parser) {
+    /* declaration: "int" <identifier> [ "=" <expression> ] ";" */
+    if (parser->current.type == TOKEN_INT) {
+        parser->current = lexer_next_token(parser->lexer);
+        Token name = parser_expect(parser, TOKEN_IDENTIFIER);
+        ASTNode *decl = ast_new(AST_DECLARATION, name.value);
+        if (parser->current.type == TOKEN_ASSIGN) {
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *init = parse_expression(parser);
+            ast_add_child(decl, init);
+        }
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return decl;
+    }
     if (parser->current.type == TOKEN_RETURN) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *expr = parse_expression(parser);
@@ -393,6 +417,25 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
+    }
+    /* assignment: <identifier> "=" <expression> ";" */
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        /* Peek ahead to check for '=' (assignment vs expression statement) */
+        int saved_pos = parser->lexer->pos;
+        Token saved_token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_ASSIGN) {
+            /* It's an assignment */
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *expr = parse_expression(parser);
+            parser_expect(parser, TOKEN_SEMICOLON);
+            ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
+            ast_add_child(assign, expr);
+            return assign;
+        }
+        /* Not assignment — restore lexer state and fall through to expression_stmt */
+        parser->lexer->pos = saved_pos;
+        parser->current = saved_token;
     }
     /* expression_stmt */
     ASTNode *expr = parse_expression(parser);
@@ -433,19 +476,66 @@ static ASTNode *parse_program(Parser *parser) {
  * Section 5: Code Generator (x86_64 NASM Intel syntax)
  * ======================================================================== */
 
+#define MAX_LOCALS 64
+
+typedef struct {
+    char name[256];
+    int offset;
+} LocalVar;
+
 typedef struct {
     FILE *output;
     int label_count;
+    LocalVar locals[MAX_LOCALS];
+    int local_count;
+    int stack_offset;
 } CodeGen;
 
 static void codegen_init(CodeGen *cg, FILE *output) {
     cg->output = output;
     cg->label_count = 0;
+    cg->local_count = 0;
+    cg->stack_offset = 0;
+}
+
+static int codegen_find_var(CodeGen *cg, const char *name) {
+    for (int i = 0; i < cg->local_count; i++) {
+        if (strcmp(cg->locals[i].name, name) == 0)
+            return cg->locals[i].offset;
+    }
+    return 0; /* not found (valid offsets start at 4) */
+}
+
+static int codegen_add_var(CodeGen *cg, const char *name) {
+    cg->stack_offset += 4;
+    strncpy(cg->locals[cg->local_count].name, name, 255);
+    cg->locals[cg->local_count].name[255] = '\0';
+    cg->locals[cg->local_count].offset = cg->stack_offset;
+    cg->local_count++;
+    return cg->stack_offset;
+}
+
+static int count_declarations(ASTNode *block) {
+    int count = 0;
+    for (int i = 0; i < block->child_count; i++) {
+        if (block->children[i]->type == AST_DECLARATION)
+            count++;
+    }
+    return count;
 }
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
         fprintf(cg->output, "    mov eax, %s\n", node->value);
+        return;
+    }
+    if (node->type == AST_VAR_REF) {
+        int offset = codegen_find_var(cg, node->value);
+        if (offset == 0) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
+            exit(1);
+        }
+        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
         return;
     }
     if (node->type == AST_UNARY_OP) {
@@ -500,8 +590,30 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
 }
 
-static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
-    if (node->type == AST_RETURN_STATEMENT) {
+static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allows_decl) {
+    if (node->type == AST_DECLARATION) {
+        if (!allows_decl) {
+            fprintf(stderr, "error: variable declaration not allowed in nested scope\n");
+            exit(1);
+        }
+        if (codegen_find_var(cg, node->value) != 0) {
+            fprintf(stderr, "error: duplicate declaration of variable '%s'\n", node->value);
+            exit(1);
+        }
+        int offset = codegen_add_var(cg, node->value);
+        if (node->child_count > 0) {
+            codegen_expression(cg, node->children[0]);
+            fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        }
+    } else if (node->type == AST_ASSIGNMENT) {
+        int offset = codegen_find_var(cg, node->value);
+        if (offset == 0) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
+            exit(1);
+        }
+        codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+    } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);
         if (is_main) {
             fprintf(cg->output, "    mov edi, eax\n");
@@ -517,20 +629,20 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         if (node->child_count == 3) {
             /* if/else */
             fprintf(cg->output, "    je .L_else_%d\n", label_id);
-            codegen_statement(cg, node->children[1], is_main);
+            codegen_statement(cg, node->children[1], is_main, 0);
             fprintf(cg->output, "    jmp .L_end_%d\n", label_id);
             fprintf(cg->output, ".L_else_%d:\n", label_id);
-            codegen_statement(cg, node->children[2], is_main);
+            codegen_statement(cg, node->children[2], is_main, 0);
             fprintf(cg->output, ".L_end_%d:\n", label_id);
         } else {
             /* if without else */
             fprintf(cg->output, "    je .L_end_%d\n", label_id);
-            codegen_statement(cg, node->children[1], is_main);
+            codegen_statement(cg, node->children[1], is_main, 0);
             fprintf(cg->output, ".L_end_%d:\n", label_id);
         }
     } else if (node->type == AST_BLOCK) {
         for (int i = 0; i < node->child_count; i++) {
-            codegen_statement(cg, node->children[i], is_main);
+            codegen_statement(cg, node->children[i], is_main, 0);
         }
     } else if (node->type == AST_EXPRESSION_STMT) {
         codegen_expression(cg, node->children[0]);
@@ -539,10 +651,32 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
 
 static void codegen_function(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_FUNCTION_DECL) {
+        int is_main = (strcmp(node->value, "main") == 0);
+        ASTNode *body = node->children[0];
+
+        /* Reset per-function symbol table */
+        cg->local_count = 0;
+        cg->stack_offset = 0;
+
+        /* Compute stack space for local variables */
+        int num_vars = count_declarations(body);
+        int stack_size = num_vars * 4;
+        if (stack_size % 16 != 0)
+            stack_size = (stack_size + 15) & ~15;
+
+        /* Function label and prologue */
         fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
-        int is_main = (strcmp(node->value, "main") == 0);
-        codegen_statement(cg, node->children[0], is_main);
+        if (num_vars > 0) {
+            fprintf(cg->output, "    push rbp\n");
+            fprintf(cg->output, "    mov rbp, rsp\n");
+            fprintf(cg->output, "    sub rsp, %d\n", stack_size);
+        }
+
+        /* Generate body statements (allows_decl=1 for outermost scope) */
+        for (int i = 0; i < body->child_count; i++) {
+            codegen_statement(cg, body->children[i], is_main, 1);
+        }
     }
 }
 
