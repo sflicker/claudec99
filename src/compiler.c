@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 3: Equality and relational expressions (==, !=, <, <=, >, >=)
+ * Stage 4: Unary expressions, if/else, block statements
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -18,6 +18,8 @@ typedef enum {
     TOKEN_EOF,
     TOKEN_INT,
     TOKEN_RETURN,
+    TOKEN_IF,
+    TOKEN_ELSE,
     TOKEN_IDENTIFIER,
     TOKEN_INT_LITERAL,
     TOKEN_LPAREN,
@@ -29,6 +31,7 @@ typedef enum {
     TOKEN_MINUS,
     TOKEN_STAR,
     TOKEN_SLASH,
+    TOKEN_BANG,
     TOKEN_EQ,
     TOKEN_NE,
     TOKEN_LT,
@@ -53,13 +56,19 @@ typedef enum {
     AST_FUNCTION_DECL,
     AST_RETURN_STATEMENT,
     AST_INT_LITERAL,
-    AST_BINARY_OP
+    AST_BINARY_OP,
+    AST_UNARY_OP,
+    AST_IF_STATEMENT,
+    AST_BLOCK,
+    AST_EXPRESSION_STMT
 } ASTNodeType;
+
+#define AST_MAX_CHILDREN 64
 
 typedef struct ASTNode {
     ASTNodeType type;
     char value[256];
-    struct ASTNode *children[4];
+    struct ASTNode *children[AST_MAX_CHILDREN];
     int child_count;
 } ASTNode;
 
@@ -77,7 +86,7 @@ static ASTNode *ast_new(ASTNodeType type, const char *value) {
 }
 
 static void ast_add_child(ASTNode *parent, ASTNode *child) {
-    if (parent->child_count < 4) {
+    if (parent->child_count < AST_MAX_CHILDREN) {
         parent->children[parent->child_count++] = child;
     }
 }
@@ -135,6 +144,7 @@ static Token lexer_next_token(Lexer *lexer) {
     char n = lexer->source[lexer->pos + 1];
     if (c == '=' && n == '=') { token.type = TOKEN_EQ; strcpy(token.value, "=="); lexer->pos += 2; return token; }
     if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer->pos += 2; return token; }
+    if (c == '!') { token.type = TOKEN_BANG; token.value[0] = c; lexer->pos++; return token; }
     if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer->pos += 2; return token; }
     if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer->pos += 2; return token; }
     if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return token; }
@@ -164,6 +174,10 @@ static Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_INT;
         } else if (strcmp(token.value, "return") == 0) {
             token.type = TOKEN_RETURN;
+        } else if (strcmp(token.value, "if") == 0) {
+            token.type = TOKEN_IF;
+        } else if (strcmp(token.value, "else") == 0) {
+            token.type = TOKEN_ELSE;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -203,11 +217,11 @@ static Token parser_expect(Parser *parser, TokenType type) {
 }
 
 /*
- * <factor> ::= <int_literal> | "(" <expression> ")"
+ * <primary> ::= <int_literal> | "(" <expression> ")"
  */
 static ASTNode *parse_expression(Parser *parser);
 
-static ASTNode *parse_factor(Parser *parser) {
+static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
         Token token = parser_expect(parser, TOKEN_INT_LITERAL);
         return ast_new(AST_INT_LITERAL, token.value);
@@ -224,15 +238,32 @@ static ASTNode *parse_factor(Parser *parser) {
 }
 
 /*
- * <term> ::= <factor> { ("*" | "/") <factor> }*
+ * <unary_expr> ::= [ "+" | "-" | "!" ] <unary_expr> | <primary>
+ */
+static ASTNode *parse_unary(Parser *parser) {
+    if (parser->current.type == TOKEN_PLUS ||
+        parser->current.type == TOKEN_MINUS ||
+        parser->current.type == TOKEN_BANG) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *operand = parse_unary(parser);
+        ASTNode *unary = ast_new(AST_UNARY_OP, op.value);
+        ast_add_child(unary, operand);
+        return unary;
+    }
+    return parse_primary(parser);
+}
+
+/*
+ * <term> ::= <unary_expr> { ("*" | "/") <unary_expr> }*
  */
 static ASTNode *parse_term(Parser *parser) {
-    ASTNode *left = parse_factor(parser);
+    ASTNode *left = parse_unary(parser);
     while (parser->current.type == TOKEN_STAR ||
            parser->current.type == TOKEN_SLASH) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *right = parse_factor(parser);
+        ASTNode *right = parse_unary(parser);
         ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
@@ -305,29 +336,81 @@ static ASTNode *parse_expression(Parser *parser) {
 }
 
 /*
- * <statement> ::= "return" <expression> ";"
+ * <block> ::= "{" { <statement> } "}"
+ */
+static ASTNode *parse_statement(Parser *parser);
+
+static ASTNode *parse_block(Parser *parser) {
+    parser_expect(parser, TOKEN_LBRACE);
+    ASTNode *block = ast_new(AST_BLOCK, NULL);
+    while (parser->current.type != TOKEN_RBRACE) {
+        ast_add_child(block, parse_statement(parser));
+    }
+    parser_expect(parser, TOKEN_RBRACE);
+    return block;
+}
+
+/*
+ * <if_statement> ::= "if" "(" <expression> ")" <statement> [ "else" <statement> ]
+ */
+static ASTNode *parse_if_statement(Parser *parser) {
+    parser_expect(parser, TOKEN_IF);
+    parser_expect(parser, TOKEN_LPAREN);
+    ASTNode *condition = parse_expression(parser);
+    parser_expect(parser, TOKEN_RPAREN);
+    ASTNode *then_stmt = parse_statement(parser);
+
+    ASTNode *if_node = ast_new(AST_IF_STATEMENT, NULL);
+    ast_add_child(if_node, condition);
+    ast_add_child(if_node, then_stmt);
+
+    if (parser->current.type == TOKEN_ELSE) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *else_stmt = parse_statement(parser);
+        ast_add_child(if_node, else_stmt);
+    }
+
+    return if_node;
+}
+
+/*
+ * <statement> ::= <return_statement>
+ *               | <if_statement>
+ *               | <block>
+ *               | <expression_stmt>
  */
 static ASTNode *parse_statement(Parser *parser) {
-    parser_expect(parser, TOKEN_RETURN);
+    if (parser->current.type == TOKEN_RETURN) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *expr = parse_expression(parser);
+        parser_expect(parser, TOKEN_SEMICOLON);
+        ASTNode *stmt = ast_new(AST_RETURN_STATEMENT, NULL);
+        ast_add_child(stmt, expr);
+        return stmt;
+    }
+    if (parser->current.type == TOKEN_IF) {
+        return parse_if_statement(parser);
+    }
+    if (parser->current.type == TOKEN_LBRACE) {
+        return parse_block(parser);
+    }
+    /* expression_stmt */
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_SEMICOLON);
-
-    ASTNode *stmt = ast_new(AST_RETURN_STATEMENT, NULL);
+    ASTNode *stmt = ast_new(AST_EXPRESSION_STMT, NULL);
     ast_add_child(stmt, expr);
     return stmt;
 }
 
 /*
- * <function_decl> ::= "int" <identifier> "(" ")" "{" <statement> "}"
+ * <function> ::= "int" <identifier> "(" ")" <block>
  */
 static ASTNode *parse_function_decl(Parser *parser) {
     parser_expect(parser, TOKEN_INT);
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     parser_expect(parser, TOKEN_LPAREN);
     parser_expect(parser, TOKEN_RPAREN);
-    parser_expect(parser, TOKEN_LBRACE);
-    ASTNode *body = parse_statement(parser);
-    parser_expect(parser, TOKEN_RBRACE);
+    ASTNode *body = parse_block(parser);
 
     ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
     ast_add_child(func, body);
@@ -352,15 +435,30 @@ static ASTNode *parse_program(Parser *parser) {
 
 typedef struct {
     FILE *output;
+    int label_count;
 } CodeGen;
 
 static void codegen_init(CodeGen *cg, FILE *output) {
     cg->output = output;
+    cg->label_count = 0;
 }
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
         fprintf(cg->output, "    mov eax, %s\n", node->value);
+        return;
+    }
+    if (node->type == AST_UNARY_OP) {
+        codegen_expression(cg, node->children[0]);
+        const char *op = node->value;
+        if (strcmp(op, "-") == 0) {
+            fprintf(cg->output, "    neg eax\n");
+        } else if (strcmp(op, "!") == 0) {
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    sete al\n");
+            fprintf(cg->output, "    movzx eax, al\n");
+        }
+        /* unary + is a no-op */
         return;
     }
     if (node->type == AST_BINARY_OP) {
@@ -412,6 +510,30 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         } else {
             fprintf(cg->output, "    ret\n");
         }
+    } else if (node->type == AST_IF_STATEMENT) {
+        int label_id = cg->label_count++;
+        codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    cmp eax, 0\n");
+        if (node->child_count == 3) {
+            /* if/else */
+            fprintf(cg->output, "    je .L_else_%d\n", label_id);
+            codegen_statement(cg, node->children[1], is_main);
+            fprintf(cg->output, "    jmp .L_end_%d\n", label_id);
+            fprintf(cg->output, ".L_else_%d:\n", label_id);
+            codegen_statement(cg, node->children[2], is_main);
+            fprintf(cg->output, ".L_end_%d:\n", label_id);
+        } else {
+            /* if without else */
+            fprintf(cg->output, "    je .L_end_%d\n", label_id);
+            codegen_statement(cg, node->children[1], is_main);
+            fprintf(cg->output, ".L_end_%d:\n", label_id);
+        }
+    } else if (node->type == AST_BLOCK) {
+        for (int i = 0; i < node->child_count; i++) {
+            codegen_statement(cg, node->children[i], is_main);
+        }
+    } else if (node->type == AST_EXPRESSION_STMT) {
+        codegen_expression(cg, node->children[0]);
     }
 }
 
