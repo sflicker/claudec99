@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 5: Integer variables (declarations, assignments, scoping)
+ * Stage 6: While loops
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -20,6 +20,7 @@ typedef enum {
     TOKEN_RETURN,
     TOKEN_IF,
     TOKEN_ELSE,
+    TOKEN_WHILE,
     TOKEN_IDENTIFIER,
     TOKEN_INT_LITERAL,
     TOKEN_LPAREN,
@@ -60,6 +61,7 @@ typedef enum {
     AST_BINARY_OP,
     AST_UNARY_OP,
     AST_IF_STATEMENT,
+    AST_WHILE_STATEMENT,
     AST_BLOCK,
     AST_EXPRESSION_STMT,
     AST_DECLARATION,
@@ -183,6 +185,8 @@ static Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_IF;
         } else if (strcmp(token.value, "else") == 0) {
             token.type = TOKEN_ELSE;
+        } else if (strcmp(token.value, "while") == 0) {
+            token.type = TOKEN_WHILE;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -383,10 +387,28 @@ static ASTNode *parse_if_statement(Parser *parser) {
 }
 
 /*
+ * <while_statement> ::= "while" "(" <expression> ")" <statement>
+ */
+static ASTNode *parse_while_statement(Parser *parser) {
+    parser_expect(parser, TOKEN_WHILE);
+    parser_expect(parser, TOKEN_LPAREN);
+    ASTNode *condition = parse_expression(parser);
+    parser_expect(parser, TOKEN_RPAREN);
+    ASTNode *body = parse_statement(parser);
+
+    ASTNode *while_node = ast_new(AST_WHILE_STATEMENT, NULL);
+    ast_add_child(while_node, condition);
+    ast_add_child(while_node, body);
+
+    return while_node;
+}
+
+/*
  * <statement> ::= <declaration>
  *               | <assignment_statement>
  *               | <return_statement>
  *               | <if_statement>
+ *               | <while_statement>
  *               | <block>
  *               | <expression_stmt>
  */
@@ -414,6 +436,9 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_IF) {
         return parse_if_statement(parser);
+    }
+    if (parser->current.type == TOKEN_WHILE) {
+        return parse_while_statement(parser);
     }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
@@ -640,6 +665,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
             codegen_statement(cg, node->children[1], is_main, 0);
             fprintf(cg->output, ".L_end_%d:\n", label_id);
         }
+    } else if (node->type == AST_WHILE_STATEMENT) {
+        int label_id = cg->label_count++;
+        fprintf(cg->output, ".L_while_start_%d:\n", label_id);
+        codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    cmp eax, 0\n");
+        fprintf(cg->output, "    je .L_while_end_%d\n", label_id);
+        codegen_statement(cg, node->children[1], is_main, 0);
+        fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
+        fprintf(cg->output, ".L_while_end_%d:\n", label_id);
     } else if (node->type == AST_BLOCK) {
         for (int i = 0; i < node->child_count; i++) {
             codegen_statement(cg, node->children[i], is_main, 0);
