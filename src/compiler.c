@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 6: While loops
+ * Stage 7.1: Assignment expressions and compound assignments
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -34,6 +34,8 @@ typedef enum {
     TOKEN_SLASH,
     TOKEN_BANG,
     TOKEN_ASSIGN,
+    TOKEN_PLUS_ASSIGN,
+    TOKEN_MINUS_ASSIGN,
     TOKEN_EQ,
     TOKEN_NE,
     TOKEN_LT,
@@ -141,8 +143,14 @@ static Token lexer_next_token(Lexer *lexer) {
     if (c == '{') { token.type = TOKEN_LBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer->pos++; return token; }
-    if (c == '+') { token.type = TOKEN_PLUS;      token.value[0] = c; lexer->pos++; return token; }
-    if (c == '-') { token.type = TOKEN_MINUS;      token.value[0] = c; lexer->pos++; return token; }
+    if (c == '+') {
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PLUS_ASSIGN; strcpy(token.value, "+="); lexer->pos += 2; return token; }
+        token.type = TOKEN_PLUS; token.value[0] = c; lexer->pos++; return token;
+    }
+    if (c == '-') {
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; strcpy(token.value, "-="); lexer->pos += 2; return token; }
+        token.type = TOKEN_MINUS; token.value[0] = c; lexer->pos++; return token;
+    }
     if (c == '*') { token.type = TOKEN_STAR;       token.value[0] = c; lexer->pos++; return token; }
     if (c == '/') { token.type = TOKEN_SLASH;      token.value[0] = c; lexer->pos++; return token; }
 
@@ -342,9 +350,42 @@ static ASTNode *parse_equality(Parser *parser) {
 }
 
 /*
- * <expression> ::= <equality_expr>
+ * <expression> ::= <assignment_expression>
+ *
+ * <assignment_expression> ::= <identifier> "=" <assignment_expression>
+ *                            | <identifier> "+=" <assignment_expression>
+ *                            | <identifier> "-=" <assignment_expression>
+ *                            | <equality_expression>
  */
 static ASTNode *parse_expression(Parser *parser) {
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        int saved_pos = parser->lexer->pos;
+        Token saved_token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_ASSIGN ||
+            parser->current.type == TOKEN_PLUS_ASSIGN ||
+            parser->current.type == TOKEN_MINUS_ASSIGN) {
+            Token op = parser->current;
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *rhs = parse_expression(parser);
+            ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
+            if (op.type == TOKEN_PLUS_ASSIGN || op.type == TOKEN_MINUS_ASSIGN) {
+                /* a += b  =>  a = a + b */
+                ASTNode *var_ref = ast_new(AST_VAR_REF, saved_token.value);
+                const char *bin_op = (op.type == TOKEN_PLUS_ASSIGN) ? "+" : "-";
+                ASTNode *binop = ast_new(AST_BINARY_OP, bin_op);
+                ast_add_child(binop, var_ref);
+                ast_add_child(binop, rhs);
+                ast_add_child(assign, binop);
+            } else {
+                ast_add_child(assign, rhs);
+            }
+            return assign;
+        }
+        /* Not assignment — restore lexer state */
+        parser->lexer->pos = saved_pos;
+        parser->current = saved_token;
+    }
     return parse_equality(parser);
 }
 
@@ -443,26 +484,7 @@ static ASTNode *parse_statement(Parser *parser) {
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
     }
-    /* assignment: <identifier> "=" <expression> ";" */
-    if (parser->current.type == TOKEN_IDENTIFIER) {
-        /* Peek ahead to check for '=' (assignment vs expression statement) */
-        int saved_pos = parser->lexer->pos;
-        Token saved_token = parser->current;
-        parser->current = lexer_next_token(parser->lexer);
-        if (parser->current.type == TOKEN_ASSIGN) {
-            /* It's an assignment */
-            parser->current = lexer_next_token(parser->lexer);
-            ASTNode *expr = parse_expression(parser);
-            parser_expect(parser, TOKEN_SEMICOLON);
-            ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
-            ast_add_child(assign, expr);
-            return assign;
-        }
-        /* Not assignment — restore lexer state and fall through to expression_stmt */
-        parser->lexer->pos = saved_pos;
-        parser->current = saved_token;
-    }
-    /* expression_stmt */
+    /* expression_stmt (includes assignments, since assignment is now an expression) */
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_SEMICOLON);
     ASTNode *stmt = ast_new(AST_EXPRESSION_STMT, NULL);
@@ -563,6 +585,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
         return;
     }
+    if (node->type == AST_ASSIGNMENT) {
+        int offset = codegen_find_var(cg, node->value);
+        if (offset == 0) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
+            exit(1);
+        }
+        codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        return;
+    }
     if (node->type == AST_UNARY_OP) {
         codegen_expression(cg, node->children[0]);
         const char *op = node->value;
@@ -630,14 +662,6 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
             codegen_expression(cg, node->children[0]);
             fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
         }
-    } else if (node->type == AST_ASSIGNMENT) {
-        int offset = codegen_find_var(cg, node->value);
-        if (offset == 0) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
-            exit(1);
-        }
-        codegen_expression(cg, node->children[0]);
-        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
     } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);
         if (is_main) {
