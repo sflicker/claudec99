@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 7.1: Assignment expressions and compound assignments
+ * Stage 7.2: For loops
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -21,6 +21,7 @@ typedef enum {
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_WHILE,
+    TOKEN_FOR,
     TOKEN_IDENTIFIER,
     TOKEN_INT_LITERAL,
     TOKEN_LPAREN,
@@ -64,6 +65,7 @@ typedef enum {
     AST_UNARY_OP,
     AST_IF_STATEMENT,
     AST_WHILE_STATEMENT,
+    AST_FOR_STATEMENT,
     AST_BLOCK,
     AST_EXPRESSION_STMT,
     AST_DECLARATION,
@@ -195,6 +197,8 @@ static Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_ELSE;
         } else if (strcmp(token.value, "while") == 0) {
             token.type = TOKEN_WHILE;
+        } else if (strcmp(token.value, "for") == 0) {
+            token.type = TOKEN_FOR;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -445,11 +449,57 @@ static ASTNode *parse_while_statement(Parser *parser) {
 }
 
 /*
+ * <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
+ *
+ * Children layout: [init, condition, update, body]
+ * Any of init/condition/update may be NULL when omitted.
+ */
+static ASTNode *parse_for_statement(Parser *parser) {
+    parser_expect(parser, TOKEN_FOR);
+    parser_expect(parser, TOKEN_LPAREN);
+
+    ASTNode *for_node = ast_new(AST_FOR_STATEMENT, NULL);
+
+    /* init */
+    ASTNode *init = NULL;
+    if (parser->current.type != TOKEN_SEMICOLON) {
+        init = parse_expression(parser);
+    }
+    parser_expect(parser, TOKEN_SEMICOLON);
+
+    /* condition */
+    ASTNode *condition = NULL;
+    if (parser->current.type != TOKEN_SEMICOLON) {
+        condition = parse_expression(parser);
+    }
+    parser_expect(parser, TOKEN_SEMICOLON);
+
+    /* update */
+    ASTNode *update = NULL;
+    if (parser->current.type != TOKEN_RPAREN) {
+        update = parse_expression(parser);
+    }
+    parser_expect(parser, TOKEN_RPAREN);
+
+    ASTNode *body = parse_statement(parser);
+
+    /* Store as children — NULLs are stored directly */
+    for_node->children[0] = init;
+    for_node->children[1] = condition;
+    for_node->children[2] = update;
+    for_node->children[3] = body;
+    for_node->child_count = 4;
+
+    return for_node;
+}
+
+/*
  * <statement> ::= <declaration>
  *               | <assignment_statement>
  *               | <return_statement>
  *               | <if_statement>
  *               | <while_statement>
+ *               | <for_statement>
  *               | <block>
  *               | <expression_stmt>
  */
@@ -480,6 +530,9 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_WHILE) {
         return parse_while_statement(parser);
+    }
+    if (parser->current.type == TOKEN_FOR) {
+        return parse_for_statement(parser);
     }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
@@ -698,6 +751,24 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
         codegen_statement(cg, node->children[1], is_main, 0);
         fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
         fprintf(cg->output, ".L_while_end_%d:\n", label_id);
+    } else if (node->type == AST_FOR_STATEMENT) {
+        /* children: [0]=init, [1]=condition, [2]=update, [3]=body (any may be NULL except body) */
+        int label_id = cg->label_count++;
+        if (node->children[0]) {
+            codegen_expression(cg, node->children[0]);
+        }
+        fprintf(cg->output, ".L_for_start_%d:\n", label_id);
+        if (node->children[1]) {
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    je .L_for_end_%d\n", label_id);
+        }
+        codegen_statement(cg, node->children[3], is_main, 0);
+        if (node->children[2]) {
+            codegen_expression(cg, node->children[2]);
+        }
+        fprintf(cg->output, "    jmp .L_for_start_%d\n", label_id);
+        fprintf(cg->output, ".L_for_end_%d:\n", label_id);
     } else if (node->type == AST_BLOCK) {
         for (int i = 0; i < node->child_count; i++) {
             codegen_statement(cg, node->children[i], is_main, 0);

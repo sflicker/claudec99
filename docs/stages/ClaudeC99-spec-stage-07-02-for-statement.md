@@ -1,4 +1,4 @@
-# Claude C99 Stage 7
+# Claude C99 Stage 7.2
 
 Task: Extend the compiler to support for loops and additional assignment forms.
 
@@ -6,10 +6,6 @@ Task: Extend the compiler to support for loops and additional assignment forms.
 
 ### Support the following new tokens:
 - `for`
-- `+=`
-- `-=`
-- `++`
-- `--`
 
 ### Updated Grammar
 
