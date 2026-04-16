@@ -1,0 +1,17 @@
+ProgramDecl:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: a
+        IntLiteral: 0
+      WhileStmt:
+        Binary: LESSTHAN
+          VariableExpression: a
+          IntLiteral: 42
+        Block
+          ExpressionStatement
+            Assignment: a
+              Binary: ADD
+                VariableExpression: a
+                IntLiteral: 1
+      ReturnStmt:
+        VariableExpression: a

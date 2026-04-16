@@ -1,0 +1,7 @@
+ProgramDecl:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: a
+        IntLiteral: 42
+      ReturnStmt:
+        VariableExpression: a

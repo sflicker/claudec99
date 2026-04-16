@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 7.3: Increment and decrement operators
+ * Stage 7.4: Pretty-print AST
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -616,7 +616,101 @@ static ASTNode *parse_program(Parser *parser) {
 }
 
 /* ========================================================================
- * Section 5: Code Generator (x86_64 NASM Intel syntax)
+ * Section 5: AST Pretty Printer
+ * ======================================================================== */
+
+static const char *operator_name(const char *op) {
+    if (strcmp(op, "+") == 0)  return "ADD";
+    if (strcmp(op, "-") == 0)  return "SUBTRACT";
+    if (strcmp(op, "*") == 0)  return "MULTIPLY";
+    if (strcmp(op, "/") == 0)  return "DIVIDE";
+    if (strcmp(op, "==") == 0) return "EQUAL";
+    if (strcmp(op, "!=") == 0) return "NOTEQUAL";
+    if (strcmp(op, "<") == 0)  return "LESSTHAN";
+    if (strcmp(op, "<=") == 0) return "LESSTHANOREQUAL";
+    if (strcmp(op, ">") == 0)  return "GREATERTHAN";
+    if (strcmp(op, ">=") == 0) return "GREATERTHANOREQUAL";
+    if (strcmp(op, "!") == 0)  return "NOT";
+    if (strcmp(op, "++") == 0) return "INCREMENT";
+    if (strcmp(op, "--") == 0) return "DECREMENT";
+    return op;
+}
+
+static void ast_print_indent(int depth) {
+    for (int i = 0; i < depth * 2; i++) {
+        putchar(' ');
+    }
+}
+
+static void ast_pretty_print(ASTNode *node, int depth) {
+    if (!node) return;
+
+    ast_print_indent(depth);
+
+    switch (node->type) {
+    case AST_PROGRAM:
+        printf("ProgramDecl:\n");
+        break;
+    case AST_FUNCTION_DECL:
+        printf("FunctionDecl: %s\n", node->value);
+        break;
+    case AST_BLOCK:
+        printf("Block\n");
+        break;
+    case AST_DECLARATION:
+        printf("VariableDeclaration: %s\n", node->value);
+        break;
+    case AST_RETURN_STATEMENT:
+        printf("ReturnStmt:\n");
+        break;
+    case AST_INT_LITERAL:
+        printf("IntLiteral: %s\n", node->value);
+        break;
+    case AST_VAR_REF:
+        printf("VariableExpression: %s\n", node->value);
+        break;
+    case AST_BINARY_OP:
+        printf("Binary: %s\n", operator_name(node->value));
+        break;
+    case AST_UNARY_OP:
+        printf("Unary: %s\n", operator_name(node->value));
+        break;
+    case AST_ASSIGNMENT:
+        printf("Assignment: %s\n", node->value);
+        break;
+    case AST_EXPRESSION_STMT:
+        printf("ExpressionStatement\n");
+        break;
+    case AST_IF_STATEMENT:
+        printf("IfStmt:\n");
+        break;
+    case AST_WHILE_STATEMENT:
+        printf("WhileStmt:\n");
+        break;
+    case AST_FOR_STATEMENT:
+        printf("ForStmt:\n");
+        /* For statements have NULL children for omitted clauses */
+        for (int i = 0; i < node->child_count; i++) {
+            if (node->children[i]) {
+                ast_pretty_print(node->children[i], depth + 1);
+            }
+        }
+        return;
+    case AST_PREFIX_INC_DEC:
+        printf("PrefixIncDec: %s\n", operator_name(node->value));
+        break;
+    case AST_POSTFIX_INC_DEC:
+        printf("PostfixIncDec: %s\n", operator_name(node->value));
+        break;
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        ast_pretty_print(node->children[i], depth + 1);
+    }
+}
+
+/* ========================================================================
+ * Section 6: Code Generator (x86_64 NASM Intel syntax)
  * ======================================================================== */
 
 #define MAX_LOCALS 64
@@ -898,7 +992,7 @@ static void codegen_program(CodeGen *cg, ASTNode *node) {
 }
 
 /* ========================================================================
- * Section 6: File I/O Utilities
+ * Section 7: File I/O Utilities
  * ======================================================================== */
 
 static char *read_file(const char *path) {
@@ -940,17 +1034,31 @@ static void make_output_path(char *out, size_t out_size, const char *input_path)
 }
 
 /* ========================================================================
- * Section 7: Main
+ * Section 8: Main
  * ======================================================================== */
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: ccompiler <source.c>\n");
+    int print_ast = 0;
+    const char *source_file = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--print-ast") == 0) {
+            print_ast = 1;
+        } else if (!source_file) {
+            source_file = argv[i];
+        } else {
+            fprintf(stderr, "usage: ccompiler [--print-ast] <source.c>\n");
+            return 1;
+        }
+    }
+
+    if (!source_file) {
+        fprintf(stderr, "usage: ccompiler [--print-ast] <source.c>\n");
         return 1;
     }
 
     /* Read source */
-    char *source = read_file(argv[1]);
+    char *source = read_file(source_file);
 
     /* Lex + Parse */
     Lexer lexer;
@@ -961,9 +1069,16 @@ int main(int argc, char *argv[]) {
 
     ASTNode *ast = parse_program(&parser);
 
+    if (print_ast) {
+        ast_pretty_print(ast, 0);
+        ast_free(ast);
+        free(source);
+        return 0;
+    }
+
     /* Generate output */
     char output_path[512];
-    make_output_path(output_path, sizeof(output_path), argv[1]);
+    make_output_path(output_path, sizeof(output_path), source_file);
 
     FILE *out = fopen(output_path, "w");
     if (!out) {
@@ -981,6 +1096,6 @@ int main(int argc, char *argv[]) {
     ast_free(ast);
     free(source);
 
-    printf("compiled: %s -> %s\n", argv[1], output_path);
+    printf("compiled: %s -> %s\n", source_file, output_path);
     return 0;
 }

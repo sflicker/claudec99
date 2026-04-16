@@ -1,0 +1,11 @@
+ProgramDecl:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: a
+        Binary: ADD
+          IntLiteral: 2
+          Binary: MULTIPLY
+            IntLiteral: 3
+            IntLiteral: 4
+      ReturnStmt:
+        VariableExpression: a

@@ -1,0 +1,25 @@
+ProgramDecl:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: sum
+        IntLiteral: 0
+      VariableDeclaration: i
+        IntLiteral: 0
+      ForStmt:
+        Assignment: i
+          IntLiteral: 1
+        Binary: LESSTHANOREQUAL
+          VariableExpression: i
+          IntLiteral: 10
+        Assignment: i
+          Binary: ADD
+            VariableExpression: i
+            IntLiteral: 1
+        Block
+          ExpressionStatement
+            Assignment: sum
+              Binary: ADD
+                VariableExpression: sum
+                VariableExpression: i
+      ReturnStmt:
+        VariableExpression: sum

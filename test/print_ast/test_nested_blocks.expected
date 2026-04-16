@@ -1,0 +1,19 @@
+ProgramDecl:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: x
+        IntLiteral: 1
+      IfStmt:
+        Binary: GREATERTHAN
+          VariableExpression: x
+          IntLiteral: 0
+        Block
+          IfStmt:
+            Binary: LESSTHAN
+              VariableExpression: x
+              IntLiteral: 10
+            Block
+              ReturnStmt:
+                IntLiteral: 42
+      ReturnStmt:
+        IntLiteral: 0
