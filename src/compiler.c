@@ -1,6 +1,6 @@
 /*
  * ccompiler - A minimal C compiler
- * Stage 7.2: For loops
+ * Stage 7.3: Increment and decrement operators
  *
  * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
@@ -37,6 +37,8 @@ typedef enum {
     TOKEN_ASSIGN,
     TOKEN_PLUS_ASSIGN,
     TOKEN_MINUS_ASSIGN,
+    TOKEN_INCREMENT,
+    TOKEN_DECREMENT,
     TOKEN_EQ,
     TOKEN_NE,
     TOKEN_LT,
@@ -70,7 +72,9 @@ typedef enum {
     AST_EXPRESSION_STMT,
     AST_DECLARATION,
     AST_ASSIGNMENT,
-    AST_VAR_REF
+    AST_VAR_REF,
+    AST_PREFIX_INC_DEC,
+    AST_POSTFIX_INC_DEC
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64
@@ -146,10 +150,12 @@ static Token lexer_next_token(Lexer *lexer) {
     if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer->pos++; return token; }
     if (c == '+') {
+        if (lexer->source[lexer->pos + 1] == '+') { token.type = TOKEN_INCREMENT; strcpy(token.value, "++"); lexer->pos += 2; return token; }
         if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PLUS_ASSIGN; strcpy(token.value, "+="); lexer->pos += 2; return token; }
         token.type = TOKEN_PLUS; token.value[0] = c; lexer->pos++; return token;
     }
     if (c == '-') {
+        if (lexer->source[lexer->pos + 1] == '-') { token.type = TOKEN_DECREMENT; strcpy(token.value, "--"); lexer->pos += 2; return token; }
         if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; strcpy(token.value, "-="); lexer->pos += 2; return token; }
         token.type = TOKEN_MINUS; token.value[0] = c; lexer->pos++; return token;
     }
@@ -263,9 +269,46 @@ static ASTNode *parse_primary(Parser *parser) {
 }
 
 /*
- * <unary_expr> ::= [ "+" | "-" | "!" ] <unary_expr> | <primary>
+ * <postfix_expression> ::= <primary_expression> { "++" | "--" }
+ */
+static ASTNode *parse_postfix(Parser *parser) {
+    ASTNode *expr = parse_primary(parser);
+    while (parser->current.type == TOKEN_INCREMENT ||
+           parser->current.type == TOKEN_DECREMENT) {
+        if (expr->type != AST_VAR_REF) {
+            fprintf(stderr, "error: postfix %s requires an identifier\n",
+                    parser->current.value);
+            exit(1);
+        }
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *node = ast_new(AST_POSTFIX_INC_DEC, op.value);
+        ast_add_child(node, expr);
+        expr = node;
+    }
+    return expr;
+}
+
+/*
+ * <unary_expr> ::= [ "+" | "-" | "!" ] <unary_expr>
+ *                | "++" <identifier>
+ *                | "--" <identifier>
+ *                | <postfix_expression>
  */
 static ASTNode *parse_unary(Parser *parser) {
+    if (parser->current.type == TOKEN_INCREMENT ||
+        parser->current.type == TOKEN_DECREMENT) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *operand = parse_unary(parser);
+        if (operand->type != AST_VAR_REF) {
+            fprintf(stderr, "error: prefix %s requires an identifier\n", op.value);
+            exit(1);
+        }
+        ASTNode *node = ast_new(AST_PREFIX_INC_DEC, op.value);
+        ast_add_child(node, operand);
+        return node;
+    }
     if (parser->current.type == TOKEN_PLUS ||
         parser->current.type == TOKEN_MINUS ||
         parser->current.type == TOKEN_BANG) {
@@ -276,7 +319,7 @@ static ASTNode *parse_unary(Parser *parser) {
         ast_add_child(unary, operand);
         return unary;
     }
-    return parse_primary(parser);
+    return parse_postfix(parser);
 }
 
 /*
@@ -659,6 +702,42 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    movzx eax, al\n");
         }
         /* unary + is a no-op */
+        return;
+    }
+    if (node->type == AST_PREFIX_INC_DEC) {
+        /* ++x or --x: update variable, result is new value */
+        const char *var_name = node->children[0]->value;
+        int offset = codegen_find_var(cg, var_name);
+        if (offset == 0) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
+            exit(1);
+        }
+        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        if (strcmp(node->value, "++") == 0) {
+            fprintf(cg->output, "    add eax, 1\n");
+        } else {
+            fprintf(cg->output, "    sub eax, 1\n");
+        }
+        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        return;
+    }
+    if (node->type == AST_POSTFIX_INC_DEC) {
+        /* x++ or x--: result is old value, then update variable */
+        const char *var_name = node->children[0]->value;
+        int offset = codegen_find_var(cg, var_name);
+        if (offset == 0) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
+            exit(1);
+        }
+        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
+        if (strcmp(node->value, "++") == 0) {
+            fprintf(cg->output, "    add ecx, 1\n");
+        } else {
+            fprintf(cg->output, "    sub ecx, 1\n");
+        }
+        fprintf(cg->output, "    mov [rbp - %d], ecx\n", offset);
+        /* eax still holds the old value */
         return;
     }
     if (node->type == AST_BINARY_OP) {
