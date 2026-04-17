@@ -45,6 +45,8 @@ typedef enum {
     TOKEN_LE,
     TOKEN_GT,
     TOKEN_GE,
+    TOKEN_AND_AND,
+    TOKEN_OR_OR,
     TOKEN_UNKNOWN
 } TokenType;
 
@@ -172,6 +174,8 @@ static Token lexer_next_token(Lexer *lexer) {
     if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer->pos += 2; return token; }
     if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return token; }
     if (c == '>') { token.type = TOKEN_GT; token.value[0] = c; lexer->pos++; return token; }
+    if (c == '&' && n == '&') { token.type = TOKEN_AND_AND; strcpy(token.value, "&&"); lexer->pos += 2; return token; }
+    if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return token; }
 
     /* Integer literals */
     if (isdigit(c)) {
@@ -397,12 +401,46 @@ static ASTNode *parse_equality(Parser *parser) {
 }
 
 /*
+ * <logical_and_expression> ::= <equality_expression> { "&&" <equality_expression> }
+ */
+static ASTNode *parse_logical_and(Parser *parser) {
+    ASTNode *left = parse_equality(parser);
+    while (parser->current.type == TOKEN_AND_AND) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_equality(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }
+ */
+static ASTNode *parse_logical_or(Parser *parser) {
+    ASTNode *left = parse_logical_and(parser);
+    while (parser->current.type == TOKEN_OR_OR) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_logical_and(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
  * <expression> ::= <assignment_expression>
  *
  * <assignment_expression> ::= <identifier> "=" <assignment_expression>
  *                            | <identifier> "+=" <assignment_expression>
  *                            | <identifier> "-=" <assignment_expression>
- *                            | <equality_expression>
+ *                            | <logical_or_expression>
  */
 static ASTNode *parse_expression(Parser *parser) {
     if (parser->current.type == TOKEN_IDENTIFIER) {
@@ -433,7 +471,7 @@ static ASTNode *parse_expression(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    return parse_equality(parser);
+    return parse_logical_or(parser);
 }
 
 /*
@@ -631,6 +669,8 @@ static const char *operator_name(const char *op) {
     if (strcmp(op, ">") == 0)  return "GREATERTHAN";
     if (strcmp(op, ">=") == 0) return "GREATERTHANOREQUAL";
     if (strcmp(op, "!") == 0)  return "NOT";
+    if (strcmp(op, "&&") == 0) return "AND";
+    if (strcmp(op, "||") == 0) return "OR";
     if (strcmp(op, "++") == 0) return "INCREMENT";
     if (strcmp(op, "--") == 0) return "DECREMENT";
     return op;
@@ -835,6 +875,38 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_BINARY_OP) {
+        const char *bop = node->value;
+        /* Short-circuit logical operators — do not evaluate RHS unconditionally */
+        if (strcmp(bop, "&&") == 0) {
+            int label_id = cg->label_count++;
+            codegen_expression(cg, node->children[0]);
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    je .L_and_false_%d\n", label_id);
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    setne al\n");
+            fprintf(cg->output, "    movzx eax, al\n");
+            fprintf(cg->output, "    jmp .L_and_end_%d\n", label_id);
+            fprintf(cg->output, ".L_and_false_%d:\n", label_id);
+            fprintf(cg->output, "    mov eax, 0\n");
+            fprintf(cg->output, ".L_and_end_%d:\n", label_id);
+            return;
+        }
+        if (strcmp(bop, "||") == 0) {
+            int label_id = cg->label_count++;
+            codegen_expression(cg, node->children[0]);
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    jne .L_or_true_%d\n", label_id);
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    cmp eax, 0\n");
+            fprintf(cg->output, "    setne al\n");
+            fprintf(cg->output, "    movzx eax, al\n");
+            fprintf(cg->output, "    jmp .L_or_end_%d\n", label_id);
+            fprintf(cg->output, ".L_or_true_%d:\n", label_id);
+            fprintf(cg->output, "    mov eax, 1\n");
+            fprintf(cg->output, ".L_or_end_%d:\n", label_id);
+            return;
+        }
         /* Evaluate left into eax, push it */
         codegen_expression(cg, node->children[0]);
         fprintf(cg->output, "    push rax\n");
