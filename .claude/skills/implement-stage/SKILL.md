@@ -60,7 +60,7 @@ Implementation Rules:
 
 Output Requirements:
 
-* After reading the spec, produce a clearly labeled **Kickoff Summary** for saving into a kickoff prompt file.
+* After reading the spec, produce a clearly labeled **Kickoff Summary** for saving and save into in the kickoffs directory.
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
 * After completing the stage, produce a clearly labeled **Milestone Summary** suitable for saving in the milestones directory.
 * After completing the stage, generate a transcript using `transcript-format.md` and save it in the sessions directory.
