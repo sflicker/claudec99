@@ -1,0 +1,16 @@
+#ifndef CCOMPILER_PARSER_H
+#define CCOMPILER_PARSER_H
+
+#include "ast.h"
+#include "lexer.h"
+#include "token.h"
+
+typedef struct {
+    Lexer *lexer;
+    Token current;
+} Parser;
+
+void parser_init(Parser *parser, Lexer *lexer);
+ASTNode *parse_program(Parser *parser);
+
+#endif

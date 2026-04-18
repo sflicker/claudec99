@@ -1,0 +1,46 @@
+#ifndef CCOMPILER_TOKEN_H
+#define CCOMPILER_TOKEN_H
+
+typedef enum {
+    TOKEN_EOF,
+    TOKEN_INT,
+    TOKEN_RETURN,
+    TOKEN_IF,
+    TOKEN_ELSE,
+    TOKEN_WHILE,
+    TOKEN_FOR,
+    TOKEN_IDENTIFIER,
+    TOKEN_INT_LITERAL,
+    TOKEN_LPAREN,
+    TOKEN_RPAREN,
+    TOKEN_LBRACE,
+    TOKEN_RBRACE,
+    TOKEN_SEMICOLON,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_STAR,
+    TOKEN_SLASH,
+    TOKEN_BANG,
+    TOKEN_ASSIGN,
+    TOKEN_PLUS_ASSIGN,
+    TOKEN_MINUS_ASSIGN,
+    TOKEN_INCREMENT,
+    TOKEN_DECREMENT,
+    TOKEN_EQ,
+    TOKEN_NE,
+    TOKEN_LT,
+    TOKEN_LE,
+    TOKEN_GT,
+    TOKEN_GE,
+    TOKEN_AND_AND,
+    TOKEN_OR_OR,
+    TOKEN_UNKNOWN
+} TokenType;
+
+typedef struct {
+    TokenType type;
+    char value[256];
+    int int_value;
+} Token;
+
+#endif
