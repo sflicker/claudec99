@@ -766,6 +766,7 @@ typedef struct {
     LocalVar locals[MAX_LOCALS];
     int local_count;
     int stack_offset;
+    int scope_start; /* index into locals[] where current scope begins */
 } CodeGen;
 
 static void codegen_init(CodeGen *cg, FILE *output) {
@@ -773,10 +774,12 @@ static void codegen_init(CodeGen *cg, FILE *output) {
     cg->label_count = 0;
     cg->local_count = 0;
     cg->stack_offset = 0;
+    cg->scope_start = 0;
 }
 
 static int codegen_find_var(CodeGen *cg, const char *name) {
-    for (int i = 0; i < cg->local_count; i++) {
+    /* Walk backward so the innermost (most recently declared) shadow wins. */
+    for (int i = cg->local_count - 1; i >= 0; i--) {
         if (strcmp(cg->locals[i].name, name) == 0)
             return cg->locals[i].offset;
     }
@@ -792,11 +795,11 @@ static int codegen_add_var(CodeGen *cg, const char *name) {
     return cg->stack_offset;
 }
 
-static int count_declarations(ASTNode *block) {
-    int count = 0;
-    for (int i = 0; i < block->child_count; i++) {
-        if (block->children[i]->type == AST_DECLARATION)
-            count++;
+static int count_declarations(ASTNode *node) {
+    if (!node) return 0;
+    int count = (node->type == AST_DECLARATION) ? 1 : 0;
+    for (int i = 0; i < node->child_count; i++) {
+        count += count_declarations(node->children[i]);
     }
     return count;
 }
@@ -945,15 +948,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
 }
 
-static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allows_decl) {
+static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
     if (node->type == AST_DECLARATION) {
-        if (!allows_decl) {
-            fprintf(stderr, "error: variable declaration not allowed in nested scope\n");
-            exit(1);
-        }
-        if (codegen_find_var(cg, node->value) != 0) {
-            fprintf(stderr, "error: duplicate declaration of variable '%s'\n", node->value);
-            exit(1);
+        /* Duplicate check limited to the current scope only — shadowing is allowed. */
+        for (int i = cg->scope_start; i < cg->local_count; i++) {
+            if (strcmp(cg->locals[i].name, node->value) == 0) {
+                fprintf(stderr, "error: duplicate declaration of variable '%s'\n", node->value);
+                exit(1);
+            }
         }
         int offset = codegen_add_var(cg, node->value);
         if (node->child_count > 0) {
@@ -976,15 +978,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
         if (node->child_count == 3) {
             /* if/else */
             fprintf(cg->output, "    je .L_else_%d\n", label_id);
-            codegen_statement(cg, node->children[1], is_main, 0);
+            codegen_statement(cg, node->children[1], is_main);
             fprintf(cg->output, "    jmp .L_end_%d\n", label_id);
             fprintf(cg->output, ".L_else_%d:\n", label_id);
-            codegen_statement(cg, node->children[2], is_main, 0);
+            codegen_statement(cg, node->children[2], is_main);
             fprintf(cg->output, ".L_end_%d:\n", label_id);
         } else {
             /* if without else */
             fprintf(cg->output, "    je .L_end_%d\n", label_id);
-            codegen_statement(cg, node->children[1], is_main, 0);
+            codegen_statement(cg, node->children[1], is_main);
             fprintf(cg->output, ".L_end_%d:\n", label_id);
         }
     } else if (node->type == AST_WHILE_STATEMENT) {
@@ -993,7 +995,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
         codegen_expression(cg, node->children[0]);
         fprintf(cg->output, "    cmp eax, 0\n");
         fprintf(cg->output, "    je .L_while_end_%d\n", label_id);
-        codegen_statement(cg, node->children[1], is_main, 0);
+        codegen_statement(cg, node->children[1], is_main);
         fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
         fprintf(cg->output, ".L_while_end_%d:\n", label_id);
     } else if (node->type == AST_FOR_STATEMENT) {
@@ -1008,16 +1010,22 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main, int allow
             fprintf(cg->output, "    cmp eax, 0\n");
             fprintf(cg->output, "    je .L_for_end_%d\n", label_id);
         }
-        codegen_statement(cg, node->children[3], is_main, 0);
+        codegen_statement(cg, node->children[3], is_main);
         if (node->children[2]) {
             codegen_expression(cg, node->children[2]);
         }
         fprintf(cg->output, "    jmp .L_for_start_%d\n", label_id);
         fprintf(cg->output, ".L_for_end_%d:\n", label_id);
     } else if (node->type == AST_BLOCK) {
+        int saved_scope_start = cg->scope_start;
+        int saved_local_count = cg->local_count;
+        cg->scope_start = cg->local_count;
         for (int i = 0; i < node->child_count; i++) {
-            codegen_statement(cg, node->children[i], is_main, 0);
+            codegen_statement(cg, node->children[i], is_main);
         }
+        /* Pop variables declared in this scope — they are no longer visible. */
+        cg->local_count = saved_local_count;
+        cg->scope_start = saved_scope_start;
     } else if (node->type == AST_EXPRESSION_STMT) {
         codegen_expression(cg, node->children[0]);
     }
@@ -1031,8 +1039,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Reset per-function symbol table */
         cg->local_count = 0;
         cg->stack_offset = 0;
+        cg->scope_start = 0;
 
-        /* Compute stack space for local variables */
+        /* Compute stack space for local variables (recursive across nested scopes) */
         int num_vars = count_declarations(body);
         int stack_size = num_vars * 4;
         if (stack_size % 16 != 0)
@@ -1047,9 +1056,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
         }
 
-        /* Generate body statements (allows_decl=1 for outermost scope) */
+        /* Generate body statements directly — the function body acts as the outermost scope. */
         for (int i = 0; i < body->child_count; i++) {
-            codegen_statement(cg, body->children[i], is_main, 1);
+            codegen_statement(cg, body->children[i], is_main);
         }
     }
 }
