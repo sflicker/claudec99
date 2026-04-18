@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "parser.h"
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -398,16 +399,56 @@ static ASTNode *parse_statement(Parser *parser) {
 }
 
 /*
- * <function> ::= "int" <identifier> "(" ")" <block>
+ * <parameter_declaration> ::= "int" <identifier>
+ */
+static ASTNode *parse_parameter_declaration(Parser *parser) {
+    parser_expect(parser, TOKEN_INT);
+    Token name = parser_expect(parser, TOKEN_IDENTIFIER);
+    return ast_new(AST_PARAM, name.value);
+}
+
+/*
+ * <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
+ *
+ * Parses the parameter list and appends each AST_PARAM node as a child of
+ * `func`. Enforces unique parameter names within the list.
+ */
+static void parse_parameter_list(Parser *parser, ASTNode *func) {
+    ASTNode *param = parse_parameter_declaration(parser);
+    ast_add_child(func, param);
+    while (parser->current.type == TOKEN_COMMA) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *next = parse_parameter_declaration(parser);
+        for (int i = 0; i < func->child_count; i++) {
+            if (func->children[i]->type == AST_PARAM &&
+                strcmp(func->children[i]->value, next->value) == 0) {
+                fprintf(stderr,
+                        "error: duplicate parameter '%s' in function '%s'\n",
+                        next->value, func->value);
+                exit(1);
+            }
+        }
+        ast_add_child(func, next);
+    }
+}
+
+/*
+ * <function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" <block>
+ *
+ * AST layout: zero or more AST_PARAM children followed by the AST_BLOCK body.
  */
 static ASTNode *parse_function_decl(Parser *parser) {
     parser_expect(parser, TOKEN_INT);
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-    parser_expect(parser, TOKEN_LPAREN);
-    parser_expect(parser, TOKEN_RPAREN);
-    ASTNode *body = parse_block(parser);
-
     ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
+
+    parser_expect(parser, TOKEN_LPAREN);
+    if (parser->current.type != TOKEN_RPAREN) {
+        parse_parameter_list(parser, func);
+    }
+    parser_expect(parser, TOKEN_RPAREN);
+
+    ASTNode *body = parse_block(parser);
     ast_add_child(func, body);
     return func;
 }
@@ -420,13 +461,24 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 }
 
 /*
- * <translation_unit> ::= <external_declaration>
+ * <translation_unit> ::= <external_declaration> { <external_declaration> }
+ *
+ * Enforces unique function names within the translation unit.
  */
 ASTNode *parse_translation_unit(Parser *parser) {
-    ASTNode *ext_decl = parse_external_declaration(parser);
-    parser_expect(parser, TOKEN_EOF);
-
     ASTNode *unit = ast_new(AST_TRANSLATION_UNIT, NULL);
-    ast_add_child(unit, ext_decl);
+    do {
+        ASTNode *ext_decl = parse_external_declaration(parser);
+        for (int i = 0; i < unit->child_count; i++) {
+            if (strcmp(unit->children[i]->value, ext_decl->value) == 0) {
+                fprintf(stderr,
+                        "error: duplicate function '%s' in translation unit\n",
+                        ext_decl->value);
+                exit(1);
+            }
+        }
+        ast_add_child(unit, ext_decl);
+    } while (parser->current.type != TOKEN_EOF);
+    parser_expect(parser, TOKEN_EOF);
     return unit;
 }

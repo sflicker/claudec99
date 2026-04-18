@@ -16,6 +16,7 @@ typedef enum {
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_SEMICOLON,
+    TOKEN_COMMA,
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR,

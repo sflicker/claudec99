@@ -1,11 +1,15 @@
 ```ebnf
 # Claude C99 Grammar (Current)
 
-<translation-unit> ::= <external-declaration>
+<translation-unit> ::= <external-declaration> { <external-declaration> }
 
 <external-declaration> ::= <function>
 
-<function> ::= "int" <identifier> "(" ")" <block_statement>
+<function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" <block_statement>
+
+<parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
+
+<parameter_declaration> ::= "int" <identifier>
 
 <block_statement> ::= "{" { <statement> } "}"
 

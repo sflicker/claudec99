@@ -1,0 +1,13 @@
+TranslationUnit:
+  FunctionDecl: main
+    Block
+      ReturnStmt:
+        IntLiteral: 0
+  FunctionDecl: add
+    Parameter: a
+    Parameter: b
+    Block
+      ReturnStmt:
+        Binary: ADD
+          VariableExpression: a
+          VariableExpression: b

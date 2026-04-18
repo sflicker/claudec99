@@ -39,6 +39,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_FUNCTION_DECL:
         printf("FunctionDecl: %s\n", node->value);
         break;
+    case AST_PARAM:
+        printf("Parameter: %s\n", node->value);
+        break;
     case AST_BLOCK:
         printf("Block\n");
         break;

@@ -268,26 +268,55 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
 static void codegen_function(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_FUNCTION_DECL) {
         int is_main = (strcmp(node->value, "main") == 0);
-        ASTNode *body = node->children[0];
+
+        /* Function children: zero or more AST_PARAM followed by AST_BLOCK body. */
+        int num_params = 0;
+        while (num_params < node->child_count &&
+               node->children[num_params]->type == AST_PARAM) {
+            num_params++;
+        }
+        if (num_params > 6) {
+            fprintf(stderr,
+                    "error: function '%s' has %d parameters; max supported is 6\n",
+                    node->value, num_params);
+            exit(1);
+        }
+        ASTNode *body = node->children[num_params];
 
         /* Reset per-function symbol table */
         cg->local_count = 0;
         cg->stack_offset = 0;
         cg->scope_start = 0;
 
-        /* Compute stack space for local variables (recursive across nested scopes) */
+        /* Compute stack space: one slot per parameter plus each declaration in the body. */
         int num_vars = count_declarations(body);
-        int stack_size = num_vars * 4;
+        int total_slots = num_params + num_vars;
+        int stack_size = total_slots * 4;
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
         /* Function label and prologue */
         fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
-        if (num_vars > 0) {
+        if (total_slots > 0) {
             fprintf(cg->output, "    push rbp\n");
             fprintf(cg->output, "    mov rbp, rsp\n");
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
+        }
+
+        /*
+         * Parameters share the outermost body scope (scope_start stays at 0).
+         * A body-level declaration that collides with a parameter name is
+         * rejected by the existing duplicate-detection check in
+         * codegen_statement for AST_DECLARATION.
+         */
+        static const char *param_regs[6] = {
+            "edi", "esi", "edx", "ecx", "r8d", "r9d"
+        };
+        for (int i = 0; i < num_params; i++) {
+            int offset = codegen_add_var(cg, node->children[i]->value);
+            fprintf(cg->output, "    mov [rbp - %d], %s\n",
+                    offset, param_regs[i]);
         }
 
         /* Generate body statements directly — the function body acts as the outermost scope. */
