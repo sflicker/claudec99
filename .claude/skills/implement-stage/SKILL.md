@@ -47,6 +47,7 @@ Then do the following:
    * code generation
    * tests
    * documentation updates (if needed)
+   * commit the changes (if needed) including a commit message.
 
 Implementation Rules:
 
