@@ -21,6 +21,6 @@ typedef struct {
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
-void codegen_program(CodeGen *cg, ASTNode *node);
+void codegen_translation_unit(CodeGen *cg, ASTNode *node);
 
 #endif

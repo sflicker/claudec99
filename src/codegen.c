@@ -297,9 +297,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
     }
 }
 
-void codegen_program(CodeGen *cg, ASTNode *node) {
+void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     fprintf(cg->output, "section .text\n");
-    if (node->type == AST_PROGRAM) {
+    if (node->type == AST_TRANSLATION_UNIT) {
         for (int i = 0; i < node->child_count; i++) {
             codegen_function(cg, node->children[i]);
         }

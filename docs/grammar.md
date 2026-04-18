@@ -1,7 +1,9 @@
 ```ebnf
 # Claude C99 Grammar (Current)
 
-<program> ::= <function>
+<translation-unit> ::= <external-declaration>
+
+<external-declaration> ::= <function>
 
 <function> ::= "int" <identifier> "(" ")" <block_statement>
 

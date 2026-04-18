@@ -1,4 +1,4 @@
-ProgramDecl:
+TranslationUnit:
   FunctionDecl: main
     Block
       VariableDeclaration: x

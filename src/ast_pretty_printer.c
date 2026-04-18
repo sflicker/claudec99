@@ -33,8 +33,8 @@ void ast_pretty_print(ASTNode *node, int depth) {
     ast_print_indent(depth);
 
     switch (node->type) {
-    case AST_PROGRAM:
-        printf("ProgramDecl:\n");
+    case AST_TRANSLATION_UNIT:
+        printf("TranslationUnit:\n");
         break;
     case AST_FUNCTION_DECL:
         printf("FunctionDecl: %s\n", node->value);

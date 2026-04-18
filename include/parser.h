@@ -11,6 +11,6 @@ typedef struct {
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);
-ASTNode *parse_program(Parser *parser);
+ASTNode *parse_translation_unit(Parser *parser);
 
 #endif

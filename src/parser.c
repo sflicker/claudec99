@@ -413,13 +413,20 @@ static ASTNode *parse_function_decl(Parser *parser) {
 }
 
 /*
- * <program> ::= <function_decl>
+ * <external_declaration> ::= <function>
  */
-ASTNode *parse_program(Parser *parser) {
-    ASTNode *func = parse_function_decl(parser);
+static ASTNode *parse_external_declaration(Parser *parser) {
+    return parse_function_decl(parser);
+}
+
+/*
+ * <translation_unit> ::= <external_declaration>
+ */
+ASTNode *parse_translation_unit(Parser *parser) {
+    ASTNode *ext_decl = parse_external_declaration(parser);
     parser_expect(parser, TOKEN_EOF);
 
-    ASTNode *program = ast_new(AST_PROGRAM, NULL);
-    ast_add_child(program, func);
-    return program;
+    ASTNode *unit = ast_new(AST_TRANSLATION_UNIT, NULL);
+    ast_add_child(unit, ext_decl);
+    return unit;
 }

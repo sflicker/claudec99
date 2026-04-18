@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
     Parser parser;
     parser_init(&parser, &lexer);
 
-    ASTNode *ast = parse_program(&parser);
+    ASTNode *ast = parse_translation_unit(&parser);
 
     if (print_ast) {
         ast_pretty_print(ast, 0);
@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
 
     CodeGen cg;
     codegen_init(&cg, out);
-    codegen_program(&cg, ast);
+    codegen_translation_unit(&cg, ast);
 
     fclose(out);
     ast_free(ast);
