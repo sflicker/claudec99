@@ -15,6 +15,7 @@ Derive STAGE_LABEL from the spec filename using these rules:
 4. Starting immediately after `stage`, collect all consecutive tokens that match the regex `^[0-9]+$`.
 5. Stop collecting when a token does not match this pattern.
 6. Set `STAGE_LABEL` = `stage-` + the collected numeric tokens joined with `-`.
+7. Set `STAGE_DISPLAY` = `STAGE_LABEL` with the first letter capitalized.
 
 Examples:
 
@@ -29,10 +30,11 @@ Validation:
 
 Usage:
 
-* Use `STAGE_LABEL` consistently in all generated artifact names.
+* Use `STAGE_LABEL` for in file names of generated artifacts.
+* Use `STAGE_DISPLAY` consistently inside all generated artifact names.
 * Echo the derived value before implementation as:
 
-   * `STAGE_LABEL: <value>`
+   * `STAGE_DISPLAY: <value>`
 
 Then do the following:
 
@@ -64,6 +66,7 @@ Output Requirements:
 * After reading the spec, produce a clearly labeled **Kickoff Summary** for saving and save into in the kickoffs directory.
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
 * After completing the stage, produce a clearly labeled **Milestone Summary** suitable for saving in the milestones directory.
+  The Summary should brief be focusing on what was completed by the stage.
 * After completing the stage, generate a transcript using `transcript-format.md` and save it in the sessions directory.
 * Use `STAGE_LABEL` in all generated artifact filenames.
 
