@@ -1,9 +1,22 @@
-# Claude C99 Stagae 9.5
+# Claude C99 Stage 9.5
 
 ## Task:
 - Extend the compiler to support function declarations
 
+## Definitions
+- A function declaration introduces a functions identifier and parameter list, does NOT include a function body. A function declaration ends with a semicolon.
+- A function body also includes a function body.
 
+## Requirements
+- Function can be declared separately from their definitions
+- Function declarations must be at file scope.
+- Function calls are allowed if the declaration or definitions is visible at the call site.
+- Function overriding is NOT allowed.
+- Multiple external declarations in the same translation unit must be supported.
+- Function calls remain supported as in the previous stage.
+- If a function declaration and definition are present with the same identifier both must have the same parameter list.
+- Both Function declarations and definitions appear at the root level of a translation unit.
+- For this stage, only `int` return types and `int` parameter types are supported.
 
 # Updated Grammar:
 
@@ -77,3 +90,12 @@
 
 <int_literal> ::= [0-9]+
 ```
+
+## Notes for this stage
+- A function declaration does not generate code.
+- A function definition does generate code.
+- Function declarations should be represented in the AST or symbol table so 
+   later stages can validate function calls against there signatures.
+- For this stage, it is acceptable to require that all declarations and definitions
+    for the same function use matching parameter counts.
+
