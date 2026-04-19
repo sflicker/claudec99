@@ -1,0 +1,17 @@
+TranslationUnit:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: a
+        IntLiteral: 0
+      DoWhileStmt:
+        Block
+          ExpressionStatement
+            Assignment: a
+              Binary: ADD
+                VariableExpression: a
+                IntLiteral: 1
+        Binary: LESSTHAN
+          VariableExpression: a
+          IntLiteral: 42
+      ReturnStmt:
+        VariableExpression: a

@@ -17,6 +17,7 @@
                     | <return_statement>
                     | <if_statement>
                     | <while_statement>
+                    | <do_while_statement>
                     | <for_statement>
                     | <block_statement>
                     | <jump_statement>
@@ -29,6 +30,8 @@
 <if_statement> ::= "if" "(" <expression> ")" <statement> [ "else" <statement> ]
  
 <while_statement> ::= "while" "(" <expression> ")" <statement>
+
+<do_while_statement> ::= "do" <statement> "while" "(" <expression> ")" ";"
 
 <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
 

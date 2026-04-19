@@ -8,6 +8,7 @@ typedef enum {
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_WHILE,
+    TOKEN_DO,
     TOKEN_FOR,
     TOKEN_BREAK,
     TOKEN_CONTINUE,

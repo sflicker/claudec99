@@ -87,6 +87,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_ELSE;
         } else if (strcmp(token.value, "while") == 0) {
             token.type = TOKEN_WHILE;
+        } else if (strcmp(token.value, "do") == 0) {
+            token.type = TOKEN_DO;
         } else if (strcmp(token.value, "for") == 0) {
             token.type = TOKEN_FOR;
         } else if (strcmp(token.value, "break") == 0) {

@@ -385,6 +385,27 @@ static ASTNode *parse_while_statement(Parser *parser) {
 }
 
 /*
+ * <do_while_statement> ::= "do" <statement> "while" "(" <expression> ")" ";"
+ */
+static ASTNode *parse_do_while_statement(Parser *parser) {
+    parser_expect(parser, TOKEN_DO);
+    parser->loop_depth++;
+    ASTNode *body = parse_statement(parser);
+    parser->loop_depth--;
+    parser_expect(parser, TOKEN_WHILE);
+    parser_expect(parser, TOKEN_LPAREN);
+    ASTNode *condition = parse_expression(parser);
+    parser_expect(parser, TOKEN_RPAREN);
+    parser_expect(parser, TOKEN_SEMICOLON);
+
+    ASTNode *do_while_node = ast_new(AST_DO_WHILE_STATEMENT, NULL);
+    ast_add_child(do_while_node, body);
+    ast_add_child(do_while_node, condition);
+
+    return do_while_node;
+}
+
+/*
  * <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
  *
  * Children layout: [init, condition, update, body]
@@ -437,6 +458,7 @@ static ASTNode *parse_for_statement(Parser *parser) {
  *               | <return_statement>
  *               | <if_statement>
  *               | <while_statement>
+ *               | <do_while_statement>
  *               | <for_statement>
  *               | <block>
  *               | <expression_stmt>
@@ -468,6 +490,9 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_WHILE) {
         return parse_while_statement(parser);
+    }
+    if (parser->current.type == TOKEN_DO) {
+        return parse_do_while_statement(parser);
     }
     if (parser->current.type == TOKEN_FOR) {
         return parse_for_statement(parser);

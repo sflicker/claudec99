@@ -75,6 +75,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_WHILE_STATEMENT:
         printf("WhileStmt:\n");
         break;
+    case AST_DO_WHILE_STATEMENT:
+        printf("DoWhileStmt:\n");
+        break;
     case AST_FOR_STATEMENT:
         printf("ForStmt:\n");
         /* For statements have NULL children for omitted clauses */

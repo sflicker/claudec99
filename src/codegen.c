@@ -275,6 +275,22 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_while_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         cg->loop_depth--;
+    } else if (node->type == AST_DO_WHILE_STATEMENT) {
+        /* children: [0]=body, [1]=condition. Body always runs at least once;
+         * continue jumps to the condition check, not to the top of the body. */
+        int label_id = cg->label_count++;
+        cg->loop_stack[cg->loop_depth].break_label = label_id;
+        cg->loop_stack[cg->loop_depth].continue_label = label_id;
+        cg->loop_depth++;
+        fprintf(cg->output, ".L_do_start_%d:\n", label_id);
+        codegen_statement(cg, node->children[0], is_main);
+        fprintf(cg->output, ".L_continue_%d:\n", label_id);
+        codegen_expression(cg, node->children[1]);
+        fprintf(cg->output, "    cmp eax, 0\n");
+        fprintf(cg->output, "    jne .L_do_start_%d\n", label_id);
+        fprintf(cg->output, ".L_do_end_%d:\n", label_id);
+        fprintf(cg->output, ".L_break_%d:\n", label_id);
+        cg->loop_depth--;
     } else if (node->type == AST_FOR_STATEMENT) {
         /* children: [0]=init, [1]=condition, [2]=update, [3]=body (any may be NULL except body) */
         int label_id = cg->label_count++;
