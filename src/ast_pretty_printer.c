@@ -90,6 +90,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_POSTFIX_INC_DEC:
         printf("PostfixIncDec: %s\n", operator_name(node->value));
         break;
+    case AST_FUNCTION_CALL:
+        printf("FunctionCall: %s\n", node->value);
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {

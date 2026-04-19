@@ -46,8 +46,9 @@ for src in "$SCRIPT_DIR"/*.c; do
         continue
     fi
 
-    # Link
-    if ! ld "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" 2>/dev/null; then
+    # Link — use main as the explicit entry point so helper definitions that
+    # precede main in the translation unit do not become the entry.
+    if ! ld -e main "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue

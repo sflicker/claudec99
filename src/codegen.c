@@ -9,6 +9,8 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->local_count = 0;
     cg->stack_offset = 0;
     cg->scope_start = 0;
+    cg->push_depth = 0;
+    cg->has_frame = 0;
 }
 
 static int codegen_find_var(CodeGen *cg, const char *name) {
@@ -111,6 +113,34 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* eax still holds the old value */
         return;
     }
+    if (node->type == AST_FUNCTION_CALL) {
+        static const char *arg_regs[6] = {
+            "rdi", "rsi", "rdx", "rcx", "r8", "r9"
+        };
+        int nargs = node->child_count;
+        /* Evaluate arguments left-to-right, pushing each result. */
+        for (int i = 0; i < nargs; i++) {
+            codegen_expression(cg, node->children[i]);
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+        }
+        /* Pop into argument registers in reverse order. */
+        for (int i = nargs - 1; i >= 0; i--) {
+            fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+            cg->push_depth--;
+        }
+        /* SysV AMD64 requires rsp 16-aligned at the call. The frame prologue
+         * leaves rsp 16-aligned; each live `push rax` offsets it by 8. */
+        int needs_pad = (cg->push_depth % 2) != 0;
+        if (needs_pad) {
+            fprintf(cg->output, "    sub rsp, 8\n");
+        }
+        fprintf(cg->output, "    call %s\n", node->value);
+        if (needs_pad) {
+            fprintf(cg->output, "    add rsp, 8\n");
+        }
+        return;
+    }
     if (node->type == AST_BINARY_OP) {
         const char *bop = node->value;
         /* Short-circuit logical operators — do not evaluate RHS unconditionally */
@@ -147,10 +177,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Evaluate left into eax, push it */
         codegen_expression(cg, node->children[0]);
         fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
         /* Evaluate right into eax */
         codegen_expression(cg, node->children[1]);
         /* Pop left into ecx; now ecx=left, eax=right */
         fprintf(cg->output, "    pop rcx\n");
+        cg->push_depth--;
         const char *op = node->value;
         if (strcmp(op, "+") == 0) {
             fprintf(cg->output, "    add eax, ecx\n");
@@ -203,6 +235,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             fprintf(cg->output, "    mov eax, 60\n");
             fprintf(cg->output, "    syscall\n");
         } else {
+            if (cg->has_frame) {
+                fprintf(cg->output, "    mov rsp, rbp\n");
+                fprintf(cg->output, "    pop rbp\n");
+            }
             fprintf(cg->output, "    ret\n");
         }
     } else if (node->type == AST_IF_STATEMENT) {
@@ -287,6 +323,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->local_count = 0;
         cg->stack_offset = 0;
         cg->scope_start = 0;
+        cg->push_depth = 0;
 
         /* Compute stack space: one slot per parameter plus each declaration in the body. */
         int num_vars = count_declarations(body);
@@ -298,7 +335,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Function label and prologue */
         fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
-        if (total_slots > 0) {
+        cg->has_frame = (total_slots > 0);
+        if (cg->has_frame) {
             fprintf(cg->output, "    push rbp\n");
             fprintf(cg->output, "    mov rbp, rsp\n");
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);

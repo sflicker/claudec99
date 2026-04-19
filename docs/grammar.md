@@ -59,7 +59,12 @@
 
 <primary_expression> ::= <int_literal> 
                          | <identifier>
+                         | <function_call>
                          | "(" <expression> ")"
+
+<function_call> ::= <identifier> "(" [ <argument-expression-list> ] ")"
+
+<argument-expression-list> ::= <assignment_expression> { "," <assignment_expression> }
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 

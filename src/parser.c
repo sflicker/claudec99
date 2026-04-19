@@ -6,6 +6,27 @@
 void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
+    parser->func_count = 0;
+}
+
+static FuncSig *parser_find_function(Parser *parser, const char *name) {
+    for (int i = 0; i < parser->func_count; i++) {
+        if (strcmp(parser->funcs[i].name, name) == 0) {
+            return &parser->funcs[i];
+        }
+    }
+    return NULL;
+}
+
+static void parser_register_function(Parser *parser, const char *name, int param_count) {
+    if (parser->func_count >= PARSER_MAX_FUNCTIONS) {
+        fprintf(stderr, "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
+        exit(1);
+    }
+    strncpy(parser->funcs[parser->func_count].name, name, 255);
+    parser->funcs[parser->func_count].name[255] = '\0';
+    parser->funcs[parser->func_count].param_count = param_count;
+    parser->func_count++;
 }
 
 static Token parser_expect(Parser *parser, TokenType type) {
@@ -31,6 +52,37 @@ static ASTNode *parse_primary(Parser *parser) {
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
+        if (parser->current.type == TOKEN_LPAREN) {
+            parser_expect(parser, TOKEN_LPAREN);
+            ASTNode *call = ast_new(AST_FUNCTION_CALL, token.value);
+            if (parser->current.type != TOKEN_RPAREN) {
+                ast_add_child(call, parse_expression(parser));
+                while (parser->current.type == TOKEN_COMMA) {
+                    parser->current = lexer_next_token(parser->lexer);
+                    ast_add_child(call, parse_expression(parser));
+                }
+            }
+            parser_expect(parser, TOKEN_RPAREN);
+            FuncSig *sig = parser_find_function(parser, token.value);
+            if (!sig) {
+                fprintf(stderr, "error: call to undefined function '%s'\n",
+                        token.value);
+                exit(1);
+            }
+            if (sig->param_count != call->child_count) {
+                fprintf(stderr,
+                        "error: function '%s' expects %d arguments, got %d\n",
+                        token.value, sig->param_count, call->child_count);
+                exit(1);
+            }
+            if (call->child_count > 6) {
+                fprintf(stderr,
+                        "error: function '%s' call has %d arguments; max supported is 6\n",
+                        token.value, call->child_count);
+                exit(1);
+            }
+            return call;
+        }
         return ast_new(AST_VAR_REF, token.value);
     }
     if (parser->current.type == TOKEN_LPAREN) {
@@ -447,6 +499,11 @@ static ASTNode *parse_function_decl(Parser *parser) {
         parse_parameter_list(parser, func);
     }
     parser_expect(parser, TOKEN_RPAREN);
+
+    /* Register the function before parsing its body so that self-calls
+     * resolve. Duplicate-definition rejection is handled in
+     * parse_translation_unit. */
+    parser_register_function(parser, name.value, func->child_count);
 
     ASTNode *body = parse_block(parser);
     ast_add_child(func, body);

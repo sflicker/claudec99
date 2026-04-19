@@ -18,6 +18,8 @@ typedef struct {
     int local_count;
     int stack_offset;
     int scope_start;
+    int push_depth;
+    int has_frame;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
