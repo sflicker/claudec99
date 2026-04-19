@@ -1,0 +1,14 @@
+TranslationUnit:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: x
+        IntLiteral: 0
+      SwitchStmt:
+        IntLiteral: 1
+        DefaultSection:
+          ExpressionStatement
+            Assignment: x
+              IntLiteral: 42
+          BreakStmt
+      ReturnStmt:
+        VariableExpression: x

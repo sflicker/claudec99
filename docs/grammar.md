@@ -19,6 +19,7 @@
                     | <while_statement>
                     | <do_while_statement>
                     | <for_statement>
+                    | <switch_statement>
                     | <block_statement>
                     | <jump_statement>
                     | <expression_statement>
@@ -34,6 +35,12 @@
 <do_while_statement> ::= "do" <statement> "while" "(" <expression> ")" ";"
 
 <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
+
+<switch_statement> ::= "switch" "(" <expression> ")" <switch_body>
+
+<switch_body> ::= "{" <default_section> "}"
+
+<default_section> ::= "default" ":" { <statement> }
 
 <jump_statement> ::= "continue" ";"
                     | "break" ";"

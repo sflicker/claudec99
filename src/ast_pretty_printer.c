@@ -87,6 +87,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
             }
         }
         return;
+    case AST_SWITCH_STATEMENT:
+        printf("SwitchStmt:\n");
+        break;
+    case AST_DEFAULT_SECTION:
+        printf("DefaultSection:\n");
+        break;
     case AST_BREAK_STATEMENT:
         printf("BreakStmt\n");
         break;

@@ -11,7 +11,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->scope_start = 0;
     cg->push_depth = 0;
     cg->has_frame = 0;
-    cg->loop_depth = 0;
+    cg->break_depth = 0;
 }
 
 static int codegen_find_var(CodeGen *cg, const char *name) {
@@ -262,9 +262,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
     } else if (node->type == AST_WHILE_STATEMENT) {
         int label_id = cg->label_count++;
-        cg->loop_stack[cg->loop_depth].break_label = label_id;
-        cg->loop_stack[cg->loop_depth].continue_label = label_id;
-        cg->loop_depth++;
+        cg->break_stack[cg->break_depth].break_label = label_id;
+        cg->break_stack[cg->break_depth].continue_label = label_id;
+        cg->break_depth++;
         fprintf(cg->output, ".L_while_start_%d:\n", label_id);
         fprintf(cg->output, ".L_continue_%d:\n", label_id);
         codegen_expression(cg, node->children[0]);
@@ -274,14 +274,14 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
         fprintf(cg->output, ".L_while_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
-        cg->loop_depth--;
+        cg->break_depth--;
     } else if (node->type == AST_DO_WHILE_STATEMENT) {
         /* children: [0]=body, [1]=condition. Body always runs at least once;
          * continue jumps to the condition check, not to the top of the body. */
         int label_id = cg->label_count++;
-        cg->loop_stack[cg->loop_depth].break_label = label_id;
-        cg->loop_stack[cg->loop_depth].continue_label = label_id;
-        cg->loop_depth++;
+        cg->break_stack[cg->break_depth].break_label = label_id;
+        cg->break_stack[cg->break_depth].continue_label = label_id;
+        cg->break_depth++;
         fprintf(cg->output, ".L_do_start_%d:\n", label_id);
         codegen_statement(cg, node->children[0], is_main);
         fprintf(cg->output, ".L_continue_%d:\n", label_id);
@@ -290,13 +290,13 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    jne .L_do_start_%d\n", label_id);
         fprintf(cg->output, ".L_do_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
-        cg->loop_depth--;
+        cg->break_depth--;
     } else if (node->type == AST_FOR_STATEMENT) {
         /* children: [0]=init, [1]=condition, [2]=update, [3]=body (any may be NULL except body) */
         int label_id = cg->label_count++;
-        cg->loop_stack[cg->loop_depth].break_label = label_id;
-        cg->loop_stack[cg->loop_depth].continue_label = label_id;
-        cg->loop_depth++;
+        cg->break_stack[cg->break_depth].break_label = label_id;
+        cg->break_stack[cg->break_depth].continue_label = label_id;
+        cg->break_depth++;
         if (node->children[0]) {
             codegen_expression(cg, node->children[0]);
         }
@@ -314,12 +314,38 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    jmp .L_for_start_%d\n", label_id);
         fprintf(cg->output, ".L_for_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
-        cg->loop_depth--;
+        cg->break_depth--;
+    } else if (node->type == AST_SWITCH_STATEMENT) {
+        /* children: [0]=switch expression, [1]=AST_DEFAULT_SECTION.
+         * Stage 10-03-01: only a `default` section is allowed, so control
+         * simply evaluates the expression (side effects), then falls into
+         * the default body. `break` exits to the switch-end label. */
+        int label_id = cg->label_count++;
+        codegen_expression(cg, node->children[0]);
+        cg->break_stack[cg->break_depth].break_label = label_id;
+        cg->break_stack[cg->break_depth].continue_label = -1;
+        cg->break_depth++;
+        ASTNode *default_section = node->children[1];
+        for (int i = 0; i < default_section->child_count; i++) {
+            codegen_statement(cg, default_section->children[i], is_main);
+        }
+        fprintf(cg->output, ".L_switch_end_%d:\n", label_id);
+        fprintf(cg->output, ".L_break_%d:\n", label_id);
+        cg->break_depth--;
     } else if (node->type == AST_BREAK_STATEMENT) {
-        int id = cg->loop_stack[cg->loop_depth - 1].break_label;
+        int id = cg->break_stack[cg->break_depth - 1].break_label;
         fprintf(cg->output, "    jmp .L_break_%d\n", id);
     } else if (node->type == AST_CONTINUE_STATEMENT) {
-        int id = cg->loop_stack[cg->loop_depth - 1].continue_label;
+        /* Walk down the break stack to the nearest loop (switches set
+         * continue_label = -1). Parser enforces that `continue` appears
+         * only inside a loop, so a valid entry is always found. */
+        int id = -1;
+        for (int i = cg->break_depth - 1; i >= 0; i--) {
+            if (cg->break_stack[i].continue_label != -1) {
+                id = cg->break_stack[i].continue_label;
+                break;
+            }
+        }
         fprintf(cg->output, "    jmp .L_continue_%d\n", id);
     } else if (node->type == AST_BLOCK) {
         int saved_scope_start = cg->scope_start;

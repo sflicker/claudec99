@@ -30,6 +30,7 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '{') { token.type = TOKEN_LBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer->pos++; return token; }
+    if (c == ':') { token.type = TOKEN_COLON;     token.value[0] = c; lexer->pos++; return token; }
     if (c == ',') { token.type = TOKEN_COMMA;     token.value[0] = c; lexer->pos++; return token; }
     if (c == '+') {
         if (lexer->source[lexer->pos + 1] == '+') { token.type = TOKEN_INCREMENT; strcpy(token.value, "++"); lexer->pos += 2; return token; }
@@ -95,6 +96,10 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_BREAK;
         } else if (strcmp(token.value, "continue") == 0) {
             token.type = TOKEN_CONTINUE;
+        } else if (strcmp(token.value, "switch") == 0) {
+            token.type = TOKEN_SWITCH;
+        } else if (strcmp(token.value, "default") == 0) {
+            token.type = TOKEN_DEFAULT;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }

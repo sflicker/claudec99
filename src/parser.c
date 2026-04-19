@@ -8,6 +8,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->current = lexer_next_token(lexer);
     parser->func_count = 0;
     parser->loop_depth = 0;
+    parser->switch_depth = 0;
 }
 
 static FuncSig *parser_find_function(Parser *parser, const char *name) {
@@ -453,6 +454,38 @@ static ASTNode *parse_for_statement(Parser *parser) {
 }
 
 /*
+ * <switch_statement> ::= "switch" "(" <expression> ")" <switch_body>
+ * <switch_body>      ::= "{" <default_section> "}"
+ * <default_section>  ::= "default" ":" { <statement> }
+ *
+ * Stage 10-03-01 restriction: the switch body must contain exactly one
+ * `default` label and no other statements outside it.
+ */
+static ASTNode *parse_switch_statement(Parser *parser) {
+    parser_expect(parser, TOKEN_SWITCH);
+    parser_expect(parser, TOKEN_LPAREN);
+    ASTNode *expr = parse_expression(parser);
+    parser_expect(parser, TOKEN_RPAREN);
+    parser_expect(parser, TOKEN_LBRACE);
+    parser_expect(parser, TOKEN_DEFAULT);
+    parser_expect(parser, TOKEN_COLON);
+
+    parser->switch_depth++;
+    ASTNode *default_section = ast_new(AST_DEFAULT_SECTION, NULL);
+    while (parser->current.type != TOKEN_RBRACE) {
+        ast_add_child(default_section, parse_statement(parser));
+    }
+    parser->switch_depth--;
+
+    parser_expect(parser, TOKEN_RBRACE);
+
+    ASTNode *switch_node = ast_new(AST_SWITCH_STATEMENT, NULL);
+    ast_add_child(switch_node, expr);
+    ast_add_child(switch_node, default_section);
+    return switch_node;
+}
+
+/*
  * <statement> ::= <declaration>
  *               | <assignment_statement>
  *               | <return_statement>
@@ -460,6 +493,7 @@ static ASTNode *parse_for_statement(Parser *parser) {
  *               | <while_statement>
  *               | <do_while_statement>
  *               | <for_statement>
+ *               | <switch_statement>
  *               | <block>
  *               | <expression_stmt>
  */
@@ -497,12 +531,15 @@ static ASTNode *parse_statement(Parser *parser) {
     if (parser->current.type == TOKEN_FOR) {
         return parse_for_statement(parser);
     }
+    if (parser->current.type == TOKEN_SWITCH) {
+        return parse_switch_statement(parser);
+    }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
     }
     if (parser->current.type == TOKEN_BREAK) {
-        if (parser->loop_depth == 0) {
-            fprintf(stderr, "error: break outside of loop\n");
+        if (parser->loop_depth == 0 && parser->switch_depth == 0) {
+            fprintf(stderr, "error: break outside of loop or switch\n");
             exit(1);
         }
         parser->current = lexer_next_token(parser->lexer);
