@@ -7,6 +7,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
     parser->func_count = 0;
+    parser->loop_depth = 0;
 }
 
 static FuncSig *parser_find_function(Parser *parser, const char *name) {
@@ -372,7 +373,9 @@ static ASTNode *parse_while_statement(Parser *parser) {
     parser_expect(parser, TOKEN_LPAREN);
     ASTNode *condition = parse_expression(parser);
     parser_expect(parser, TOKEN_RPAREN);
+    parser->loop_depth++;
     ASTNode *body = parse_statement(parser);
+    parser->loop_depth--;
 
     ASTNode *while_node = ast_new(AST_WHILE_STATEMENT, NULL);
     ast_add_child(while_node, condition);
@@ -414,7 +417,9 @@ static ASTNode *parse_for_statement(Parser *parser) {
     }
     parser_expect(parser, TOKEN_RPAREN);
 
+    parser->loop_depth++;
     ASTNode *body = parse_statement(parser);
+    parser->loop_depth--;
 
     /* Store as children — NULLs are stored directly */
     for_node->children[0] = init;
@@ -469,6 +474,24 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
+    }
+    if (parser->current.type == TOKEN_BREAK) {
+        if (parser->loop_depth == 0) {
+            fprintf(stderr, "error: break outside of loop\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return ast_new(AST_BREAK_STATEMENT, NULL);
+    }
+    if (parser->current.type == TOKEN_CONTINUE) {
+        if (parser->loop_depth == 0) {
+            fprintf(stderr, "error: continue outside of loop\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return ast_new(AST_CONTINUE_STATEMENT, NULL);
     }
     /* expression_stmt (includes assignments, since assignment is now an expression) */
     ASTNode *expr = parse_expression(parser);

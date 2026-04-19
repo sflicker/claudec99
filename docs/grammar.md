@@ -19,6 +19,7 @@
                     | <while_statement>
                     | <for_statement>
                     | <block_statement>
+                    | <jump_statement>
                     | <expression_statement>
 
 <declaration> ::= "int" <identifier> [ "=" <expression> ] ";"
@@ -30,6 +31,9 @@
 <while_statement> ::= "while" "(" <expression> ")" <statement>
 
 <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
+
+<jump_statement> ::= "continue" ";"
+                    | "break" ";"
 
 <expression_statement> ::= <expression> ";"
 

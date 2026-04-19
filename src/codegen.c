@@ -11,6 +11,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->scope_start = 0;
     cg->push_depth = 0;
     cg->has_frame = 0;
+    cg->loop_depth = 0;
 }
 
 static int codegen_find_var(CodeGen *cg, const char *name) {
@@ -261,16 +262,25 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
     } else if (node->type == AST_WHILE_STATEMENT) {
         int label_id = cg->label_count++;
+        cg->loop_stack[cg->loop_depth].break_label = label_id;
+        cg->loop_stack[cg->loop_depth].continue_label = label_id;
+        cg->loop_depth++;
         fprintf(cg->output, ".L_while_start_%d:\n", label_id);
+        fprintf(cg->output, ".L_continue_%d:\n", label_id);
         codegen_expression(cg, node->children[0]);
         fprintf(cg->output, "    cmp eax, 0\n");
         fprintf(cg->output, "    je .L_while_end_%d\n", label_id);
         codegen_statement(cg, node->children[1], is_main);
         fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
         fprintf(cg->output, ".L_while_end_%d:\n", label_id);
+        fprintf(cg->output, ".L_break_%d:\n", label_id);
+        cg->loop_depth--;
     } else if (node->type == AST_FOR_STATEMENT) {
         /* children: [0]=init, [1]=condition, [2]=update, [3]=body (any may be NULL except body) */
         int label_id = cg->label_count++;
+        cg->loop_stack[cg->loop_depth].break_label = label_id;
+        cg->loop_stack[cg->loop_depth].continue_label = label_id;
+        cg->loop_depth++;
         if (node->children[0]) {
             codegen_expression(cg, node->children[0]);
         }
@@ -281,11 +291,20 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             fprintf(cg->output, "    je .L_for_end_%d\n", label_id);
         }
         codegen_statement(cg, node->children[3], is_main);
+        fprintf(cg->output, ".L_continue_%d:\n", label_id);
         if (node->children[2]) {
             codegen_expression(cg, node->children[2]);
         }
         fprintf(cg->output, "    jmp .L_for_start_%d\n", label_id);
         fprintf(cg->output, ".L_for_end_%d:\n", label_id);
+        fprintf(cg->output, ".L_break_%d:\n", label_id);
+        cg->loop_depth--;
+    } else if (node->type == AST_BREAK_STATEMENT) {
+        int id = cg->loop_stack[cg->loop_depth - 1].break_label;
+        fprintf(cg->output, "    jmp .L_break_%d\n", id);
+    } else if (node->type == AST_CONTINUE_STATEMENT) {
+        int id = cg->loop_stack[cg->loop_depth - 1].continue_label;
+        fprintf(cg->output, "    jmp .L_continue_%d\n", id);
     } else if (node->type == AST_BLOCK) {
         int saved_scope_start = cg->scope_start;
         int saved_local_count = cg->local_count;

@@ -5,11 +5,17 @@
 #include "ast.h"
 
 #define MAX_LOCALS 64
+#define MAX_LOOP_DEPTH 32
 
 typedef struct {
     char name[256];
     int offset;
 } LocalVar;
+
+typedef struct {
+    int break_label;
+    int continue_label;
+} LoopLabels;
 
 typedef struct {
     FILE *output;
@@ -20,6 +26,8 @@ typedef struct {
     int scope_start;
     int push_depth;
     int has_frame;
+    LoopLabels loop_stack[MAX_LOOP_DEPTH];
+    int loop_depth;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

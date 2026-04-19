@@ -18,6 +18,7 @@ typedef struct {
     Token current;
     FuncSig funcs[PARSER_MAX_FUNCTIONS];
     int func_count;
+    int loop_depth;
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);
