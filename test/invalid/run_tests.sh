@@ -30,14 +30,16 @@ for src in "$SCRIPT_DIR"/test_*.c; do
         continue
     fi
 
-    # Compile — should fail
+    # Compile — should fail. The compiler may have already opened/written
+    # a partial .asm in the caller's cwd before detecting the error, so
+    # remove any leftover file unconditionally.
     output=$("$COMPILER" "$src" 2>&1)
     rc=$?
+    rm -f "${name}.asm"
 
     if [ "$rc" -eq 0 ]; then
         echo "FAIL  $name  (compiler should have rejected this, but succeeded)"
         fail=$((fail + 1))
-        rm -f "${name}.asm"
         continue
     fi
 
