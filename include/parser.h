@@ -10,6 +10,7 @@
 typedef struct {
     char name[256];
     int param_count;
+    int has_definition;
 } FuncSig;
 
 typedef struct {

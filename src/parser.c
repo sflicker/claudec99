@@ -18,7 +18,34 @@ static FuncSig *parser_find_function(Parser *parser, const char *name) {
     return NULL;
 }
 
-static void parser_register_function(Parser *parser, const char *name, int param_count) {
+/*
+ * Record a function's appearance (declaration or definition). If the name is
+ * already in the table, enforce:
+ *   - parameter counts must match
+ *   - at most one definition per name
+ * Otherwise add a new entry.
+ */
+static void parser_register_function(Parser *parser, const char *name,
+                                     int param_count, int is_definition) {
+    FuncSig *existing = parser_find_function(parser, name);
+    if (existing) {
+        if (existing->param_count != param_count) {
+            fprintf(stderr,
+                    "error: function '%s' parameter count mismatch (%d vs %d)\n",
+                    name, existing->param_count, param_count);
+            exit(1);
+        }
+        if (is_definition) {
+            if (existing->has_definition) {
+                fprintf(stderr,
+                        "error: duplicate function definition '%s'\n",
+                        name);
+                exit(1);
+            }
+            existing->has_definition = 1;
+        }
+        return;
+    }
     if (parser->func_count >= PARSER_MAX_FUNCTIONS) {
         fprintf(stderr, "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
         exit(1);
@@ -26,6 +53,7 @@ static void parser_register_function(Parser *parser, const char *name, int param
     strncpy(parser->funcs[parser->func_count].name, name, 255);
     parser->funcs[parser->func_count].name[255] = '\0';
     parser->funcs[parser->func_count].param_count = param_count;
+    parser->funcs[parser->func_count].has_definition = is_definition;
     parser->func_count++;
 }
 
@@ -485,9 +513,11 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" <block>
+ * <function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" ( <block> | ";" )
  *
- * AST layout: zero or more AST_PARAM children followed by the AST_BLOCK body.
+ * AST layout for a definition: zero or more AST_PARAM children followed by
+ * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
+ * (no AST_BLOCK).
  */
 static ASTNode *parse_function_decl(Parser *parser) {
     parser_expect(parser, TOKEN_INT);
@@ -500,13 +530,20 @@ static ASTNode *parse_function_decl(Parser *parser) {
     }
     parser_expect(parser, TOKEN_RPAREN);
 
-    /* Register the function before parsing its body so that self-calls
-     * resolve. Duplicate-definition rejection is handled in
-     * parse_translation_unit. */
-    parser_register_function(parser, name.value, func->child_count);
+    int param_count = func->child_count;
+    int is_definition = (parser->current.type == TOKEN_LBRACE);
 
-    ASTNode *body = parse_block(parser);
-    ast_add_child(func, body);
+    /* Register before parsing the body so self-calls resolve. The helper
+     * also enforces param-count consistency and rejects duplicate
+     * definitions. */
+    parser_register_function(parser, name.value, param_count, is_definition);
+
+    if (is_definition) {
+        ASTNode *body = parse_block(parser);
+        ast_add_child(func, body);
+    } else {
+        parser_expect(parser, TOKEN_SEMICOLON);
+    }
     return func;
 }
 
@@ -520,20 +557,14 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 /*
  * <translation_unit> ::= <external_declaration> { <external_declaration> }
  *
- * Enforces unique function names within the translation unit.
+ * Duplicate-definition and signature-consistency rules are enforced in
+ * parser_register_function; multiple declarations of the same function
+ * are permitted.
  */
 ASTNode *parse_translation_unit(Parser *parser) {
     ASTNode *unit = ast_new(AST_TRANSLATION_UNIT, NULL);
     do {
         ASTNode *ext_decl = parse_external_declaration(parser);
-        for (int i = 0; i < unit->child_count; i++) {
-            if (strcmp(unit->children[i]->value, ext_decl->value) == 0) {
-                fprintf(stderr,
-                        "error: duplicate function '%s' in translation unit\n",
-                        ext_decl->value);
-                exit(1);
-            }
-        }
         ast_add_child(unit, ext_decl);
     } while (parser->current.type != TOKEN_EOF);
     parser_expect(parser, TOKEN_EOF);

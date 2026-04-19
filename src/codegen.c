@@ -305,11 +305,16 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_FUNCTION_DECL) {
         int is_main = (strcmp(node->value, "main") == 0);
 
-        /* Function children: zero or more AST_PARAM followed by AST_BLOCK body. */
+        /* Function children: zero or more AST_PARAM followed by an
+         * optional AST_BLOCK body. A pure declaration has no body and
+         * emits no code. */
         int num_params = 0;
         while (num_params < node->child_count &&
                node->children[num_params]->type == AST_PARAM) {
             num_params++;
+        }
+        if (num_params == node->child_count) {
+            return;
         }
         if (num_params > 6) {
             fprintf(stderr,
