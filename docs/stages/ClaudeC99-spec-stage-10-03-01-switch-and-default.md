@@ -1,4 +1,4 @@
-# Claude C99 State 10.3-01
+# Claude C99 Stage 10.3-01
 
 ## Task:
 - Extend the compiler to support a restricted switch statement
