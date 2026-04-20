@@ -316,22 +316,62 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         cg->break_depth--;
     } else if (node->type == AST_SWITCH_STATEMENT) {
-        /* children: [0]=switch expression, [1]=AST_DEFAULT_SECTION.
-         * Stage 10-03-01: only a `default` section is allowed, so control
-         * simply evaluates the expression (side effects), then falls into
-         * the default body. `break` exits to the switch-end label. */
+        /* children: [0]=controlling expression, [1..]=sections (case or
+         * default). Evaluate the expression once, spill to the stack,
+         * then linearly compare against each case value and jump to the
+         * matching section label. If no case matches, jump to default
+         * (if present) or to the switch-end label. `break` also targets
+         * the end label. */
         int label_id = cg->label_count++;
+        int num_sections = node->child_count - 1;
+        int section_labels[AST_MAX_CHILDREN];
+        int default_label = -1;
+        for (int i = 0; i < num_sections; i++) {
+            section_labels[i] = cg->label_count++;
+            if (node->children[i + 1]->type == AST_DEFAULT_SECTION) {
+                default_label = section_labels[i];
+            }
+        }
+
         codegen_expression(cg, node->children[0]);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+
+        for (int i = 0; i < num_sections; i++) {
+            ASTNode *section = node->children[i + 1];
+            if (section->type == AST_CASE_SECTION) {
+                fprintf(cg->output, "    mov eax, [rsp]\n");
+                fprintf(cg->output, "    cmp eax, %s\n",
+                        section->children[0]->value);
+                fprintf(cg->output, "    je .L_switch_sec_%d\n",
+                        section_labels[i]);
+            }
+        }
+        if (default_label != -1) {
+            fprintf(cg->output, "    jmp .L_switch_sec_%d\n", default_label);
+        } else {
+            fprintf(cg->output, "    jmp .L_switch_end_%d\n", label_id);
+        }
+
         cg->break_stack[cg->break_depth].break_label = label_id;
         cg->break_stack[cg->break_depth].continue_label = -1;
         cg->break_depth++;
-        ASTNode *default_section = node->children[1];
-        for (int i = 0; i < default_section->child_count; i++) {
-            codegen_statement(cg, default_section->children[i], is_main);
+
+        for (int i = 0; i < num_sections; i++) {
+            ASTNode *section = node->children[i + 1];
+            fprintf(cg->output, ".L_switch_sec_%d:\n", section_labels[i]);
+            int start_idx = (section->type == AST_CASE_SECTION) ? 1 : 0;
+            for (int j = start_idx; j < section->child_count; j++) {
+                codegen_statement(cg, section->children[j], is_main);
+            }
         }
+
+        cg->break_depth--;
+
         fprintf(cg->output, ".L_switch_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
-        cg->break_depth--;
+        fprintf(cg->output, "    add rsp, 8\n");
+        cg->push_depth--;
     } else if (node->type == AST_BREAK_STATEMENT) {
         int id = cg->break_stack[cg->break_depth - 1].break_label;
         fprintf(cg->output, "    jmp .L_break_%d\n", id);

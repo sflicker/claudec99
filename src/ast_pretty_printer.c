@@ -93,6 +93,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_DEFAULT_SECTION:
         printf("DefaultSection:\n");
         break;
+    case AST_CASE_SECTION:
+        printf("CaseSection: %s\n", node->children[0]->value);
+        for (int i = 1; i < node->child_count; i++) {
+            ast_pretty_print(node->children[i], depth + 1);
+        }
+        return;
     case AST_BREAK_STATEMENT:
         printf("BreakStmt\n");
         break;

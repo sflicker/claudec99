@@ -38,7 +38,11 @@
 
 <switch_statement> ::= "switch" "(" <expression> ")" <switch_body>
 
-<switch_body> ::= "{" <default_section> "}"
+<switch_body> ::= "{" <switch_section> { <switch_section> } "}"
+
+<switch_section> ::= <case_section> | <default_section>
+
+<case_section> ::= "case" <integer_literal> ":" { <statement> }
 
 <default_section> ::= "default" ":" { <statement> }
 
