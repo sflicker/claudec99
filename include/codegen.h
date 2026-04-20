@@ -6,6 +6,8 @@
 
 #define MAX_LOCALS 64
 #define MAX_BREAK_DEPTH 32
+#define MAX_SWITCH_DEPTH 16
+#define MAX_SWITCH_LABELS 64
 
 typedef struct {
     char name[256];
@@ -20,6 +22,19 @@ typedef struct {
     int continue_label;
 } BreakFrame;
 
+/* Per-switch context. Populated by a pre-walk of the switch body
+ * that collects every case/default node pointer (stopping at nested
+ * switches) and assigns each a unique label id. During body emission
+ * a case/default node is matched against this table to emit its
+ * pre-assigned label. */
+typedef struct ASTNode ASTNode;
+typedef struct {
+    ASTNode *nodes[MAX_SWITCH_LABELS];
+    int labels[MAX_SWITCH_LABELS];
+    int count;
+    int default_label;
+} SwitchCtx;
+
 typedef struct {
     FILE *output;
     int label_count;
@@ -31,6 +46,8 @@ typedef struct {
     int has_frame;
     BreakFrame break_stack[MAX_BREAK_DEPTH];
     int break_depth;
+    SwitchCtx switch_stack[MAX_SWITCH_DEPTH];
+    int switch_depth;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

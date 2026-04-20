@@ -20,6 +20,7 @@
                     | <do_while_statement>
                     | <for_statement>
                     | <switch_statement>
+                    | <labeled_statement>
                     | <block_statement>
                     | <jump_statement>
                     | <expression_statement>
@@ -36,15 +37,12 @@
 
 <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
 
-<switch_statement> ::= "switch" "(" <expression> ")" <switch_body>
+<switch_statement> ::= "switch" "(" <expression> ")" <statement>
 
-<switch_body> ::= "{" <switch_section> { <switch_section> } "}"
+<labeled_statement> ::= "case" <constant_expression> ":" <statement>
+                      | "default" ":" <statement>
 
-<switch_section> ::= <case_section> | <default_section>
-
-<case_section> ::= "case" <integer_literal> ":" { <statement> }
-
-<default_section> ::= "default" ":" { <statement> }
+<constant_expression> ::= <integer_literal>
 
 <jump_statement> ::= "continue" ";"
                     | "break" ";"
@@ -75,7 +73,7 @@
                     
 <postfix_expression> ::= <primary_expression> { "++" | "--" }                    
 
-<primary_expression> ::= <int_literal> 
+<primary_expression> ::= <integer_literal>
                          | <identifier>
                          | <function_call>
                          | "(" <expression> ")"
@@ -86,6 +84,6 @@
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
-<int_literal> ::= [0-9]+
+<integer_literal> ::= [0-9]+
 
 ```

@@ -12,6 +12,61 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->push_depth = 0;
     cg->has_frame = 0;
     cg->break_depth = 0;
+    cg->switch_depth = 0;
+}
+
+/*
+ * Walk the subtree of a switch body, collecting every AST_CASE_SECTION
+ * and AST_DEFAULT_SECTION node pointer into `ctx` and assigning each a
+ * fresh label. Descent stops at nested AST_SWITCH_STATEMENT nodes
+ * because labels inside a nested switch belong to that inner switch.
+ * A case node's case-value child (children[0]) is not descended into.
+ */
+static void collect_switch_labels(CodeGen *cg, ASTNode *node, SwitchCtx *ctx) {
+    if (!node) return;
+    if (node->type == AST_CASE_SECTION) {
+        if (ctx->count >= MAX_SWITCH_LABELS) {
+            fprintf(stderr, "error: too many case/default labels in switch (max %d)\n",
+                    MAX_SWITCH_LABELS);
+            exit(1);
+        }
+        ctx->nodes[ctx->count] = node;
+        ctx->labels[ctx->count] = cg->label_count++;
+        ctx->count++;
+        if (node->child_count > 1) {
+            collect_switch_labels(cg, node->children[1], ctx);
+        }
+        return;
+    }
+    if (node->type == AST_DEFAULT_SECTION) {
+        if (ctx->count >= MAX_SWITCH_LABELS) {
+            fprintf(stderr, "error: too many case/default labels in switch (max %d)\n",
+                    MAX_SWITCH_LABELS);
+            exit(1);
+        }
+        int lbl = cg->label_count++;
+        ctx->nodes[ctx->count] = node;
+        ctx->labels[ctx->count] = lbl;
+        ctx->count++;
+        ctx->default_label = lbl;
+        if (node->child_count > 0) {
+            collect_switch_labels(cg, node->children[0], ctx);
+        }
+        return;
+    }
+    if (node->type == AST_SWITCH_STATEMENT) {
+        return; /* nested switch — its labels belong to it */
+    }
+    for (int i = 0; i < node->child_count; i++) {
+        collect_switch_labels(cg, node->children[i], ctx);
+    }
+}
+
+static int switch_lookup_label(SwitchCtx *ctx, ASTNode *node) {
+    for (int i = 0; i < ctx->count; i++) {
+        if (ctx->nodes[i] == node) return ctx->labels[i];
+    }
+    return -1;
 }
 
 static int codegen_find_var(CodeGen *cg, const char *name) {
@@ -316,39 +371,42 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         cg->break_depth--;
     } else if (node->type == AST_SWITCH_STATEMENT) {
-        /* children: [0]=controlling expression, [1..]=sections (case or
-         * default). Evaluate the expression once, spill to the stack,
-         * then linearly compare against each case value and jump to the
-         * matching section label. If no case matches, jump to default
-         * (if present) or to the switch-end label. `break` also targets
-         * the end label. */
-        int label_id = cg->label_count++;
-        int num_sections = node->child_count - 1;
-        int section_labels[AST_MAX_CHILDREN];
-        int default_label = -1;
-        for (int i = 0; i < num_sections; i++) {
-            section_labels[i] = cg->label_count++;
-            if (node->children[i + 1]->type == AST_DEFAULT_SECTION) {
-                default_label = section_labels[i];
-            }
+        /* children: [0]=controlling expression, [1]=body statement.
+         * Pre-walk the body to collect every case/default label
+         * (stopping at nested switches), evaluate the expression once,
+         * spill it to the stack, emit a linear compare-and-branch
+         * dispatch, then emit the body as ordinary statements. When a
+         * case/default node is visited during emission it looks up its
+         * pre-assigned label via the innermost SwitchCtx. `break`
+         * targets the switch-end label. */
+        if (cg->switch_depth >= MAX_SWITCH_DEPTH) {
+            fprintf(stderr, "error: switch nesting exceeds max depth %d\n",
+                    MAX_SWITCH_DEPTH);
+            exit(1);
         }
+        int label_id = cg->label_count++;
+        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth];
+        ctx->count = 0;
+        ctx->default_label = -1;
+        ASTNode *body = node->children[1];
+        collect_switch_labels(cg, body, ctx);
 
         codegen_expression(cg, node->children[0]);
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
 
-        for (int i = 0; i < num_sections; i++) {
-            ASTNode *section = node->children[i + 1];
-            if (section->type == AST_CASE_SECTION) {
+        for (int i = 0; i < ctx->count; i++) {
+            ASTNode *label_node = ctx->nodes[i];
+            if (label_node->type == AST_CASE_SECTION) {
                 fprintf(cg->output, "    mov eax, [rsp]\n");
                 fprintf(cg->output, "    cmp eax, %s\n",
-                        section->children[0]->value);
+                        label_node->children[0]->value);
                 fprintf(cg->output, "    je .L_switch_sec_%d\n",
-                        section_labels[i]);
+                        ctx->labels[i]);
             }
         }
-        if (default_label != -1) {
-            fprintf(cg->output, "    jmp .L_switch_sec_%d\n", default_label);
+        if (ctx->default_label != -1) {
+            fprintf(cg->output, "    jmp .L_switch_sec_%d\n", ctx->default_label);
         } else {
             fprintf(cg->output, "    jmp .L_switch_end_%d\n", label_id);
         }
@@ -356,22 +414,36 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         cg->break_stack[cg->break_depth].break_label = label_id;
         cg->break_stack[cg->break_depth].continue_label = -1;
         cg->break_depth++;
+        cg->switch_depth++;
 
-        for (int i = 0; i < num_sections; i++) {
-            ASTNode *section = node->children[i + 1];
-            fprintf(cg->output, ".L_switch_sec_%d:\n", section_labels[i]);
-            int start_idx = (section->type == AST_CASE_SECTION) ? 1 : 0;
-            for (int j = start_idx; j < section->child_count; j++) {
-                codegen_statement(cg, section->children[j], is_main);
-            }
-        }
+        codegen_statement(cg, body, is_main);
 
+        cg->switch_depth--;
         cg->break_depth--;
 
         fprintf(cg->output, ".L_switch_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         fprintf(cg->output, "    add rsp, 8\n");
         cg->push_depth--;
+    } else if (node->type == AST_CASE_SECTION) {
+        /* children: [0]=int_literal, [1]=inner statement. The label
+         * was pre-assigned by collect_switch_labels when the
+         * enclosing switch was emitted; look it up and emit, then
+         * fall through to the inner statement. */
+        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth - 1];
+        int lbl = switch_lookup_label(ctx, node);
+        fprintf(cg->output, ".L_switch_sec_%d:\n", lbl);
+        if (node->child_count > 1) {
+            codegen_statement(cg, node->children[1], is_main);
+        }
+    } else if (node->type == AST_DEFAULT_SECTION) {
+        /* children: [0]=inner statement. */
+        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth - 1];
+        int lbl = switch_lookup_label(ctx, node);
+        fprintf(cg->output, ".L_switch_sec_%d:\n", lbl);
+        if (node->child_count > 0) {
+            codegen_statement(cg, node->children[0], is_main);
+        }
     } else if (node->type == AST_BREAK_STATEMENT) {
         int id = cg->break_stack[cg->break_depth - 1].break_label;
         fprintf(cg->output, "    jmp .L_break_%d\n", id);

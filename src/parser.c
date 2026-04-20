@@ -454,64 +454,28 @@ static ASTNode *parse_for_statement(Parser *parser) {
 }
 
 /*
- * <switch_statement> ::= "switch" "(" <expression> ")" <switch_body>
- * <switch_body>      ::= "{" <switch_section> { <switch_section> } "}"
- * <switch_section>   ::= <case_section> | <default_section>
- * <case_section>     ::= "case" <integer_literal> ":" { <statement> }
- * <default_section>  ::= "default" ":" { <statement> }
+ * <switch_statement>   ::= "switch" "(" <expression> ")" <statement>
+ * <labeled_statement>  ::= "case" <integer_literal> ":" <statement>
+ *                        | "default" ":" <statement>
  *
- * Stage 10-03-02: the switch body is a sequence of case/default
- * sections. At most one default is allowed. Case values must be
- * integer literals. Statements within a section are consumed until
- * the next `case`, `default`, or closing `}`.
+ * Stage 10-03-03: the switch body is any statement. `case` and
+ * `default` labels are parsed as labeled statements inside
+ * parse_statement and are only legal while switch_depth > 0.
  */
 static ASTNode *parse_switch_statement(Parser *parser) {
     parser_expect(parser, TOKEN_SWITCH);
     parser_expect(parser, TOKEN_LPAREN);
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_RPAREN);
-    parser_expect(parser, TOKEN_LBRACE);
 
     ASTNode *switch_node = ast_new(AST_SWITCH_STATEMENT, NULL);
     ast_add_child(switch_node, expr);
 
     parser->switch_depth++;
-    int default_seen = 0;
-    while (parser->current.type != TOKEN_RBRACE) {
-        if (parser->current.type == TOKEN_CASE) {
-            parser_expect(parser, TOKEN_CASE);
-            Token value = parser_expect(parser, TOKEN_INT_LITERAL);
-            parser_expect(parser, TOKEN_COLON);
-            ASTNode *case_section = ast_new(AST_CASE_SECTION, NULL);
-            ast_add_child(case_section, ast_new(AST_INT_LITERAL, value.value));
-            while (parser->current.type != TOKEN_CASE &&
-                   parser->current.type != TOKEN_DEFAULT &&
-                   parser->current.type != TOKEN_RBRACE) {
-                ast_add_child(case_section, parse_statement(parser));
-            }
-            ast_add_child(switch_node, case_section);
-        } else if (parser->current.type == TOKEN_DEFAULT) {
-            if (default_seen) {
-                fprintf(stderr, "error: duplicate default section in switch\n");
-                exit(1);
-            }
-            default_seen = 1;
-            parser_expect(parser, TOKEN_DEFAULT);
-            parser_expect(parser, TOKEN_COLON);
-            ASTNode *default_section = ast_new(AST_DEFAULT_SECTION, NULL);
-            while (parser->current.type != TOKEN_CASE &&
-                   parser->current.type != TOKEN_DEFAULT &&
-                   parser->current.type != TOKEN_RBRACE) {
-                ast_add_child(default_section, parse_statement(parser));
-            }
-            ast_add_child(switch_node, default_section);
-        } else {
-            parser_expect(parser, TOKEN_CASE); /* reports "expected token type" */
-        }
-    }
+    ASTNode *body = parse_statement(parser);
     parser->switch_depth--;
 
-    parser_expect(parser, TOKEN_RBRACE);
+    ast_add_child(switch_node, body);
 
     return switch_node;
 }
@@ -564,6 +528,30 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_SWITCH) {
         return parse_switch_statement(parser);
+    }
+    if (parser->current.type == TOKEN_CASE) {
+        if (parser->switch_depth == 0) {
+            fprintf(stderr, "error: 'case' label outside of switch\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        Token value = parser_expect(parser, TOKEN_INT_LITERAL);
+        parser_expect(parser, TOKEN_COLON);
+        ASTNode *node = ast_new(AST_CASE_SECTION, NULL);
+        ast_add_child(node, ast_new(AST_INT_LITERAL, value.value));
+        ast_add_child(node, parse_statement(parser));
+        return node;
+    }
+    if (parser->current.type == TOKEN_DEFAULT) {
+        if (parser->switch_depth == 0) {
+            fprintf(stderr, "error: 'default' label outside of switch\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        parser_expect(parser, TOKEN_COLON);
+        ASTNode *node = ast_new(AST_DEFAULT_SECTION, NULL);
+        ast_add_child(node, parse_statement(parser));
+        return node;
     }
     if (parser->current.type == TOKEN_LBRACE) {
         return parse_block(parser);
