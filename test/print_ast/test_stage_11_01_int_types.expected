@@ -1,0 +1,13 @@
+TranslationUnit:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: char c
+        IntLiteral: 1
+      VariableDeclaration: short s
+        IntLiteral: 2
+      VariableDeclaration: int i
+        IntLiteral: 3
+      VariableDeclaration: long l
+        IntLiteral: 4
+      ReturnStmt:
+        VariableExpression: i

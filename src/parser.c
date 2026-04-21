@@ -508,11 +508,22 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    /* declaration: "int" <identifier> [ "=" <expression> ] ";" */
-    if (parser->current.type == TOKEN_INT) {
+    /* declaration: <integer-type> <identifier> [ "=" <expression> ] ";" */
+    if (parser->current.type == TOKEN_CHAR ||
+        parser->current.type == TOKEN_SHORT ||
+        parser->current.type == TOKEN_INT ||
+        parser->current.type == TOKEN_LONG) {
+        TypeKind kind;
+        switch (parser->current.type) {
+        case TOKEN_CHAR:  kind = TYPE_CHAR;  break;
+        case TOKEN_SHORT: kind = TYPE_SHORT; break;
+        case TOKEN_LONG:  kind = TYPE_LONG;  break;
+        default:          kind = TYPE_INT;   break;
+        }
         parser->current = lexer_next_token(parser->lexer);
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         ASTNode *decl = ast_new(AST_DECLARATION, name.value);
+        decl->decl_type = kind;
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *init = parse_expression(parser);

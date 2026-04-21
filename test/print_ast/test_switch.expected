@@ -1,7 +1,7 @@
 TranslationUnit:
   FunctionDecl: main
     Block
-      VariableDeclaration: x
+      VariableDeclaration: int x
         IntLiteral: 0
       SwitchStmt:
         IntLiteral: 1

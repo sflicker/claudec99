@@ -11,6 +11,7 @@ add_executable(ccompiler
     src/codegen.c
     src/lexer.c
     src/parser.c
+    src/type.c
     src/util.c
 )
 

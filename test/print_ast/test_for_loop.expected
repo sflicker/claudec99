@@ -1,9 +1,9 @@
 TranslationUnit:
   FunctionDecl: main
     Block
-      VariableDeclaration: sum
+      VariableDeclaration: int sum
         IntLiteral: 0
-      VariableDeclaration: i
+      VariableDeclaration: int i
         IntLiteral: 0
       ForStmt:
         Assignment: i

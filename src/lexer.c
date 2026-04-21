@@ -101,6 +101,12 @@ Token lexer_next_token(Lexer *lexer) {
 
         if (strcmp(token.value, "int") == 0) {
             token.type = TOKEN_INT;
+        } else if (strcmp(token.value, "char") == 0) {
+            token.type = TOKEN_CHAR;
+        } else if (strcmp(token.value, "short") == 0) {
+            token.type = TOKEN_SHORT;
+        } else if (strcmp(token.value, "long") == 0) {
+            token.type = TOKEN_LONG;
         } else if (strcmp(token.value, "return") == 0) {
             token.type = TOKEN_RETURN;
         } else if (strcmp(token.value, "if") == 0) {

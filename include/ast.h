@@ -1,6 +1,8 @@
 #ifndef CCOMPILER_AST_H
 #define CCOMPILER_AST_H
 
+#include "type.h"
+
 typedef enum {
     AST_TRANSLATION_UNIT,
     AST_FUNCTION_DECL,
@@ -37,6 +39,7 @@ typedef struct ASTNode {
     char value[256];
     struct ASTNode *children[AST_MAX_CHILDREN];
     int child_count;
+    TypeKind decl_type;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);

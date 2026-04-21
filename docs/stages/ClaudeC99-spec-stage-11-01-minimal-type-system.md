@@ -44,7 +44,7 @@ and return types remain restricted to `int`.
 - New code modules should added in this stage to handle types although some will be stubs at this stage.
 - example type system code
 
-` 
+```
 typedef enum {
 TYPE_CHAR,
 TYPE_SHORT,
@@ -71,7 +71,7 @@ int type_size(Type *t);
 int type_alignment(Type *t);
 bool type_is_integer(Type *t);
 ... more added in future stages.
-`
+```
 
 ## Parser updates
 - The parser will handle the new `<integer-type>` in `<declaration>` and add type appropriate type information to AST nodes.

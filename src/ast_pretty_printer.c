@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "ast_pretty_printer.h"
+#include "type.h"
 
 static const char *operator_name(const char *op) {
     if (strcmp(op, "+") == 0)  return "ADD";
@@ -46,7 +47,8 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("Block\n");
         break;
     case AST_DECLARATION:
-        printf("VariableDeclaration: %s\n", node->value);
+        printf("VariableDeclaration: %s %s\n",
+               type_kind_name(node->decl_type), node->value);
         break;
     case AST_RETURN_STATEMENT:
         printf("ReturnStmt:\n");

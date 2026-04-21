@@ -1,7 +1,7 @@
 TranslationUnit:
   FunctionDecl: main
     Block
-      VariableDeclaration: a
+      VariableDeclaration: int a
         IntLiteral: 0
       DoWhileStmt:
         Block
