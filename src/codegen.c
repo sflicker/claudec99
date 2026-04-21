@@ -2,6 +2,55 @@
 #include <stdlib.h>
 #include <string.h>
 #include "codegen.h"
+#include "type.h"
+
+static int type_kind_bytes(TypeKind kind) {
+    switch (kind) {
+    case TYPE_CHAR:  return 1;
+    case TYPE_SHORT: return 2;
+    case TYPE_INT:   return 4;
+    case TYPE_LONG:  return 8;
+    }
+    return 4;
+}
+
+/*
+ * Emit a size-appropriate sign-extending load of a local into eax.
+ * For `long`, only the low 32 bits are read — arithmetic stays 32-bit
+ * in this stage (integer promotions and mixed-type rules are out of
+ * scope per the stage spec).
+ */
+static void emit_load_local(CodeGen *cg, int offset, int size) {
+    switch (size) {
+    case 1: fprintf(cg->output, "    movsx eax, byte [rbp - %d]\n", offset); break;
+    case 2: fprintf(cg->output, "    movsx eax, word [rbp - %d]\n", offset); break;
+    case 8: fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset); break;
+    case 4:
+    default:
+        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        break;
+    }
+}
+
+/*
+ * Store the current eax value into a local, truncating to the local's
+ * storage size. For `long`, sign-extend eax to rax first so the full
+ * 8-byte slot is written with a correct signed value.
+ */
+static void emit_store_local(CodeGen *cg, int offset, int size) {
+    switch (size) {
+    case 1: fprintf(cg->output, "    mov [rbp - %d], al\n", offset); break;
+    case 2: fprintf(cg->output, "    mov [rbp - %d], ax\n", offset); break;
+    case 8:
+        fprintf(cg->output, "    movsxd rax, eax\n");
+        fprintf(cg->output, "    mov [rbp - %d], rax\n", offset);
+        break;
+    case 4:
+    default:
+        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        break;
+    }
+}
 
 void codegen_init(CodeGen *cg, FILE *output) {
     cg->output = output;
@@ -108,31 +157,43 @@ static int switch_lookup_label(SwitchCtx *ctx, ASTNode *node) {
     return -1;
 }
 
-static int codegen_find_var(CodeGen *cg, const char *name) {
+static LocalVar *codegen_find_var(CodeGen *cg, const char *name) {
     /* Walk backward so the innermost (most recently declared) shadow wins. */
     for (int i = cg->local_count - 1; i >= 0; i--) {
         if (strcmp(cg->locals[i].name, name) == 0)
-            return cg->locals[i].offset;
+            return &cg->locals[i];
     }
-    return 0; /* not found (valid offsets start at 4) */
+    return NULL;
 }
 
-static int codegen_add_var(CodeGen *cg, const char *name) {
-    cg->stack_offset += 4;
+/*
+ * Allocate a local of `size` bytes. Stack grows down from rbp, so the
+ * variable's rbp-relative offset is advanced by `size` and then aligned
+ * up to a multiple of `size` (natural alignment for our integer types).
+ */
+static int codegen_add_var(CodeGen *cg, const char *name, int size) {
+    cg->stack_offset += size;
+    cg->stack_offset = (cg->stack_offset + size - 1) & ~(size - 1);
     strncpy(cg->locals[cg->local_count].name, name, 255);
     cg->locals[cg->local_count].name[255] = '\0';
     cg->locals[cg->local_count].offset = cg->stack_offset;
+    cg->locals[cg->local_count].size = size;
     cg->local_count++;
     return cg->stack_offset;
 }
 
-static int count_declarations(ASTNode *node) {
+/*
+ * Conservative upper bound on stack bytes needed for locals: 8 bytes
+ * per declaration (largest supported integer type plus worst-case
+ * alignment padding). The prologue rounds this up to 16.
+ */
+static int compute_decl_bytes(ASTNode *node) {
     if (!node) return 0;
-    int count = (node->type == AST_DECLARATION) ? 1 : 0;
+    int total = (node->type == AST_DECLARATION) ? 8 : 0;
     for (int i = 0; i < node->child_count; i++) {
-        count += count_declarations(node->children[i]);
+        total += compute_decl_bytes(node->children[i]);
     }
-    return count;
+    return total;
 }
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
@@ -141,22 +202,22 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_VAR_REF) {
-        int offset = codegen_find_var(cg, node->value);
-        if (offset == 0) {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
-        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        emit_load_local(cg, lv->offset, lv->size);
         return;
     }
     if (node->type == AST_ASSIGNMENT) {
-        int offset = codegen_find_var(cg, node->value);
-        if (offset == 0) {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
-        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        emit_store_local(cg, lv->offset, lv->size);
         return;
     }
     if (node->type == AST_UNARY_OP) {
@@ -175,37 +236,37 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_PREFIX_INC_DEC) {
         /* ++x or --x: update variable, result is new value */
         const char *var_name = node->children[0]->value;
-        int offset = codegen_find_var(cg, var_name);
-        if (offset == 0) {
+        LocalVar *lv = codegen_find_var(cg, var_name);
+        if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
             exit(1);
         }
-        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        emit_load_local(cg, lv->offset, lv->size);
         if (strcmp(node->value, "++") == 0) {
             fprintf(cg->output, "    add eax, 1\n");
         } else {
             fprintf(cg->output, "    sub eax, 1\n");
         }
-        fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+        emit_store_local(cg, lv->offset, lv->size);
         return;
     }
     if (node->type == AST_POSTFIX_INC_DEC) {
         /* x++ or x--: result is old value, then update variable */
         const char *var_name = node->children[0]->value;
-        int offset = codegen_find_var(cg, var_name);
-        if (offset == 0) {
+        LocalVar *lv = codegen_find_var(cg, var_name);
+        if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
             exit(1);
         }
-        fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
+        emit_load_local(cg, lv->offset, lv->size);
         fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
         if (strcmp(node->value, "++") == 0) {
-            fprintf(cg->output, "    add ecx, 1\n");
+            fprintf(cg->output, "    add eax, 1\n");
         } else {
-            fprintf(cg->output, "    sub ecx, 1\n");
+            fprintf(cg->output, "    sub eax, 1\n");
         }
-        fprintf(cg->output, "    mov [rbp - %d], ecx\n", offset);
-        /* eax still holds the old value */
+        emit_store_local(cg, lv->offset, lv->size);
+        fprintf(cg->output, "    mov eax, ecx\n");  /* restore old value as result */
         return;
     }
     if (node->type == AST_FUNCTION_CALL) {
@@ -318,10 +379,11 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 exit(1);
             }
         }
-        int offset = codegen_add_var(cg, node->value);
+        int size = type_kind_bytes(node->decl_type);
+        int offset = codegen_add_var(cg, node->value, size);
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
-            fprintf(cg->output, "    mov [rbp - %d], eax\n", offset);
+            emit_store_local(cg, offset, size);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);
@@ -560,17 +622,17 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Pre-walk the body to collect user labels; rejects duplicates. */
         collect_user_labels(cg, body);
 
-        /* Compute stack space: one slot per parameter plus each declaration in the body. */
-        int num_vars = count_declarations(body);
-        int total_slots = num_params + num_vars;
-        int stack_size = total_slots * 4;
+        /* Compute stack space: 4 bytes per (int-only) parameter plus a
+         * conservative 8-byte upper bound per body declaration. Rounded
+         * up to a 16-byte multiple. */
+        int stack_size = num_params * 4 + compute_decl_bytes(body);
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
         /* Function label and prologue */
         fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
-        cg->has_frame = (total_slots > 0);
+        cg->has_frame = (stack_size > 0);
         if (cg->has_frame) {
             fprintf(cg->output, "    push rbp\n");
             fprintf(cg->output, "    mov rbp, rsp\n");
@@ -587,7 +649,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             "edi", "esi", "edx", "ecx", "r8d", "r9d"
         };
         for (int i = 0; i < num_params; i++) {
-            int offset = codegen_add_var(cg, node->children[i]->value);
+            int offset = codegen_add_var(cg, node->children[i]->value, 4);
             fprintf(cg->output, "    mov [rbp - %d], %s\n",
                     offset, param_regs[i]);
         }

@@ -13,6 +13,7 @@
 typedef struct {
     char name[256];
     int offset;
+    int size;
 } LocalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set
