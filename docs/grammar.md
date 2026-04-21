@@ -39,13 +39,15 @@
 
 <switch_statement> ::= "switch" "(" <expression> ")" <statement>
 
-<labeled_statement> ::= "case" <constant_expression> ":" <statement>
+<labeled_statement> ::= <identifier> ":" <statement>
+                      | "case" <constant_expression> ":" <statement>
                       | "default" ":" <statement>
 
 <constant_expression> ::= <integer_literal>
 
 <jump_statement> ::= "continue" ";"
                     | "break" ";"
+                    | "goto" <identifier> ";"
 
 <expression_statement> ::= <expression> ";"
 

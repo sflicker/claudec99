@@ -108,6 +108,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_CONTINUE_STATEMENT:
         printf("ContinueStmt\n");
         break;
+    case AST_GOTO_STATEMENT:
+        printf("GotoStmt: %s\n", node->value);
+        break;
+    case AST_LABEL_STATEMENT:
+        printf("LabelStmt: %s\n", node->value);
+        break;
     case AST_PREFIX_INC_DEC:
         printf("PrefixIncDec: %s\n", operator_name(node->value));
         break;

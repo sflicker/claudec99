@@ -20,8 +20,9 @@
 ** Grammar updates
 ```ebnf
 UPDATE:
-    <labeled_statement> ::= <identifier> ":" <statement
-                      | "case" <constant_expression> ":" <statement>
+    <labeled_statement> ::= <identifier> ":" <statement>
+                      | "case" <constant_expression> ":"
+                       <statement>
                       | "default" ":" <statement>
 
     <jump_statement> ::= "continue" ";"

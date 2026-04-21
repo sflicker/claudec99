@@ -13,6 +13,45 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->has_frame = 0;
     cg->break_depth = 0;
     cg->switch_depth = 0;
+    cg->user_label_count = 0;
+    cg->current_func = NULL;
+}
+
+/*
+ * Walk a function body collecting every AST_LABEL_STATEMENT node's
+ * name into the per-function user-label table. Duplicate labels
+ * within the same function are rejected here; `goto` resolution
+ * against the completed table happens during emission.
+ */
+static void collect_user_labels(CodeGen *cg, ASTNode *node) {
+    if (!node) return;
+    if (node->type == AST_LABEL_STATEMENT) {
+        for (int i = 0; i < cg->user_label_count; i++) {
+            if (strcmp(cg->user_labels[i], node->value) == 0) {
+                fprintf(stderr, "error: duplicate label '%s' in function '%s'\n",
+                        node->value, cg->current_func);
+                exit(1);
+            }
+        }
+        if (cg->user_label_count >= MAX_USER_LABELS) {
+            fprintf(stderr, "error: too many labels in function '%s' (max %d)\n",
+                    cg->current_func, MAX_USER_LABELS);
+            exit(1);
+        }
+        strncpy(cg->user_labels[cg->user_label_count], node->value, 255);
+        cg->user_labels[cg->user_label_count][255] = '\0';
+        cg->user_label_count++;
+    }
+    for (int i = 0; i < node->child_count; i++) {
+        collect_user_labels(cg, node->children[i]);
+    }
+}
+
+static int user_label_defined(CodeGen *cg, const char *name) {
+    for (int i = 0; i < cg->user_label_count; i++) {
+        if (strcmp(cg->user_labels[i], name) == 0) return 1;
+    }
+    return 0;
 }
 
 /*
@@ -444,6 +483,19 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         if (node->child_count > 0) {
             codegen_statement(cg, node->children[0], is_main);
         }
+    } else if (node->type == AST_LABEL_STATEMENT) {
+        fprintf(cg->output, ".L_usr_%s_%s:\n", cg->current_func, node->value);
+        if (node->child_count > 0) {
+            codegen_statement(cg, node->children[0], is_main);
+        }
+    } else if (node->type == AST_GOTO_STATEMENT) {
+        if (!user_label_defined(cg, node->value)) {
+            fprintf(stderr, "error: undefined label '%s' in function '%s'\n",
+                    node->value, cg->current_func);
+            exit(1);
+        }
+        fprintf(cg->output, "    jmp .L_usr_%s_%s\n",
+                cg->current_func, node->value);
     } else if (node->type == AST_BREAK_STATEMENT) {
         int id = cg->break_stack[cg->break_depth - 1].break_label;
         fprintf(cg->output, "    jmp .L_break_%d\n", id);
@@ -502,6 +554,11 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->stack_offset = 0;
         cg->scope_start = 0;
         cg->push_depth = 0;
+        cg->user_label_count = 0;
+        cg->current_func = node->value;
+
+        /* Pre-walk the body to collect user labels; rejects duplicates. */
+        collect_user_labels(cg, body);
 
         /* Compute stack space: one slot per parameter plus each declaration in the body. */
         int num_vars = count_declarations(body);

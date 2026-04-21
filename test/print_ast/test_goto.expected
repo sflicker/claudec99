@@ -1,0 +1,20 @@
+TranslationUnit:
+  FunctionDecl: main
+    Block
+      VariableDeclaration: a
+        IntLiteral: 0
+      LabelStmt: start
+        ExpressionStatement
+          Assignment: a
+            Binary: ADD
+              VariableExpression: a
+              IntLiteral: 1
+      IfStmt:
+        Binary: EQUAL
+          VariableExpression: a
+          IntLiteral: 3
+        GotoStmt: done
+      GotoStmt: start
+      LabelStmt: done
+        ReturnStmt:
+          VariableExpression: a

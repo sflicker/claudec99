@@ -8,6 +8,7 @@
 #define MAX_BREAK_DEPTH 32
 #define MAX_SWITCH_DEPTH 16
 #define MAX_SWITCH_LABELS 64
+#define MAX_USER_LABELS 64
 
 typedef struct {
     char name[256];
@@ -48,6 +49,13 @@ typedef struct {
     int break_depth;
     SwitchCtx switch_stack[MAX_SWITCH_DEPTH];
     int switch_depth;
+    /* Per-function user label table (populated by a pre-walk before
+     * body emission; used to reject duplicates and missing goto
+     * targets). Assembly names are prefixed by `current_func` so
+     * reused label names in different functions never collide. */
+    char user_labels[MAX_USER_LABELS][256];
+    int user_label_count;
+    const char *current_func;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

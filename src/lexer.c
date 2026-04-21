@@ -102,6 +102,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_DEFAULT;
         } else if (strcmp(token.value, "case") == 0) {
             token.type = TOKEN_CASE;
+        } else if (strcmp(token.value, "goto") == 0) {
+            token.type = TOKEN_GOTO;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }

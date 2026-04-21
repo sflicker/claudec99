@@ -493,6 +493,21 @@ static ASTNode *parse_switch_statement(Parser *parser) {
  *               | <expression_stmt>
  */
 static ASTNode *parse_statement(Parser *parser) {
+    /* labeled_statement: <identifier> ":" <statement> */
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        int saved_pos = parser->lexer->pos;
+        Token saved_token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_COLON) {
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *node = ast_new(AST_LABEL_STATEMENT, saved_token.value);
+            ast_add_child(node, parse_statement(parser));
+            return node;
+        }
+        /* Not a label — restore lexer state */
+        parser->lexer->pos = saved_pos;
+        parser->current = saved_token;
+    }
     /* declaration: "int" <identifier> [ "=" <expression> ] ";" */
     if (parser->current.type == TOKEN_INT) {
         parser->current = lexer_next_token(parser->lexer);
@@ -573,6 +588,12 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_SEMICOLON);
         return ast_new(AST_CONTINUE_STATEMENT, NULL);
+    }
+    if (parser->current.type == TOKEN_GOTO) {
+        parser->current = lexer_next_token(parser->lexer);
+        Token name = parser_expect(parser, TOKEN_IDENTIFIER);
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return ast_new(AST_GOTO_STATEMENT, name.value);
     }
     /* expression_stmt (includes assignments, since assignment is now an expression) */
     ASTNode *expr = parse_expression(parser);
