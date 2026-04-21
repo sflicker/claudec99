@@ -9,8 +9,29 @@ void lexer_init(Lexer *lexer, const char *source) {
 }
 
 static void lexer_skip_whitespace(Lexer *lexer) {
-    while (lexer->source[lexer->pos] && isspace(lexer->source[lexer->pos])) {
-        lexer->pos++;
+    for (;;) {
+        while (lexer->source[lexer->pos] && isspace(lexer->source[lexer->pos])) {
+            lexer->pos++;
+        }
+        if (lexer->source[lexer->pos] == '/' && lexer->source[lexer->pos + 1] == '/') {
+            lexer->pos += 2;
+            while (lexer->source[lexer->pos] && lexer->source[lexer->pos] != '\n') {
+                lexer->pos++;
+            }
+            continue;
+        }
+        if (lexer->source[lexer->pos] == '/' && lexer->source[lexer->pos + 1] == '*') {
+            lexer->pos += 2;
+            while (lexer->source[lexer->pos] &&
+                   !(lexer->source[lexer->pos] == '*' && lexer->source[lexer->pos + 1] == '/')) {
+                lexer->pos++;
+            }
+            if (lexer->source[lexer->pos] == '*' && lexer->source[lexer->pos + 1] == '/') {
+                lexer->pos += 2;
+            }
+            continue;
+        }
+        break;
     }
 }
 
