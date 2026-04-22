@@ -320,7 +320,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             }
             node->result_type = ot;
         } else if (strcmp(op, "!") == 0) {
-            fprintf(cg->output, "    cmp eax, 0\n");
+            if (node->children[0]->result_type == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rax, 0\n");
+            } else {
+                fprintf(cg->output, "    cmp eax, 0\n");
+            }
             fprintf(cg->output, "    sete al\n");
             fprintf(cg->output, "    movzx eax, al\n");
             node->result_type = TYPE_INT;
@@ -405,10 +409,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (strcmp(bop, "&&") == 0) {
             int label_id = cg->label_count++;
             codegen_expression(cg, node->children[0]);
-            fprintf(cg->output, "    cmp eax, 0\n");
+            if (node->children[0]->result_type == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rax, 0\n");
+            } else {
+                fprintf(cg->output, "    cmp eax, 0\n");
+            }
             fprintf(cg->output, "    je .L_and_false_%d\n", label_id);
             codegen_expression(cg, node->children[1]);
-            fprintf(cg->output, "    cmp eax, 0\n");
+            if (node->children[1]->result_type == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rax, 0\n");
+            } else {
+                fprintf(cg->output, "    cmp eax, 0\n");
+            }
             fprintf(cg->output, "    setne al\n");
             fprintf(cg->output, "    movzx eax, al\n");
             fprintf(cg->output, "    jmp .L_and_end_%d\n", label_id);
@@ -421,10 +433,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (strcmp(bop, "||") == 0) {
             int label_id = cg->label_count++;
             codegen_expression(cg, node->children[0]);
-            fprintf(cg->output, "    cmp eax, 0\n");
+            if (node->children[0]->result_type == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rax, 0\n");
+            } else {
+                fprintf(cg->output, "    cmp eax, 0\n");
+            }
             fprintf(cg->output, "    jne .L_or_true_%d\n", label_id);
             codegen_expression(cg, node->children[1]);
-            fprintf(cg->output, "    cmp eax, 0\n");
+            if (node->children[1]->result_type == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rax, 0\n");
+            } else {
+                fprintf(cg->output, "    cmp eax, 0\n");
+            }
             fprintf(cg->output, "    setne al\n");
             fprintf(cg->output, "    movzx eax, al\n");
             fprintf(cg->output, "    jmp .L_or_end_%d\n", label_id);
@@ -437,11 +457,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         const char *op = node->value;
         int is_arith = (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
                         strcmp(op, "*") == 0 || strcmp(op, "/") == 0);
-        /* For arithmetic operators, select a common type after promotion.
-         * If the common type is long, both operands must live in the full
-         * rax before the op — sign-extend int-sized sides with movsxd. */
+        int is_cmp = (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+                      strcmp(op, "<")  == 0 || strcmp(op, "<=") == 0 ||
+                      strcmp(op, ">")  == 0 || strcmp(op, ">=") == 0);
+        /* For arithmetic and comparison operators, select a common type
+         * after promotion. If the common type is long, both operands must
+         * live in the full rax before the op — sign-extend int-sized
+         * sides with movsxd. */
         TypeKind common = TYPE_INT;
-        if (is_arith) {
+        if (is_arith || is_cmp) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             common = common_arith_kind(lt, rt);
@@ -449,7 +473,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
 
         /* Evaluate left into rax/eax */
         codegen_expression(cg, node->children[0]);
-        if (is_arith && common == TYPE_LONG &&
+        if ((is_arith || is_cmp) && common == TYPE_LONG &&
             node->children[0]->result_type != TYPE_LONG) {
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
@@ -457,7 +481,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         cg->push_depth++;
         /* Evaluate right into rax/eax */
         codegen_expression(cg, node->children[1]);
-        if (is_arith && common == TYPE_LONG &&
+        if ((is_arith || is_cmp) && common == TYPE_LONG &&
             node->children[1]->result_type != TYPE_LONG) {
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
@@ -501,7 +525,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    idiv ecx\n");
             node->result_type = TYPE_INT;
         } else {
-            /* Comparisons: compare ecx (left) with eax (right), set al, zero-extend */
+            /* Comparisons: compare left (rcx/ecx) with right (rax/eax),
+             * using the width of the common type after promotion. Result
+             * is a normalized 0/1 in eax of type int. */
             const char *setcc = NULL;
             if      (strcmp(op, "==") == 0) setcc = "sete";
             else if (strcmp(op, "!=") == 0) setcc = "setne";
@@ -509,12 +535,29 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             else if (strcmp(op, "<=") == 0) setcc = "setle";
             else if (strcmp(op, ">")  == 0) setcc = "setg";
             else if (strcmp(op, ">=") == 0) setcc = "setge";
-            fprintf(cg->output, "    cmp ecx, eax\n");
+            if (common == TYPE_LONG) {
+                fprintf(cg->output, "    cmp rcx, rax\n");
+            } else {
+                fprintf(cg->output, "    cmp ecx, eax\n");
+            }
             fprintf(cg->output, "    %s al\n", setcc);
             fprintf(cg->output, "    movzx eax, al\n");
             node->result_type = TYPE_INT;
         }
         return;
+    }
+}
+
+/*
+ * Emit a zero-compare on the result register using the width of
+ * `cond`'s result type, so long-typed conditions test all 64 bits
+ * instead of just the low 32.
+ */
+static void emit_cond_cmp_zero(CodeGen *cg, ASTNode *cond) {
+    if (cond && cond->result_type == TYPE_LONG) {
+        fprintf(cg->output, "    cmp rax, 0\n");
+    } else {
+        fprintf(cg->output, "    cmp eax, 0\n");
     }
 }
 
@@ -550,7 +593,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
     } else if (node->type == AST_IF_STATEMENT) {
         int label_id = cg->label_count++;
         codegen_expression(cg, node->children[0]);
-        fprintf(cg->output, "    cmp eax, 0\n");
+        emit_cond_cmp_zero(cg, node->children[0]);
         if (node->child_count == 3) {
             /* if/else */
             fprintf(cg->output, "    je .L_else_%d\n", label_id);
@@ -573,7 +616,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_while_start_%d:\n", label_id);
         fprintf(cg->output, ".L_continue_%d:\n", label_id);
         codegen_expression(cg, node->children[0]);
-        fprintf(cg->output, "    cmp eax, 0\n");
+        emit_cond_cmp_zero(cg, node->children[0]);
         fprintf(cg->output, "    je .L_while_end_%d\n", label_id);
         codegen_statement(cg, node->children[1], is_main);
         fprintf(cg->output, "    jmp .L_while_start_%d\n", label_id);
@@ -591,7 +634,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         codegen_statement(cg, node->children[0], is_main);
         fprintf(cg->output, ".L_continue_%d:\n", label_id);
         codegen_expression(cg, node->children[1]);
-        fprintf(cg->output, "    cmp eax, 0\n");
+        emit_cond_cmp_zero(cg, node->children[1]);
         fprintf(cg->output, "    jne .L_do_start_%d\n", label_id);
         fprintf(cg->output, ".L_do_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
@@ -608,7 +651,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_for_start_%d:\n", label_id);
         if (node->children[1]) {
             codegen_expression(cg, node->children[1]);
-            fprintf(cg->output, "    cmp eax, 0\n");
+            emit_cond_cmp_zero(cg, node->children[1]);
             fprintf(cg->output, "    je .L_for_end_%d\n", label_id);
         }
         codegen_statement(cg, node->children[3], is_main);
