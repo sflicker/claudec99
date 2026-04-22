@@ -15,16 +15,16 @@ static int type_kind_bytes(TypeKind kind) {
 }
 
 /*
- * Emit a size-appropriate sign-extending load of a local into eax.
- * For `long`, only the low 32 bits are read — arithmetic stays 32-bit
- * in this stage (integer promotions and mixed-type rules are out of
- * scope per the stage spec).
+ * Emit a size-appropriate load of a local into rax/eax.
+ * char/short sign-extend into eax (implicit zero-extend into rax);
+ * int loads into eax (implicit zero-extend into rax); long loads
+ * the full 8-byte slot into rax.
  */
 static void emit_load_local(CodeGen *cg, int offset, int size) {
     switch (size) {
     case 1: fprintf(cg->output, "    movsx eax, byte [rbp - %d]\n", offset); break;
     case 2: fprintf(cg->output, "    movsx eax, word [rbp - %d]\n", offset); break;
-    case 8: fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset); break;
+    case 8: fprintf(cg->output, "    mov rax, [rbp - %d]\n", offset); break;
     case 4:
     default:
         fprintf(cg->output, "    mov eax, [rbp - %d]\n", offset);
@@ -33,16 +33,21 @@ static void emit_load_local(CodeGen *cg, int offset, int size) {
 }
 
 /*
- * Store the current eax value into a local, truncating to the local's
- * storage size. For `long`, sign-extend eax to rax first so the full
- * 8-byte slot is written with a correct signed value.
+ * Store the current value into a local, truncating to the local's
+ * storage size. `src_is_long` tells the helper whether the value is
+ * already in the full rax (src_is_long=1) or only in eax as a 32-bit
+ * int (src_is_long=0). For an 8-byte destination with a 32-bit source
+ * the value is sign-extended via movsxd before the store so the full
+ * slot is written with a correct signed value.
  */
-static void emit_store_local(CodeGen *cg, int offset, int size) {
+static void emit_store_local(CodeGen *cg, int offset, int size, int src_is_long) {
     switch (size) {
     case 1: fprintf(cg->output, "    mov [rbp - %d], al\n", offset); break;
     case 2: fprintf(cg->output, "    mov [rbp - %d], ax\n", offset); break;
     case 8:
-        fprintf(cg->output, "    movsxd rax, eax\n");
+        if (!src_is_long) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
         fprintf(cg->output, "    mov [rbp - %d], rax\n", offset);
         break;
     case 4:
@@ -196,8 +201,88 @@ static int compute_decl_bytes(ASTNode *node) {
     return total;
 }
 
+/*
+ * Integer promotion: char/short are promoted to int for use in
+ * arithmetic. int and long stay as-is. Stage 11-03: signed only.
+ */
+static TypeKind promote_kind(TypeKind t) {
+    return (t == TYPE_LONG) ? TYPE_LONG : TYPE_INT;
+}
+
+/*
+ * Common integer type for a binary arithmetic operator (after
+ * promotion). Any long operand makes the result long; otherwise int.
+ */
+static TypeKind common_arith_kind(TypeKind a, TypeKind b) {
+    if (promote_kind(a) == TYPE_LONG || promote_kind(b) == TYPE_LONG) {
+        return TYPE_LONG;
+    }
+    return TYPE_INT;
+}
+
+/*
+ * Map a local's storage size to its post-promotion type. A size-8
+ * local is long; any smaller size promotes to int when used in an
+ * expression (sign-extended on load).
+ */
+static TypeKind type_kind_from_size(int size) {
+    return (size == 8) ? TYPE_LONG : TYPE_INT;
+}
+
+/*
+ * Compute the result type of an expression and record it on the node.
+ * Stage 11-03 tracks this for the operators brought into scope:
+ * literals, identifiers, unary +/-, binary +/-/·//, and assignment.
+ * Operators that remain 32-bit in this stage (comparisons, logical,
+ * inc/dec, calls) report TYPE_INT so callers keep the 32-bit path.
+ */
+static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
+    if (!node) return TYPE_INT;
+    TypeKind t = TYPE_INT;
+    switch (node->type) {
+    case AST_INT_LITERAL:
+        t = TYPE_INT;
+        break;
+    case AST_VAR_REF: {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        t = lv ? promote_kind(type_kind_from_size(lv->size)) : TYPE_INT;
+        break;
+    }
+    case AST_UNARY_OP:
+        if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) {
+            t = promote_kind(expr_result_type(cg, node->children[0]));
+        } else {
+            t = TYPE_INT; /* ! stays 32-bit */
+        }
+        break;
+    case AST_BINARY_OP: {
+        const char *op = node->value;
+        if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+            strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
+            TypeKind lt = expr_result_type(cg, node->children[0]);
+            TypeKind rt = expr_result_type(cg, node->children[1]);
+            t = common_arith_kind(lt, rt);
+        } else {
+            t = TYPE_INT; /* comparisons, && , || stay 32-bit */
+        }
+        break;
+    }
+    case AST_ASSIGNMENT: {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        t = lv ? type_kind_from_size(lv->size) : TYPE_INT;
+        break;
+    }
+    default:
+        t = TYPE_INT;
+        break;
+    }
+    node->result_type = t;
+    return t;
+}
+
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
+        node->result_type = TYPE_INT;
         fprintf(cg->output, "    mov eax, %s\n", node->value);
         return;
     }
@@ -207,6 +292,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
+        node->result_type = promote_kind(type_kind_from_size(lv->size));
         emit_load_local(cg, lv->offset, lv->size);
         return;
     }
@@ -217,24 +303,37 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
-        emit_store_local(cg, lv->offset, lv->size);
+        int rhs_is_long = (node->children[0]->result_type == TYPE_LONG);
+        emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
+        node->result_type = type_kind_from_size(lv->size);
         return;
     }
     if (node->type == AST_UNARY_OP) {
         codegen_expression(cg, node->children[0]);
         const char *op = node->value;
         if (strcmp(op, "-") == 0) {
-            fprintf(cg->output, "    neg eax\n");
+            TypeKind ot = promote_kind(node->children[0]->result_type);
+            if (ot == TYPE_LONG) {
+                fprintf(cg->output, "    neg rax\n");
+            } else {
+                fprintf(cg->output, "    neg eax\n");
+            }
+            node->result_type = ot;
         } else if (strcmp(op, "!") == 0) {
             fprintf(cg->output, "    cmp eax, 0\n");
             fprintf(cg->output, "    sete al\n");
             fprintf(cg->output, "    movzx eax, al\n");
+            node->result_type = TYPE_INT;
+        } else {
+            /* unary + is a no-op; promoted type propagates */
+            node->result_type = promote_kind(node->children[0]->result_type);
         }
-        /* unary + is a no-op */
         return;
     }
     if (node->type == AST_PREFIX_INC_DEC) {
-        /* ++x or --x: update variable, result is new value */
+        /* ++x or --x: update variable, result is new value. Arithmetic
+         * stays 32-bit this stage; size-aware store/load preserves the
+         * declared width. */
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (!lv) {
@@ -247,7 +346,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else {
             fprintf(cg->output, "    sub eax, 1\n");
         }
-        emit_store_local(cg, lv->offset, lv->size);
+        emit_store_local(cg, lv->offset, lv->size, 0);
+        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_POSTFIX_INC_DEC) {
@@ -265,8 +365,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else {
             fprintf(cg->output, "    sub eax, 1\n");
         }
-        emit_store_local(cg, lv->offset, lv->size);
+        emit_store_local(cg, lv->offset, lv->size, 0);
         fprintf(cg->output, "    mov eax, ecx\n");  /* restore old value as result */
+        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_FUNCTION_CALL) {
@@ -295,6 +396,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (needs_pad) {
             fprintf(cg->output, "    add rsp, 8\n");
         }
+        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_BINARY_OP) {
@@ -313,6 +415,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, ".L_and_false_%d:\n", label_id);
             fprintf(cg->output, "    mov eax, 0\n");
             fprintf(cg->output, ".L_and_end_%d:\n", label_id);
+            node->result_type = TYPE_INT;
             return;
         }
         if (strcmp(bop, "||") == 0) {
@@ -328,31 +431,75 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, ".L_or_true_%d:\n", label_id);
             fprintf(cg->output, "    mov eax, 1\n");
             fprintf(cg->output, ".L_or_end_%d:\n", label_id);
+            node->result_type = TYPE_INT;
             return;
         }
-        /* Evaluate left into eax, push it */
+        const char *op = node->value;
+        int is_arith = (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+                        strcmp(op, "*") == 0 || strcmp(op, "/") == 0);
+        /* For arithmetic operators, select a common type after promotion.
+         * If the common type is long, both operands must live in the full
+         * rax before the op — sign-extend int-sized sides with movsxd. */
+        TypeKind common = TYPE_INT;
+        if (is_arith) {
+            TypeKind lt = expr_result_type(cg, node->children[0]);
+            TypeKind rt = expr_result_type(cg, node->children[1]);
+            common = common_arith_kind(lt, rt);
+        }
+
+        /* Evaluate left into rax/eax */
         codegen_expression(cg, node->children[0]);
+        if (is_arith && common == TYPE_LONG &&
+            node->children[0]->result_type != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
-        /* Evaluate right into eax */
+        /* Evaluate right into rax/eax */
         codegen_expression(cg, node->children[1]);
-        /* Pop left into ecx; now ecx=left, eax=right */
+        if (is_arith && common == TYPE_LONG &&
+            node->children[1]->result_type != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        /* Pop left into rcx; now rcx=left, rax=right */
         fprintf(cg->output, "    pop rcx\n");
         cg->push_depth--;
-        const char *op = node->value;
+
+        if (is_arith && common == TYPE_LONG) {
+            if (strcmp(op, "+") == 0) {
+                fprintf(cg->output, "    add rax, rcx\n");
+            } else if (strcmp(op, "-") == 0) {
+                /* left - right: rcx - rax */
+                fprintf(cg->output, "    sub rcx, rax\n");
+                fprintf(cg->output, "    mov rax, rcx\n");
+            } else if (strcmp(op, "*") == 0) {
+                fprintf(cg->output, "    imul rax, rcx\n");
+            } else { /* "/" */
+                /* left / right: rcx / rax */
+                fprintf(cg->output, "    xchg rax, rcx\n");
+                fprintf(cg->output, "    cqo\n");
+                fprintf(cg->output, "    idiv rcx\n");
+            }
+            node->result_type = TYPE_LONG;
+            return;
+        }
         if (strcmp(op, "+") == 0) {
             fprintf(cg->output, "    add eax, ecx\n");
+            node->result_type = TYPE_INT;
         } else if (strcmp(op, "-") == 0) {
             /* left - right: ecx - eax */
             fprintf(cg->output, "    sub ecx, eax\n");
             fprintf(cg->output, "    mov eax, ecx\n");
+            node->result_type = TYPE_INT;
         } else if (strcmp(op, "*") == 0) {
             fprintf(cg->output, "    imul eax, ecx\n");
+            node->result_type = TYPE_INT;
         } else if (strcmp(op, "/") == 0) {
             /* left / right: ecx / eax */
             fprintf(cg->output, "    xchg eax, ecx\n");
             fprintf(cg->output, "    cdq\n");
             fprintf(cg->output, "    idiv ecx\n");
+            node->result_type = TYPE_INT;
         } else {
             /* Comparisons: compare ecx (left) with eax (right), set al, zero-extend */
             const char *setcc = NULL;
@@ -365,6 +512,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    cmp ecx, eax\n");
             fprintf(cg->output, "    %s al\n", setcc);
             fprintf(cg->output, "    movzx eax, al\n");
+            node->result_type = TYPE_INT;
         }
         return;
     }
@@ -383,7 +531,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         int offset = codegen_add_var(cg, node->value, size);
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
-            emit_store_local(cg, offset, size);
+            int rhs_is_long = (node->children[0]->result_type == TYPE_LONG);
+            emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);

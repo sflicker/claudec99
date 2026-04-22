@@ -40,6 +40,7 @@ typedef struct ASTNode {
     struct ASTNode *children[AST_MAX_CHILDREN];
     int child_count;
     TypeKind decl_type;
+    TypeKind result_type;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);
