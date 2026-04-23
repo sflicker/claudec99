@@ -5,11 +5,11 @@
 
 <external-declaration> ::= <function>
 
-<function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" ( <block_statement> | ";" )
+<function> ::= <integer_type> <identifier> "(" [ <parameter_list> ] ")" ( <block_statement> | ";" )
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
-<parameter_declaration> ::= "int" <identifier>
+<parameter_declaration> ::= <integer_type> <identifier>
 
 <block_statement> ::= "{" { <statement> } "}"
 

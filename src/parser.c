@@ -615,12 +615,36 @@ static ASTNode *parse_statement(Parser *parser) {
 }
 
 /*
- * <parameter_declaration> ::= "int" <identifier>
+ * <integer_type> ::= "char" | "short" | "int" | "long"
+ *
+ * Consumes the current integer-type token and returns the corresponding
+ * TypeKind. Exits with an error if the current token is not one.
+ */
+static TypeKind parser_expect_integer_type(Parser *parser) {
+    TypeKind kind;
+    switch (parser->current.type) {
+    case TOKEN_CHAR:  kind = TYPE_CHAR;  break;
+    case TOKEN_SHORT: kind = TYPE_SHORT; break;
+    case TOKEN_INT:   kind = TYPE_INT;   break;
+    case TOKEN_LONG:  kind = TYPE_LONG;  break;
+    default:
+        fprintf(stderr, "error: expected integer type, got '%s'\n",
+                parser->current.value);
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer);
+    return kind;
+}
+
+/*
+ * <parameter_declaration> ::= <integer_type> <identifier>
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
-    parser_expect(parser, TOKEN_INT);
+    TypeKind kind = parser_expect_integer_type(parser);
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-    return ast_new(AST_PARAM, name.value);
+    ASTNode *param = ast_new(AST_PARAM, name.value);
+    param->decl_type = kind;
+    return param;
 }
 
 /*
@@ -649,16 +673,18 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function> ::= "int" <identifier> "(" [ <parameter_list> ] ")" ( <block> | ";" )
+ * <function> ::= <integer_type> <identifier> "(" [ <parameter_list> ] ")"
+ *                ( <block> | ";" )
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
  * (no AST_BLOCK).
  */
 static ASTNode *parse_function_decl(Parser *parser) {
-    parser_expect(parser, TOKEN_INT);
+    TypeKind return_kind = parser_expect_integer_type(parser);
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
+    func->decl_type = return_kind;
 
     parser_expect(parser, TOKEN_LPAREN);
     if (parser->current.type != TOKEN_RPAREN) {

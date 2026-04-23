@@ -1,13 +1,13 @@
 TranslationUnit:
-  FunctionDecl: add
-    Parameter: a
-    Parameter: b
+  FunctionDecl: int add
+    Parameter: int a
+    Parameter: int b
     Block
       ReturnStmt:
         Binary: ADD
           VariableExpression: a
           VariableExpression: b
-  FunctionDecl: main
+  FunctionDecl: int main
     Block
       ReturnStmt:
         FunctionCall: add

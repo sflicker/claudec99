@@ -38,10 +38,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("TranslationUnit:\n");
         break;
     case AST_FUNCTION_DECL:
-        printf("FunctionDecl: %s\n", node->value);
+        printf("FunctionDecl: %s %s\n",
+               type_kind_name(node->decl_type), node->value);
         break;
     case AST_PARAM:
-        printf("Parameter: %s\n", node->value);
+        printf("Parameter: %s %s\n",
+               type_kind_name(node->decl_type), node->value);
         break;
     case AST_BLOCK:
         printf("Block\n");

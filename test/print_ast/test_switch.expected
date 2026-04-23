@@ -1,5 +1,5 @@
 TranslationUnit:
-  FunctionDecl: main
+  FunctionDecl: int main
     Block
       VariableDeclaration: int x
         IntLiteral: 0

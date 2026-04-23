@@ -1,0 +1,23 @@
+TranslationUnit:
+  FunctionDecl: long sum
+    Parameter: char a
+    Parameter: short b
+  FunctionDecl: long sum
+    Parameter: char a
+    Parameter: short b
+    Block
+      ReturnStmt:
+        Binary: ADD
+          VariableExpression: a
+          VariableExpression: b
+  FunctionDecl: short pick
+    Parameter: int x
+    Parameter: long y
+  FunctionDecl: char one
+    Block
+      ReturnStmt:
+        IntLiteral: 1
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        IntLiteral: 0
