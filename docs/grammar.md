@@ -27,7 +27,7 @@
 
 <declaration> ::= <integer-type> <identifier> [ "=" <expression> ] ";"
 
-<integer-type> ::= "char" | "short" | "int" | "long"
+<integer_type> ::= "char" | "short" | "int" | "long"
 
 <return_statement> ::= "return" <expression> ";"
 
