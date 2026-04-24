@@ -233,8 +233,10 @@ static TypeKind type_kind_from_size(int size) {
  * Compute the result type of an expression and record it on the node.
  * Stage 11-03 tracks this for the operators brought into scope:
  * literals, identifiers, unary +/-, binary +/-/·//, and assignment.
- * Operators that remain 32-bit in this stage (comparisons, logical,
- * inc/dec, calls) report TYPE_INT so callers keep the 32-bit path.
+ * Stage 11-05-02 adds function-call expressions, whose type is the
+ * callee's declared return type (recorded on `decl_type` by the
+ * parser). Operators that remain 32-bit in this stage (comparisons,
+ * logical, inc/dec) report TYPE_INT so callers keep the 32-bit path.
  */
 static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     if (!node) return TYPE_INT;
@@ -272,6 +274,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         t = lv ? type_kind_from_size(lv->size) : TYPE_INT;
         break;
     }
+    case AST_FUNCTION_CALL:
+        t = node->decl_type;
+        break;
     default:
         t = TYPE_INT;
         break;
@@ -400,7 +405,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (needs_pad) {
             fprintf(cg->output, "    add rsp, 8\n");
         }
-        node->result_type = TYPE_INT;
+        /* The call returns its value in rax; type it with the callee's
+         * declared return type so surrounding expressions promote and
+         * combine with the correct common type. */
+        node->result_type = node->decl_type;
         return;
     }
     if (node->type == AST_BINARY_OP) {

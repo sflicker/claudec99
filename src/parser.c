@@ -25,10 +25,15 @@ static FuncSig *parser_find_function(Parser *parser, const char *name) {
  * already in the table, enforce:
  *   - parameter counts must match
  *   - at most one definition per name
- * Otherwise add a new entry.
+ * Otherwise add a new entry. The full typed signature (return type and
+ * ordered parameter types) is captured from the first occurrence — per
+ * spec, signature compatibility between declarations and definitions
+ * beyond arity is not checked in this stage.
  */
 static void parser_register_function(Parser *parser, const char *name,
-                                     int param_count, int is_definition) {
+                                     int param_count, int is_definition,
+                                     TypeKind return_type,
+                                     const TypeKind *param_types) {
     FuncSig *existing = parser_find_function(parser, name);
     if (existing) {
         if (existing->param_count != param_count) {
@@ -52,10 +57,21 @@ static void parser_register_function(Parser *parser, const char *name,
         fprintf(stderr, "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
         exit(1);
     }
-    strncpy(parser->funcs[parser->func_count].name, name, 255);
-    parser->funcs[parser->func_count].name[255] = '\0';
-    parser->funcs[parser->func_count].param_count = param_count;
-    parser->funcs[parser->func_count].has_definition = is_definition;
+    if (param_count > FUNC_MAX_PARAMS) {
+        fprintf(stderr,
+                "error: function '%s' has %d parameters; max supported is %d\n",
+                name, param_count, FUNC_MAX_PARAMS);
+        exit(1);
+    }
+    FuncSig *sig = &parser->funcs[parser->func_count];
+    strncpy(sig->name, name, 255);
+    sig->name[255] = '\0';
+    sig->param_count = param_count;
+    sig->has_definition = is_definition;
+    sig->return_type = return_type;
+    for (int i = 0; i < param_count; i++) {
+        sig->param_types[i] = param_types[i];
+    }
     parser->func_count++;
 }
 
@@ -111,6 +127,10 @@ static ASTNode *parse_primary(Parser *parser) {
                         token.value, call->child_count);
                 exit(1);
             }
+            /* The call expression is typed with the callee's declared
+             * return type so downstream type rules (promotion, common
+             * arithmetic type, etc.) see it. */
+            call->decl_type = sig->return_type;
             return call;
         }
         return ast_new(AST_VAR_REF, token.value);
@@ -695,10 +715,24 @@ static ASTNode *parse_function_decl(Parser *parser) {
     int param_count = func->child_count;
     int is_definition = (parser->current.type == TOKEN_LBRACE);
 
+    /* Collect the declared parameter types in order so the function
+     * signature can be stored on registration. */
+    TypeKind param_types[FUNC_MAX_PARAMS];
+    if (param_count > FUNC_MAX_PARAMS) {
+        fprintf(stderr,
+                "error: function '%s' has %d parameters; max supported is %d\n",
+                name.value, param_count, FUNC_MAX_PARAMS);
+        exit(1);
+    }
+    for (int i = 0; i < param_count; i++) {
+        param_types[i] = func->children[i]->decl_type;
+    }
+
     /* Register before parsing the body so self-calls resolve. The helper
      * also enforces param-count consistency and rejects duplicate
      * definitions. */
-    parser_register_function(parser, name.value, param_count, is_definition);
+    parser_register_function(parser, name.value, param_count, is_definition,
+                             return_kind, param_types);
 
     if (is_definition) {
         ASTNode *body = parse_block(parser);

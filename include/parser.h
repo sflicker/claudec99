@@ -4,13 +4,17 @@
 #include "ast.h"
 #include "lexer.h"
 #include "token.h"
+#include "type.h"
 
 #define PARSER_MAX_FUNCTIONS 64
+#define FUNC_MAX_PARAMS 16
 
 typedef struct {
     char name[256];
     int param_count;
     int has_definition;
+    TypeKind return_type;
+    TypeKind param_types[FUNC_MAX_PARAMS];
 } FuncSig;
 
 typedef struct {
