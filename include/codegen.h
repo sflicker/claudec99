@@ -57,6 +57,14 @@ typedef struct {
     char user_labels[MAX_USER_LABELS][256];
     int user_label_count;
     const char *current_func;
+    /* Declared return type of the function currently being emitted —
+     * used by AST_RETURN_STATEMENT to convert the return expression
+     * to the function's declared return type. */
+    TypeKind current_return_type;
+    /* Root of the translation unit being emitted; used to look up a
+     * callee's AST_FUNCTION_DECL (and through it, the declared
+     * parameter types) at each call site for argument conversion. */
+    ASTNode *tu_root;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

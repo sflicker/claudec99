@@ -15,6 +15,48 @@ static int type_kind_bytes(TypeKind kind) {
 }
 
 /*
+ * Emit instructions to convert the value currently in rax/eax from
+ * `src` to `dst` following assignment-style rules: widen with
+ * sign-extend, narrow by sign-extending the low byte/word back into
+ * eax, or no-op when the two kinds are the same size. Narrowing to
+ * int (4 bytes) is implicit because eax already holds the low 32
+ * bits of rax. Used at call sites (argument → parameter) and at
+ * return statements (expression → declared return type).
+ */
+static void emit_convert(CodeGen *cg, TypeKind src, TypeKind dst) {
+    int src_sz = type_kind_bytes(src);
+    int dst_sz = type_kind_bytes(dst);
+    if (src_sz == dst_sz) return;
+    if (dst_sz == 8) {
+        fprintf(cg->output, "    movsxd rax, eax\n");
+    } else if (dst_sz == 2) {
+        fprintf(cg->output, "    movsx eax, ax\n");
+    } else if (dst_sz == 1) {
+        fprintf(cg->output, "    movsx eax, al\n");
+    }
+    /* dst_sz == 4 and src_sz == 8: low 32 bits of rax are already in
+     * eax, so no explicit instruction is needed. */
+}
+
+/*
+ * Look up a function's AST_FUNCTION_DECL node by name in the current
+ * translation unit so call sites can see the callee's declared
+ * parameter types for argument conversion. If multiple declarations
+ * exist (forward declaration plus definition), the first is
+ * returned — the parser enforces that their signatures match.
+ */
+static ASTNode *codegen_find_function_decl(CodeGen *cg, const char *name) {
+    if (!cg->tu_root) return NULL;
+    for (int i = 0; i < cg->tu_root->child_count; i++) {
+        ASTNode *c = cg->tu_root->children[i];
+        if (c->type == AST_FUNCTION_DECL && strcmp(c->value, name) == 0) {
+            return c;
+        }
+    }
+    return NULL;
+}
+
+/*
  * Emit a size-appropriate load of a local into rax/eax.
  * char/short sign-extend into eax (implicit zero-extend into rax);
  * int loads into eax (implicit zero-extend into rax); long loads
@@ -69,6 +111,8 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->switch_depth = 0;
     cg->user_label_count = 0;
     cg->current_func = NULL;
+    cg->current_return_type = TYPE_INT;
+    cg->tu_root = NULL;
 }
 
 /*
@@ -384,9 +428,21 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             "rdi", "rsi", "rdx", "rcx", "r8", "r9"
         };
         int nargs = node->child_count;
-        /* Evaluate arguments left-to-right, pushing each result. */
+        /* Resolve the callee so each argument can be converted to its
+         * declared parameter type before being passed. The parser has
+         * already validated that the callee exists and its parameter
+         * count matches `nargs`. */
+        ASTNode *callee = codegen_find_function_decl(cg, node->value);
+        /* Evaluate arguments left-to-right, converting each to the
+         * callee's declared parameter type, then pushing the result. */
         for (int i = 0; i < nargs; i++) {
             codegen_expression(cg, node->children[i]);
+            if (callee && i < callee->child_count &&
+                callee->children[i]->type == AST_PARAM) {
+                TypeKind src = node->children[i]->result_type;
+                TypeKind dst = callee->children[i]->decl_type;
+                emit_convert(cg, src, dst);
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
         }
@@ -587,6 +643,12 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);
+        /* Convert the result to the function's declared return type
+         * before placing it in the return register. Narrowing to int
+         * is implicit (eax already holds the low 32 bits of rax); all
+         * other size changes emit an explicit sign-extend. */
+        emit_convert(cg, node->children[0]->result_type,
+                     cg->current_return_type);
         if (is_main) {
             fprintf(cg->output, "    mov edi, eax\n");
             fprintf(cg->output, "    mov eax, 60\n");
@@ -818,14 +880,16 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->push_depth = 0;
         cg->user_label_count = 0;
         cg->current_func = node->value;
+        cg->current_return_type = node->decl_type;
 
         /* Pre-walk the body to collect user labels; rejects duplicates. */
         collect_user_labels(cg, body);
 
-        /* Compute stack space: 4 bytes per (int-only) parameter plus a
-         * conservative 8-byte upper bound per body declaration. Rounded
-         * up to a 16-byte multiple. */
-        int stack_size = num_params * 4 + compute_decl_bytes(body);
+        /* Compute stack space: 8 bytes per parameter (conservative
+         * upper bound covering long plus worst-case alignment) plus a
+         * conservative 8-byte upper bound per body declaration.
+         * Rounded up to a 16-byte multiple. */
+        int stack_size = num_params * 8 + compute_decl_bytes(body);
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
@@ -844,14 +908,37 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * A body-level declaration that collides with a parameter name is
          * rejected by the existing duplicate-detection check in
          * codegen_statement for AST_DECLARATION.
+         *
+         * Each parameter's stack slot is sized for its declared type;
+         * the store uses the correspondingly-sized sub-register of the
+         * SysV AMD64 argument register so the full declared width is
+         * preserved and nothing above it is touched.
          */
-        static const char *param_regs[6] = {
+        static const char *param_regs_8[6]  = {
+            "dil", "sil", "dl",  "cl",  "r8b", "r9b"
+        };
+        static const char *param_regs_16[6] = {
+            "di",  "si",  "dx",  "cx",  "r8w", "r9w"
+        };
+        static const char *param_regs_32[6] = {
             "edi", "esi", "edx", "ecx", "r8d", "r9d"
         };
+        static const char *param_regs_64[6] = {
+            "rdi", "rsi", "rdx", "rcx", "r8",  "r9"
+        };
         for (int i = 0; i < num_params; i++) {
-            int offset = codegen_add_var(cg, node->children[i]->value, 4);
-            fprintf(cg->output, "    mov [rbp - %d], %s\n",
-                    offset, param_regs[i]);
+            TypeKind pt = node->children[i]->decl_type;
+            int sz = type_kind_bytes(pt);
+            int offset = codegen_add_var(cg, node->children[i]->value, sz);
+            const char *reg;
+            switch (sz) {
+            case 1: reg = param_regs_8[i];  break;
+            case 2: reg = param_regs_16[i]; break;
+            case 8: reg = param_regs_64[i]; break;
+            case 4:
+            default: reg = param_regs_32[i]; break;
+            }
+            fprintf(cg->output, "    mov [rbp - %d], %s\n", offset, reg);
         }
 
         /* Generate body statements directly — the function body acts as the outermost scope. */
@@ -862,6 +949,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
 }
 
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
+    cg->tu_root = node;
     fprintf(cg->output, "section .text\n");
     if (node->type == AST_TRANSLATION_UNIT) {
         for (int i = 0; i < node->child_count; i++) {
