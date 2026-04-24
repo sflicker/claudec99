@@ -201,15 +201,57 @@ static ASTNode *parse_unary(Parser *parser) {
 }
 
 /*
- * <term> ::= <unary_expr> { ("*" | "/") <unary_expr> }*
+ * <cast_expression> ::= <unary_expression>
+ *                     | "(" <integer_type> ")" <cast_expression>
+ *
+ * When the current token is '(', save lexer state and peek past it to
+ * decide between a cast and a parenthesized expression. If the next
+ * token is an integer-type keyword, consume "(", <type>, ")" and
+ * recurse to parse the operand cast expression. Otherwise restore
+ * the saved state and fall through to parse_unary — parenthesized
+ * expressions are then handled by parse_primary as before.
+ */
+static ASTNode *parse_cast(Parser *parser) {
+    if (parser->current.type == TOKEN_LPAREN) {
+        int saved_pos = parser->lexer->pos;
+        Token saved_token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_CHAR ||
+            parser->current.type == TOKEN_SHORT ||
+            parser->current.type == TOKEN_INT ||
+            parser->current.type == TOKEN_LONG) {
+            TypeKind target_kind;
+            switch (parser->current.type) {
+            case TOKEN_CHAR:  target_kind = TYPE_CHAR;  break;
+            case TOKEN_SHORT: target_kind = TYPE_SHORT; break;
+            case TOKEN_LONG:  target_kind = TYPE_LONG;  break;
+            default:          target_kind = TYPE_INT;   break;
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            parser_expect(parser, TOKEN_RPAREN);
+            ASTNode *operand = parse_cast(parser);
+            ASTNode *cast = ast_new(AST_CAST, NULL);
+            cast->decl_type = target_kind;
+            ast_add_child(cast, operand);
+            return cast;
+        }
+        /* Not a cast — restore lexer state */
+        parser->lexer->pos = saved_pos;
+        parser->current = saved_token;
+    }
+    return parse_unary(parser);
+}
+
+/*
+ * <term> ::= <cast_expression> { ("*" | "/") <cast_expression> }*
  */
 static ASTNode *parse_term(Parser *parser) {
-    ASTNode *left = parse_unary(parser);
+    ASTNode *left = parse_cast(parser);
     while (parser->current.type == TOKEN_STAR ||
            parser->current.type == TOKEN_SLASH) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *right = parse_unary(parser);
+        ASTNode *right = parse_cast(parser);
         ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);

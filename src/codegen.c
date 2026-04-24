@@ -321,6 +321,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_FUNCTION_CALL:
         t = node->decl_type;
         break;
+    case AST_CAST:
+        t = node->decl_type;
+        break;
     default:
         t = TYPE_INT;
         break;
@@ -421,6 +424,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         emit_store_local(cg, lv->offset, lv->size, 0);
         fprintf(cg->output, "    mov eax, ecx\n");  /* restore old value as result */
         node->result_type = TYPE_INT;
+        return;
+    }
+    if (node->type == AST_CAST) {
+        /* Evaluate the source expression, then apply the widen/narrow
+         * conversion used by assignment, arg-passing and return paths.
+         * The cast's result type is its declared target type. */
+        codegen_expression(cg, node->children[0]);
+        TypeKind src = node->children[0]->result_type;
+        TypeKind dst = node->decl_type;
+        emit_convert(cg, src, dst);
+        node->result_type = dst;
         return;
     }
     if (node->type == AST_FUNCTION_CALL) {

@@ -29,7 +29,8 @@ typedef enum {
     AST_VAR_REF,
     AST_PREFIX_INC_DEC,
     AST_POSTFIX_INC_DEC,
-    AST_FUNCTION_CALL
+    AST_FUNCTION_CALL,
+    AST_CAST
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64

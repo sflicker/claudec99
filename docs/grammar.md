@@ -70,8 +70,11 @@
 
 <additive_expression> ::= <multiplicative_expression> { ("+" | "-") <multiplicative_expression> }
 
-<multiplicative_expression> ::= <unary_expression> { ("*" | "/") <unary_expression> }
-   
+<multiplicative_expression> ::= <cast_expression> { ("*" | "/") <cast_expression> }
+
+<cast_expression> ::= <unary_expression>
+                    | "(" <integer_type> ")" <cast_expression>
+
 <unary_expression> ::= ( "+" | "-" | "!" | "++" | "--" ) <unary_expression>  
                     | <postfix_expression>
                     
