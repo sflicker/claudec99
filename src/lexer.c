@@ -80,6 +80,7 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return token; }
     if (c == '>') { token.type = TOKEN_GT; token.value[0] = c; lexer->pos++; return token; }
     if (c == '&' && n == '&') { token.type = TOKEN_AND_AND; strcpy(token.value, "&&"); lexer->pos += 2; return token; }
+    if (c == '&') { token.type = TOKEN_AMPERSAND; token.value[0] = c; lexer->pos++; return token; }
     if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return token; }
 
     /* Integer literals: digits, optional 'L' or 'l' suffix forces long.

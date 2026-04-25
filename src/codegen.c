@@ -220,16 +220,39 @@ static LocalVar *codegen_find_var(CodeGen *cg, const char *name) {
  * Allocate a local of `size` bytes. Stack grows down from rbp, so the
  * variable's rbp-relative offset is advanced by `size` and then aligned
  * up to a multiple of `size` (natural alignment for our integer types).
+ *
+ * Stage 12-02: also records the declared kind and (for pointers) the
+ * full Type chain so address-of and dereference codegen can recover
+ * the pointed-to type.
  */
-static int codegen_add_var(CodeGen *cg, const char *name, int size) {
+static int codegen_add_var(CodeGen *cg, const char *name, int size,
+                           TypeKind kind, Type *full_type) {
     cg->stack_offset += size;
     cg->stack_offset = (cg->stack_offset + size - 1) & ~(size - 1);
     strncpy(cg->locals[cg->local_count].name, name, 255);
     cg->locals[cg->local_count].name[255] = '\0';
     cg->locals[cg->local_count].offset = cg->stack_offset;
     cg->locals[cg->local_count].size = size;
+    cg->locals[cg->local_count].kind = kind;
+    cg->locals[cg->local_count].full_type = full_type;
     cg->local_count++;
     return cg->stack_offset;
+}
+
+/*
+ * Stage 12-02: recover a `Type *` for a local. For pointer locals
+ * `full_type` is the pointer chain head; for integer locals we
+ * synthesize the corresponding singleton.
+ */
+static Type *local_var_type(LocalVar *lv) {
+    if (lv->full_type) return lv->full_type;
+    switch (lv->kind) {
+    case TYPE_CHAR:  return type_char();
+    case TYPE_SHORT: return type_short();
+    case TYPE_LONG:  return type_long();
+    case TYPE_INT:
+    default:         return type_int();
+    }
 }
 
 /*
@@ -350,7 +373,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
-        node->result_type = promote_kind(type_kind_from_size(lv->size));
+        if (lv->kind == TYPE_POINTER) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = lv->full_type;
+        } else {
+            node->result_type = promote_kind(type_kind_from_size(lv->size));
+        }
         emit_load_local(cg, lv->offset, lv->size);
         return;
     }
@@ -361,9 +389,57 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
-        int rhs_is_long = (node->children[0]->result_type == TYPE_LONG);
+        /* Pointer RHS values are already in full rax — skip the
+         * 32-to-64 sign-extend that integer values would need. */
+        int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
+                           node->children[0]->result_type == TYPE_POINTER);
         emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
-        node->result_type = type_kind_from_size(lv->size);
+        if (lv->kind == TYPE_POINTER) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = lv->full_type;
+        } else {
+            node->result_type = type_kind_from_size(lv->size);
+        }
+        return;
+    }
+    if (node->type == AST_ADDR_OF) {
+        /* Operand is restricted to AST_VAR_REF by the parser. Compute
+         * the variable's address with `lea` instead of loading its
+         * value. The result type is pointer-to-<var type>. */
+        ASTNode *operand = node->children[0];
+        LocalVar *lv = codegen_find_var(cg, operand->value);
+        if (!lv) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", operand->value);
+            exit(1);
+        }
+        fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+        node->result_type = TYPE_POINTER;
+        node->full_type = type_pointer(local_var_type(lv));
+        return;
+    }
+    if (node->type == AST_DEREF) {
+        /* Evaluate the pointer expression — its value (the address)
+         * lands in rax. Operand must be of pointer type; load through
+         * the address using the base type's width. */
+        codegen_expression(cg, node->children[0]);
+        Type *operand_type = node->children[0]->full_type;
+        if (!operand_type || operand_type->kind != TYPE_POINTER) {
+            fprintf(stderr, "error: cannot dereference non-pointer value\n");
+            exit(1);
+        }
+        Type *base = operand_type->base;
+        int sz = type_size(base);
+        switch (sz) {
+        case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
+        case 2: fprintf(cg->output, "    movsx eax, word [rax]\n"); break;
+        case 8: fprintf(cg->output, "    mov rax, [rax]\n"); break;
+        case 4:
+        default: fprintf(cg->output, "    mov eax, [rax]\n"); break;
+        }
+        node->result_type = base->kind;
+        if (base->kind == TYPE_POINTER) {
+            node->full_type = base;
+        }
         return;
     }
     if (node->type == AST_UNARY_OP) {
@@ -655,10 +731,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             }
         }
         int size = type_kind_bytes(node->decl_type);
-        int offset = codegen_add_var(cg, node->value, size);
+        int offset = codegen_add_var(cg, node->value, size,
+                                     node->decl_type, node->full_type);
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
-            int rhs_is_long = (node->children[0]->result_type == TYPE_LONG);
+            /* Pointer values live in the full rax already (lea / 8-byte
+             * load), so they take the same store path as long values
+             * without the movsxd widening step. */
+            int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
+                               node->children[0]->result_type == TYPE_POINTER);
             emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
@@ -949,7 +1030,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         for (int i = 0; i < num_params; i++) {
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
-            int offset = codegen_add_var(cg, node->children[i]->value, sz);
+            int offset = codegen_add_var(cg, node->children[i]->value, sz,
+                                         pt, NULL);
             const char *reg;
             switch (sz) {
             case 1: reg = param_regs_8[i];  break;

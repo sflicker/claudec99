@@ -48,6 +48,7 @@ typedef enum {
     TOKEN_GE,
     TOKEN_AND_AND,
     TOKEN_OR_OR,
+    TOKEN_AMPERSAND,
     TOKEN_UNKNOWN
 } TokenType;
 

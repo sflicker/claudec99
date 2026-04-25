@@ -1,0 +1,15 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 7
+      VariableDeclaration: int *p
+        AddressOf:
+          VariableExpression: x
+      VariableDeclaration: int **pp
+        AddressOf:
+          VariableExpression: p
+      ReturnStmt:
+        Dereference:
+          Dereference:
+            VariableExpression: pp

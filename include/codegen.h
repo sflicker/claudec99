@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include "ast.h"
+#include "type.h"
 
 #define MAX_LOCALS 64
 #define MAX_BREAK_DEPTH 32
@@ -14,6 +15,13 @@ typedef struct {
     char name[256];
     int offset;
     int size;
+    /* Stage 12-02: declared kind so codegen can distinguish a pointer
+     * local from a long. `full_type` is set only when kind ==
+     * TYPE_POINTER and carries the pointer chain head — needed by
+     * dereference codegen to pick the load width and by address-of
+     * to construct a `pointer-to-T` result type. */
+    TypeKind kind;
+    Type *full_type;
 } LocalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

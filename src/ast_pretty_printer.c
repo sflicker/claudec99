@@ -152,6 +152,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_CAST:
         printf("Cast: %s\n", type_kind_name(node->decl_type));
         break;
+    case AST_ADDR_OF:
+        printf("AddressOf:\n");
+        break;
+    case AST_DEREF:
+        printf("Dereference:\n");
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {

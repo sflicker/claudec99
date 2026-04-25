@@ -77,8 +77,10 @@
 <cast_expression> ::= <unary_expression>
                     | "(" <integer_type> ")" <cast_expression>
 
-<unary_expression> ::= ( "+" | "-" | "!" | "++" | "--" ) <unary_expression>  
+<unary_expression> ::= <unary_operator> <unary_expression>
                     | <postfix_expression>
+
+<unary_operator> ::= "+" | "-" | "!" | "++" | "--" | "*" | "&"
                     
 <postfix_expression> ::= <primary_expression> { "++" | "--" }                    
 

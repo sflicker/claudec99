@@ -170,10 +170,15 @@ static ASTNode *parse_postfix(Parser *parser) {
 }
 
 /*
- * <unary_expr> ::= [ "+" | "-" | "!" ] <unary_expr>
- *                | "++" <identifier>
- *                | "--" <identifier>
+ * <unary_expr> ::= ( "+" | "-" | "!" | "++" | "--" | "*" | "&" ) <unary_expr>
  *                | <postfix_expression>
+ *
+ * Stage 12-02 adds unary "&" (address-of) and unary "*" (dereference).
+ * Address-of requires an lvalue; the only lvalue this stage supports
+ * is a plain variable reference, so the operand must be AST_VAR_REF.
+ * Unary "*" only fires when "*" begins a unary expression — binary
+ * "*" continues to work because parse_term consumes the left operand
+ * before looking for "*".
  */
 static ASTNode *parse_unary(Parser *parser) {
     if (parser->current.type == TOKEN_INCREMENT ||
@@ -186,6 +191,24 @@ static ASTNode *parse_unary(Parser *parser) {
             exit(1);
         }
         ASTNode *node = ast_new(AST_PREFIX_INC_DEC, op.value);
+        ast_add_child(node, operand);
+        return node;
+    }
+    if (parser->current.type == TOKEN_AMPERSAND) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *operand = parse_unary(parser);
+        if (operand->type != AST_VAR_REF) {
+            fprintf(stderr, "error: address-of requires an lvalue\n");
+            exit(1);
+        }
+        ASTNode *node = ast_new(AST_ADDR_OF, NULL);
+        ast_add_child(node, operand);
+        return node;
+    }
+    if (parser->current.type == TOKEN_STAR) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *operand = parse_unary(parser);
+        ASTNode *node = ast_new(AST_DEREF, NULL);
         ast_add_child(node, operand);
         return node;
     }
