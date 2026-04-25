@@ -1,7 +1,7 @@
 # ClaudeC99 Stage 12.3
 
 ## Task
-  - Extend th compiler to support writing through pointers using the dereference operator.
+  - Extend the compiler to support writing through pointers using the dereference operator.
 
 ## Core Test
 ``` 
