@@ -1,6 +1,8 @@
 #ifndef CCOMPILER_TOKEN_H
 #define CCOMPILER_TOKEN_H
 
+#include "type.h"
+
 typedef enum {
     TOKEN_EOF,
     TOKEN_INT,
@@ -52,7 +54,8 @@ typedef enum {
 typedef struct {
     TokenType type;
     char value[256];
-    int int_value;
+    long long_value;
+    TypeKind literal_type;
 } Token;
 
 #endif

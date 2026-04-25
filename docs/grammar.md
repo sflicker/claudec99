@@ -91,6 +91,6 @@
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
-<integer_literal> ::= [0-9]+
+<integer_literal> ::= [0-9]+ [Ll]?
 
 ```

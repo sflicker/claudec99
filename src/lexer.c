@@ -1,4 +1,7 @@
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "lexer.h"
@@ -79,15 +82,39 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '&' && n == '&') { token.type = TOKEN_AND_AND; strcpy(token.value, "&&"); lexer->pos += 2; return token; }
     if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return token; }
 
-    /* Integer literals */
+    /* Integer literals: digits, optional 'L' or 'l' suffix forces long.
+     * Without a suffix, the type is int when the value fits in a signed
+     * 32-bit int and long otherwise. Values that exceed the long range
+     * are rejected as "too large for supported integer types". */
     if (isdigit(c)) {
         int i = 0;
         while (isdigit(lexer->source[lexer->pos]) && i < 255) {
             token.value[i++] = lexer->source[lexer->pos++];
         }
         token.value[i] = '\0';
+        int has_long_suffix = 0;
+        if (lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
+            has_long_suffix = 1;
+            lexer->pos++;
+        }
+        errno = 0;
+        char *end = NULL;
+        unsigned long parsed = strtoul(token.value, &end, 10);
+        if (errno == ERANGE || parsed > (unsigned long)LONG_MAX) {
+            fprintf(stderr,
+                    "error: integer literal '%s' too large for supported integer types\n",
+                    token.value);
+            exit(1);
+        }
+        token.long_value = (long)parsed;
+        if (has_long_suffix) {
+            token.literal_type = TYPE_LONG;
+        } else if (parsed <= (unsigned long)INT_MAX) {
+            token.literal_type = TYPE_INT;
+        } else {
+            token.literal_type = TYPE_LONG;
+        }
         token.type = TOKEN_INT_LITERAL;
-        token.int_value = atoi(token.value);
         return token;
     }
 

@@ -287,7 +287,7 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     TypeKind t = TYPE_INT;
     switch (node->type) {
     case AST_INT_LITERAL:
-        t = TYPE_INT;
+        t = node->decl_type;
         break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
@@ -334,8 +334,13 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
-        node->result_type = TYPE_INT;
-        fprintf(cg->output, "    mov eax, %s\n", node->value);
+        if (node->decl_type == TYPE_LONG) {
+            fprintf(cg->output, "    mov rax, %s\n", node->value);
+            node->result_type = TYPE_LONG;
+        } else {
+            fprintf(cg->output, "    mov eax, %s\n", node->value);
+            node->result_type = TYPE_INT;
+        }
         return;
     }
     if (node->type == AST_VAR_REF) {

@@ -94,7 +94,9 @@ static ASTNode *parse_expression(Parser *parser);
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
         Token token = parser_expect(parser, TOKEN_INT_LITERAL);
-        return ast_new(AST_INT_LITERAL, token.value);
+        ASTNode *node = ast_new(AST_INT_LITERAL, token.value);
+        node->decl_type = token.literal_type;
+        return node;
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
