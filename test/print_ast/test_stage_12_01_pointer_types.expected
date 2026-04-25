@@ -1,0 +1,11 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int *p
+      VariableDeclaration: char *c
+      VariableDeclaration: short *s
+      VariableDeclaration: long *l
+      VariableDeclaration: int **q
+      VariableDeclaration: int ***t
+      ReturnStmt:
+        IntLiteral: 0

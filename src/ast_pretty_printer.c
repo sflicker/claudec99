@@ -28,6 +28,22 @@ static void ast_print_indent(int depth) {
     }
 }
 
+/*
+ * Stage 12-01: print a Type chain in C-style notation. The base
+ * integer type prints with a trailing space; each pointer level
+ * appends a '*' (no separating space), so `int **` reads as
+ * "int **" before the variable name.
+ */
+static void ast_print_type(Type *t) {
+    if (!t) return;
+    if (t->kind == TYPE_POINTER) {
+        ast_print_type(t->base);
+        printf("*");
+    } else {
+        printf("%s ", type_kind_name(t->kind));
+    }
+}
+
 void ast_pretty_print(ASTNode *node, int depth) {
     if (!node) return;
 
@@ -49,8 +65,14 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("Block\n");
         break;
     case AST_DECLARATION:
-        printf("VariableDeclaration: %s %s\n",
-               type_kind_name(node->decl_type), node->value);
+        if (node->decl_type == TYPE_POINTER && node->full_type) {
+            printf("VariableDeclaration: ");
+            ast_print_type(node->full_type);
+            printf("%s\n", node->value);
+        } else {
+            printf("VariableDeclaration: %s %s\n",
+                   type_kind_name(node->decl_type), node->value);
+        }
         break;
     case AST_RETURN_STATEMENT:
         printf("ReturnStmt:\n");

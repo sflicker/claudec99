@@ -42,6 +42,10 @@ typedef struct ASTNode {
     int child_count;
     TypeKind decl_type;
     TypeKind result_type;
+    /* Stage 12-01: full Type chain for pointer declarations. NULL for
+     * non-pointer nodes; for AST_DECLARATION with decl_type ==
+     * TYPE_POINTER, points to the head of the pointer Type chain. */
+    struct Type *full_type;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);

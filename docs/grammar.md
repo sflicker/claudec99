@@ -25,7 +25,9 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <integer-type> <identifier> [ "=" <expression> ] ";"
+<declaration> ::= <type> <identifier> [ "=" <expression> ] ";"
+
+<type> ::= <integer_type> { "*" }
 
 <integer_type> ::= "char" | "short" | "int" | "long"
 

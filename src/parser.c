@@ -572,22 +572,41 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    /* declaration: <integer-type> <identifier> [ "=" <expression> ] ";" */
+    /* declaration: <type> <identifier> [ "=" <expression> ] ";"
+     * <type>     ::= <integer_type> { "*" }
+     *
+     * Stage 12-01: zero or more '*' tokens after the integer base type
+     * wrap the type in a pointer Type chain. When at least one '*' is
+     * consumed, decl_type becomes TYPE_POINTER and full_type carries
+     * the head of the chain. */
     if (parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG) {
-        TypeKind kind;
+        TypeKind base_kind;
+        Type *base_type;
         switch (parser->current.type) {
-        case TOKEN_CHAR:  kind = TYPE_CHAR;  break;
-        case TOKEN_SHORT: kind = TYPE_SHORT; break;
-        case TOKEN_LONG:  kind = TYPE_LONG;  break;
-        default:          kind = TYPE_INT;   break;
+        case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
+        case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
+        case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
+        default:          base_kind = TYPE_INT;   base_type = type_int();   break;
         }
         parser->current = lexer_next_token(parser->lexer);
+        Type *full_type = base_type;
+        int pointer_levels = 0;
+        while (parser->current.type == TOKEN_STAR) {
+            full_type = type_pointer(full_type);
+            pointer_levels++;
+            parser->current = lexer_next_token(parser->lexer);
+        }
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         ASTNode *decl = ast_new(AST_DECLARATION, name.value);
-        decl->decl_type = kind;
+        if (pointer_levels > 0) {
+            decl->decl_type = TYPE_POINTER;
+            decl->full_type = full_type;
+        } else {
+            decl->decl_type = base_kind;
+        }
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *init = parse_expression(parser);

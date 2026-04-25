@@ -14,7 +14,8 @@ typedef enum {
     TYPE_CHAR,
     TYPE_SHORT,
     TYPE_INT,
-    TYPE_LONG
+    TYPE_LONG,
+    TYPE_POINTER
 } TypeKind;
 
 typedef struct Type {
@@ -22,12 +23,14 @@ typedef struct Type {
     int size;
     int alignment;
     int is_signed;
+    struct Type *base;
 } Type;
 
 Type *type_char(void);
 Type *type_short(void);
 Type *type_int(void);
 Type *type_long(void);
+Type *type_pointer(Type *base);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

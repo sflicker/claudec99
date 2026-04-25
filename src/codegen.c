@@ -6,10 +6,11 @@
 
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
-    case TYPE_CHAR:  return 1;
-    case TYPE_SHORT: return 2;
-    case TYPE_INT:   return 4;
-    case TYPE_LONG:  return 8;
+    case TYPE_CHAR:    return 1;
+    case TYPE_SHORT:   return 2;
+    case TYPE_INT:     return 4;
+    case TYPE_LONG:    return 8;
+    case TYPE_POINTER: return 8;
     }
     return 4;
 }
