@@ -60,6 +60,7 @@
 <assignment_expression> ::= <identifier> "=" <assignment_expression>
                            | <identifier> "+=" <assignment_expression>
                            | <identifier> "-=" <assignment_expression>
+                           | <unary_expression> "=" <assignment_expression>
                            | <logical_or_expression>
  
 <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }

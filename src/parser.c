@@ -381,7 +381,13 @@ static ASTNode *parse_logical_or(Parser *parser) {
  * <assignment_expression> ::= <identifier> "=" <assignment_expression>
  *                            | <identifier> "+=" <assignment_expression>
  *                            | <identifier> "-=" <assignment_expression>
+ *                            | <unary_expression> "=" <assignment_expression>
  *                            | <logical_or_expression>
+ *
+ * Stage 12-03 adds the dereference-LHS form so `*p = value` parses.
+ * The LHS is parsed as a logical-or expression and then validated to
+ * be an lvalue (AST_DEREF or AST_VAR_REF). Non-lvalue LHS such as
+ * `(x + 1) = 3` is rejected here.
  */
 static ASTNode *parse_expression(Parser *parser) {
     if (parser->current.type == TOKEN_IDENTIFIER) {
@@ -412,7 +418,20 @@ static ASTNode *parse_expression(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    return parse_logical_or(parser);
+    ASTNode *lhs = parse_logical_or(parser);
+    if (parser->current.type == TOKEN_ASSIGN) {
+        if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF) {
+            fprintf(stderr, "error: assignment target must be an lvalue\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *rhs = parse_expression(parser);
+        ASTNode *assign = ast_new(AST_ASSIGNMENT, NULL);
+        ast_add_child(assign, lhs);
+        ast_add_child(assign, rhs);
+        return assign;
+    }
+    return lhs;
 }
 
 /*

@@ -90,7 +90,13 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("Unary: %s\n", operator_name(node->value));
         break;
     case AST_ASSIGNMENT:
-        printf("Assignment: %s\n", node->value);
+        if (node->value[0] == '\0') {
+            /* Stage 12-03: deref-LHS assignment has no variable
+             * name — children carry [LHS, RHS]. */
+            printf("Assignment:\n");
+        } else {
+            printf("Assignment: %s\n", node->value);
+        }
         break;
     case AST_EXPRESSION_STMT:
         printf("ExpressionStatement\n");

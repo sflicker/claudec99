@@ -383,6 +383,42 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_ASSIGNMENT) {
+        /* Stage 12-03: deref-LHS assignment uses a different shape —
+         * two children [AST_DEREF, RHS] and no `value`. Take the
+         * pointer-store path: evaluate the pointer to an address,
+         * stash it on the stack, evaluate the RHS, convert it to the
+         * pointed-to base type, and store through the address with
+         * the base type's width. */
+        if (node->child_count == 2 &&
+            node->children[0]->type == AST_DEREF) {
+            ASTNode *deref = node->children[0];
+            codegen_expression(cg, deref->children[0]);
+            Type *operand_type = deref->children[0]->full_type;
+            if (!operand_type || operand_type->kind != TYPE_POINTER) {
+                fprintf(stderr, "error: cannot dereference non-pointer value\n");
+                exit(1);
+            }
+            Type *base = operand_type->base;
+            int sz = type_size(base);
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            emit_convert(cg, node->children[1]->result_type, base->kind);
+            fprintf(cg->output, "    pop rbx\n");
+            cg->push_depth--;
+            switch (sz) {
+            case 1: fprintf(cg->output, "    mov [rbx], al\n"); break;
+            case 2: fprintf(cg->output, "    mov [rbx], ax\n"); break;
+            case 8: fprintf(cg->output, "    mov [rbx], rax\n"); break;
+            case 4:
+            default: fprintf(cg->output, "    mov [rbx], eax\n"); break;
+            }
+            node->result_type = base->kind;
+            if (base->kind == TYPE_POINTER) {
+                node->full_type = base;
+            }
+            return;
+        }
         LocalVar *lv = codegen_find_var(cg, node->value);
         if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
