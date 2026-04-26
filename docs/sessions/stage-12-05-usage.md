@@ -1,0 +1,7 @@
+Session                                                                                                                                                                                                                
+Total cost:            $4.23                                                                                                                                                                                           
+Total duration (API):  7m 34s                                                                                                                                                                             
+Total duration (wall): 14m 21s                                                                                                                                                                                         
+Total code changes:    424 lines added, 37 lines removed                                                                                                                                                               
+Usage by model:                                                                                                                                                                                                        
+claude-opus-4-7:  76 input, 30.4k output, 5.0m cache read, 155.1k cache write ($4.23)      
