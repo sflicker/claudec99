@@ -40,6 +40,21 @@ static void emit_convert(CodeGen *cg, TypeKind src, TypeKind dst) {
 }
 
 /*
+ * Stage 12-04: two pointer Types are compatible only when their full
+ * chains agree on every level — same kind at each step, same integer
+ * base. Mismatched bases (e.g. `int *` vs `char *`) are rejected.
+ */
+static int pointer_types_equal(Type *a, Type *b) {
+    while (a && b) {
+        if (a->kind != b->kind) return 0;
+        if (a->kind != TYPE_POINTER) return 1;
+        a = a->base;
+        b = b->base;
+    }
+    return a == b;
+}
+
+/*
  * Look up a function's AST_FUNCTION_DECL node by name in the current
  * translation unit so call sites can see the callee's declared
  * parameter types for argument conversion. If multiple declarations
@@ -566,14 +581,41 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * count matches `nargs`. */
         ASTNode *callee = codegen_find_function_decl(cg, node->value);
         /* Evaluate arguments left-to-right, converting each to the
-         * callee's declared parameter type, then pushing the result. */
+         * callee's declared parameter type, then pushing the result.
+         * Stage 12-04: when either side is a pointer, the integer
+         * widen/narrow conversion does not apply — the address is
+         * already in the full rax. Instead enforce strict pointer/
+         * integer matching and pointer-base-type equality. */
         for (int i = 0; i < nargs; i++) {
             codegen_expression(cg, node->children[i]);
             if (callee && i < callee->child_count &&
                 callee->children[i]->type == AST_PARAM) {
+                ASTNode *param = callee->children[i];
                 TypeKind src = node->children[i]->result_type;
-                TypeKind dst = callee->children[i]->decl_type;
-                emit_convert(cg, src, dst);
+                TypeKind dst = param->decl_type;
+                if (dst == TYPE_POINTER || src == TYPE_POINTER) {
+                    if (dst != TYPE_POINTER) {
+                        fprintf(stderr,
+                                "error: function '%s' parameter '%s' expected integer argument, got pointer\n",
+                                node->value, param->value);
+                        exit(1);
+                    }
+                    if (src != TYPE_POINTER) {
+                        fprintf(stderr,
+                                "error: function '%s' parameter '%s' expected pointer argument, got integer\n",
+                                node->value, param->value);
+                        exit(1);
+                    }
+                    if (!pointer_types_equal(node->children[i]->full_type,
+                                             param->full_type)) {
+                        fprintf(stderr,
+                                "error: function '%s' parameter '%s' has incompatible pointer type\n",
+                                node->value, param->value);
+                        exit(1);
+                    }
+                } else {
+                    emit_convert(cg, src, dst);
+                }
             }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
@@ -1067,7 +1109,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz,
-                                         pt, NULL);
+                                         pt, node->children[i]->full_type);
             const char *reg;
             switch (sz) {
             case 1: reg = param_regs_8[i];  break;

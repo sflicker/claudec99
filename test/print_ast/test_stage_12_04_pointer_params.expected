@@ -1,0 +1,18 @@
+TranslationUnit:
+  FunctionDecl: int read
+    Parameter: int *p
+  FunctionDecl: int read2
+    Parameter: int **pp
+    Block
+      ReturnStmt:
+        Dereference:
+          Dereference:
+            VariableExpression: pp
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 7
+      ReturnStmt:
+        FunctionCall: read
+          AddressOf:
+            VariableExpression: x

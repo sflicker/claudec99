@@ -58,8 +58,14 @@ void ast_pretty_print(ASTNode *node, int depth) {
                type_kind_name(node->decl_type), node->value);
         break;
     case AST_PARAM:
-        printf("Parameter: %s %s\n",
-               type_kind_name(node->decl_type), node->value);
+        if (node->decl_type == TYPE_POINTER && node->full_type) {
+            printf("Parameter: ");
+            ast_print_type(node->full_type);
+            printf("%s\n", node->value);
+        } else {
+            printf("Parameter: %s %s\n",
+                   type_kind_name(node->decl_type), node->value);
+        }
         break;
     case AST_BLOCK:
         printf("Block\n");

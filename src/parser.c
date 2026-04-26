@@ -762,13 +762,44 @@ static TypeKind parser_expect_integer_type(Parser *parser) {
 }
 
 /*
- * <parameter_declaration> ::= <integer_type> <identifier>
+ * <parameter_declaration> ::= <type> <identifier>
+ * <type>                  ::= <integer_type> { "*" }
+ *
+ * Stage 12-04: a parameter's type may be a pointer. Mirrors the
+ * declaration parsing: the integer base type is followed by zero or
+ * more '*' tokens. When at least one '*' is consumed the AST_PARAM
+ * carries decl_type = TYPE_POINTER and full_type pointing at the
+ * pointer chain head.
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
-    TypeKind kind = parser_expect_integer_type(parser);
+    TypeKind base_kind;
+    Type *base_type;
+    switch (parser->current.type) {
+    case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
+    case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
+    case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
+    case TOKEN_INT:   base_kind = TYPE_INT;   base_type = type_int();   break;
+    default:
+        fprintf(stderr, "error: expected integer type, got '%s'\n",
+                parser->current.value);
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer);
+    Type *full_type = base_type;
+    int pointer_levels = 0;
+    while (parser->current.type == TOKEN_STAR) {
+        full_type = type_pointer(full_type);
+        pointer_levels++;
+        parser->current = lexer_next_token(parser->lexer);
+    }
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     ASTNode *param = ast_new(AST_PARAM, name.value);
-    param->decl_type = kind;
+    if (pointer_levels > 0) {
+        param->decl_type = TYPE_POINTER;
+        param->full_type = full_type;
+    } else {
+        param->decl_type = base_kind;
+    }
     return param;
 }
 

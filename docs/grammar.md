@@ -9,7 +9,7 @@
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
-<parameter_declaration> ::= <integer_type> <identifier>
+<parameter_declaration> ::= <type> <identifier>
 
 <block_statement> ::= "{" { <statement> } "}"
 
