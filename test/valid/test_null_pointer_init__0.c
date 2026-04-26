@@ -1,7 +1,4 @@
-int *f() {
-    return 0;
-}
-
 int main() {
+    int *p = 0;
     return 0;
 }

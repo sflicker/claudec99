@@ -40,6 +40,16 @@ static void emit_convert(CodeGen *cg, TypeKind src, TypeKind dst) {
 }
 
 /*
+ * Stage 12-06: the integer literal `0` is the C null pointer constant.
+ * The lexer drops any L/l suffix from the value text, so a value
+ * string of "0" matches both `0` and `0L`.
+ */
+static int is_null_pointer_constant(ASTNode *node) {
+    return node && node->type == AST_INT_LITERAL &&
+           strcmp(node->value, "0") == 0;
+}
+
+/*
  * Stage 12-04: two pointer Types are compatible only when their full
  * chains agree on every level — same kind at each step, same integer
  * base. Mismatched bases (e.g. `int *` vs `char *`) are rejected.
@@ -331,9 +341,16 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
-        t = lv ? promote_kind(type_kind_from_size(lv->size)) : TYPE_INT;
+        if (lv && lv->kind == TYPE_POINTER) {
+            t = TYPE_POINTER;
+        } else {
+            t = lv ? promote_kind(type_kind_from_size(lv->size)) : TYPE_INT;
+        }
         break;
     }
+    case AST_ADDR_OF:
+        t = TYPE_POINTER;
+        break;
     case AST_UNARY_OP:
         if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) {
             t = promote_kind(expr_result_type(cg, node->children[0]));
@@ -710,16 +727,35 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * live in the full rax before the op — sign-extend int-sized
          * sides with movsxd. */
         TypeKind common = TYPE_INT;
+        /* Stage 12-06: a pointer operand on either side of `==` or
+         * `!=` makes this a pointer comparison: use the 64-bit cmp
+         * path and skip the integer movsxd widening on pointer
+         * operands (they are already in the full rax). Other operators
+         * with a pointer operand (relational, arithmetic) are out of
+         * scope this stage and rejected after evaluation. */
+        int is_pointer_cmp = 0;
         if (is_arith || is_cmp) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
-            common = common_arith_kind(lt, rt);
+            if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
+                if (strcmp(op, "==") != 0 && strcmp(op, "!=") != 0) {
+                    fprintf(stderr,
+                            "error: operator '%s' not supported on pointer operands\n",
+                            op);
+                    exit(1);
+                }
+                is_pointer_cmp = 1;
+                common = TYPE_LONG;
+            } else {
+                common = common_arith_kind(lt, rt);
+            }
         }
 
         /* Evaluate left into rax/eax */
         codegen_expression(cg, node->children[0]);
         if ((is_arith || is_cmp) && common == TYPE_LONG &&
-            node->children[0]->result_type != TYPE_LONG) {
+            node->children[0]->result_type != TYPE_LONG &&
+            node->children[0]->result_type != TYPE_POINTER) {
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
         fprintf(cg->output, "    push rax\n");
@@ -727,12 +763,44 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Evaluate right into rax/eax */
         codegen_expression(cg, node->children[1]);
         if ((is_arith || is_cmp) && common == TYPE_LONG &&
-            node->children[1]->result_type != TYPE_LONG) {
+            node->children[1]->result_type != TYPE_LONG &&
+            node->children[1]->result_type != TYPE_POINTER) {
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
         /* Pop left into rcx; now rcx=left, rax=right */
         fprintf(cg->output, "    pop rcx\n");
         cg->push_depth--;
+
+        /* Stage 12-06: validate pointer comparison operand combinations
+         * after both sides are evaluated (so result_type / full_type
+         * are populated). Two pointers: chains must match. Pointer +
+         * integer: the integer side must be the null pointer constant
+         * `0`; any non-zero integer is rejected. */
+        if (is_pointer_cmp) {
+            ASTNode *lhs = node->children[0];
+            ASTNode *rhs = node->children[1];
+            int lhs_ptr = (lhs->result_type == TYPE_POINTER);
+            int rhs_ptr = (rhs->result_type == TYPE_POINTER);
+            if (lhs_ptr && rhs_ptr) {
+                if (!pointer_types_equal(lhs->full_type, rhs->full_type)) {
+                    fprintf(stderr,
+                            "error: incompatible pointer types in comparison\n");
+                    exit(1);
+                }
+            } else if (lhs_ptr && !rhs_ptr) {
+                if (!is_null_pointer_constant(rhs)) {
+                    fprintf(stderr,
+                            "error: comparing pointer with non zero integer\n");
+                    exit(1);
+                }
+            } else if (!lhs_ptr && rhs_ptr) {
+                if (!is_null_pointer_constant(lhs)) {
+                    fprintf(stderr,
+                            "error: comparing pointer with non zero integer\n");
+                    exit(1);
+                }
+            }
+        }
 
         if (is_arith && common == TYPE_LONG) {
             if (strcmp(op, "+") == 0) {
@@ -821,10 +889,18 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
             TypeKind init_kind = node->children[0]->result_type;
+            /* Stage 12-06: the integer literal `0` is a null pointer
+             * constant when the LHS is a pointer; accept it without
+             * the integer-vs-pointer rejection. `mov eax, 0` already
+             * zero-extends rax, so the 8-byte store path stores the
+             * correct null address. */
+            int rhs_is_null_ptr = (node->decl_type == TYPE_POINTER &&
+                                   is_null_pointer_constant(node->children[0]));
             /* Stage 12-05: pointer/non-pointer mismatches in an init
              * expression are rejected here. When both sides are
              * pointers, the chains must agree exactly. */
-            if (node->decl_type == TYPE_POINTER || init_kind == TYPE_POINTER) {
+            if (!rhs_is_null_ptr &&
+                (node->decl_type == TYPE_POINTER || init_kind == TYPE_POINTER)) {
                 if (node->decl_type != TYPE_POINTER) {
                     fprintf(stderr,
                             "error: variable '%s' assigning pointer to non pointer\n",
@@ -847,19 +923,30 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             }
             /* Pointer values live in the full rax already (lea / 8-byte
              * load), so they take the same store path as long values
-             * without the movsxd widening step. */
+             * without the movsxd widening step. A null pointer constant
+             * also takes the 8-byte path so the full slot is written. */
             int rhs_is_long = (init_kind == TYPE_LONG ||
-                               init_kind == TYPE_POINTER);
+                               init_kind == TYPE_POINTER ||
+                               rhs_is_null_ptr);
             emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
+        /* Stage 12-06: a return of the literal `0` from a pointer
+         * function is a null pointer constant; accept it before the
+         * integer-vs-pointer match enforced below. `mov eax, 0`
+         * already zero-extends to rax, so the value in the return
+         * register is the null address. */
+        int ret_is_null_ptr = (cg->current_return_type == TYPE_POINTER &&
+                               is_null_pointer_constant(node->children[0]));
         codegen_expression(cg, node->children[0]);
         TypeKind src_kind = node->children[0]->result_type;
         TypeKind dst_kind = cg->current_return_type;
         /* Stage 12-05: when either side is a pointer, no integer
          * conversion applies — enforce strict type matching instead.
          * The pointer value is already in the full rax. */
-        if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
+        if (ret_is_null_ptr) {
+            /* null pointer constant: no conversion needed */
+        } else if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
             if (dst_kind != TYPE_POINTER) {
                 fprintf(stderr,
                         "error: function '%s' returning pointer from non pointer function\n",
