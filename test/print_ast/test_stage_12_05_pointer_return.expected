@@ -1,0 +1,22 @@
+TranslationUnit:
+  FunctionDecl: int *identity
+    Parameter: int *p
+    Block
+      ReturnStmt:
+        VariableExpression: p
+  FunctionDecl: int **id2
+    Parameter: int **pp
+    Block
+      ReturnStmt:
+        VariableExpression: pp
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 7
+      VariableDeclaration: int *p
+        FunctionCall: identity
+          AddressOf:
+            VariableExpression: x
+      ReturnStmt:
+        Dereference:
+          VariableExpression: p

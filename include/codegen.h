@@ -69,6 +69,11 @@ typedef struct {
      * used by AST_RETURN_STATEMENT to convert the return expression
      * to the function's declared return type. */
     TypeKind current_return_type;
+    /* Stage 12-05: full Type chain for the current function's return
+     * type. Non-NULL only when the function returns a pointer; carries
+     * the head of the pointer chain so the return statement can do
+     * strict chain matching against the return expression. */
+    Type *current_return_full_type;
     /* Root of the translation unit being emitted; used to look up a
      * callee's AST_FUNCTION_DECL (and through it, the declared
      * parameter types) at each call site for argument conversion. */

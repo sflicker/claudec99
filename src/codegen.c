@@ -128,6 +128,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->user_label_count = 0;
     cg->current_func = NULL;
     cg->current_return_type = TYPE_INT;
+    cg->current_return_full_type = NULL;
     cg->tu_root = NULL;
 }
 
@@ -637,8 +638,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         /* The call returns its value in rax; type it with the callee's
          * declared return type so surrounding expressions promote and
-         * combine with the correct common type. */
+         * combine with the correct common type. Stage 12-05: when the
+         * callee returns a pointer, attach its full Type chain so
+         * downstream pointer checks (return statement, declaration
+         * init) see the correct pointer type. */
         node->result_type = node->decl_type;
+        if (callee && callee->decl_type == TYPE_POINTER) {
+            node->full_type = callee->full_type;
+        }
         return;
     }
     if (node->type == AST_BINARY_OP) {
@@ -813,21 +820,72 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                                      node->decl_type, node->full_type);
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
+            TypeKind init_kind = node->children[0]->result_type;
+            /* Stage 12-05: pointer/non-pointer mismatches in an init
+             * expression are rejected here. When both sides are
+             * pointers, the chains must agree exactly. */
+            if (node->decl_type == TYPE_POINTER || init_kind == TYPE_POINTER) {
+                if (node->decl_type != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: variable '%s' assigning pointer to non pointer\n",
+                            node->value);
+                    exit(1);
+                }
+                if (init_kind != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: variable '%s' assigning non pointer to pointer\n",
+                            node->value);
+                    exit(1);
+                }
+                if (!pointer_types_equal(node->children[0]->full_type,
+                                         node->full_type)) {
+                    fprintf(stderr,
+                            "error: variable '%s' incompatible pointer type in initializer\n",
+                            node->value);
+                    exit(1);
+                }
+            }
             /* Pointer values live in the full rax already (lea / 8-byte
              * load), so they take the same store path as long values
              * without the movsxd widening step. */
-            int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
-                               node->children[0]->result_type == TYPE_POINTER);
+            int rhs_is_long = (init_kind == TYPE_LONG ||
+                               init_kind == TYPE_POINTER);
             emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
         codegen_expression(cg, node->children[0]);
-        /* Convert the result to the function's declared return type
-         * before placing it in the return register. Narrowing to int
-         * is implicit (eax already holds the low 32 bits of rax); all
-         * other size changes emit an explicit sign-extend. */
-        emit_convert(cg, node->children[0]->result_type,
-                     cg->current_return_type);
+        TypeKind src_kind = node->children[0]->result_type;
+        TypeKind dst_kind = cg->current_return_type;
+        /* Stage 12-05: when either side is a pointer, no integer
+         * conversion applies — enforce strict type matching instead.
+         * The pointer value is already in the full rax. */
+        if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
+            if (dst_kind != TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: function '%s' returning pointer from non pointer function\n",
+                        cg->current_func);
+                exit(1);
+            }
+            if (src_kind != TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: function '%s' returning non pointer; expected pointer\n",
+                        cg->current_func);
+                exit(1);
+            }
+            if (!pointer_types_equal(node->children[0]->full_type,
+                                     cg->current_return_full_type)) {
+                fprintf(stderr,
+                        "error: function '%s' returning incorrect pointer type\n",
+                        cg->current_func);
+                exit(1);
+            }
+        } else {
+            /* Convert the result to the function's declared return type
+             * before placing it in the return register. Narrowing to int
+             * is implicit (eax already holds the low 32 bits of rax); all
+             * other size changes emit an explicit sign-extend. */
+            emit_convert(cg, src_kind, dst_kind);
+        }
         if (is_main) {
             fprintf(cg->output, "    mov edi, eax\n");
             fprintf(cg->output, "    mov eax, 60\n");
@@ -1060,6 +1118,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->user_label_count = 0;
         cg->current_func = node->value;
         cg->current_return_type = node->decl_type;
+        cg->current_return_full_type =
+            (node->decl_type == TYPE_POINTER) ? node->full_type : NULL;
 
         /* Pre-walk the body to collect user labels; rejects duplicates. */
         collect_user_labels(cg, body);

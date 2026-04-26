@@ -740,28 +740,6 @@ static ASTNode *parse_statement(Parser *parser) {
 }
 
 /*
- * <integer_type> ::= "char" | "short" | "int" | "long"
- *
- * Consumes the current integer-type token and returns the corresponding
- * TypeKind. Exits with an error if the current token is not one.
- */
-static TypeKind parser_expect_integer_type(Parser *parser) {
-    TypeKind kind;
-    switch (parser->current.type) {
-    case TOKEN_CHAR:  kind = TYPE_CHAR;  break;
-    case TOKEN_SHORT: kind = TYPE_SHORT; break;
-    case TOKEN_INT:   kind = TYPE_INT;   break;
-    case TOKEN_LONG:  kind = TYPE_LONG;  break;
-    default:
-        fprintf(stderr, "error: expected integer type, got '%s'\n",
-                parser->current.value);
-        exit(1);
-    }
-    parser->current = lexer_next_token(parser->lexer);
-    return kind;
-}
-
-/*
  * <parameter_declaration> ::= <type> <identifier>
  * <type>                  ::= <integer_type> { "*" }
  *
@@ -829,18 +807,47 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function> ::= <integer_type> <identifier> "(" [ <parameter_list> ] ")"
+ * <function> ::= <type> <identifier> "(" [ <parameter_list> ] ")"
  *                ( <block> | ";" )
+ * <type>     ::= <integer_type> { "*" }
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
  * (no AST_BLOCK).
+ *
+ * Stage 12-05: zero or more '*' tokens after the integer base type wrap
+ * the return type in a pointer Type chain. When at least one '*' is
+ * consumed, decl_type becomes TYPE_POINTER and full_type carries the
+ * head of the chain.
  */
 static ASTNode *parse_function_decl(Parser *parser) {
-    TypeKind return_kind = parser_expect_integer_type(parser);
+    TypeKind base_kind;
+    Type *base_type;
+    switch (parser->current.type) {
+    case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
+    case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
+    case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
+    case TOKEN_INT:   base_kind = TYPE_INT;   base_type = type_int();   break;
+    default:
+        fprintf(stderr, "error: expected integer type, got '%s'\n",
+                parser->current.value);
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer);
+    Type *full_type = base_type;
+    int pointer_levels = 0;
+    while (parser->current.type == TOKEN_STAR) {
+        full_type = type_pointer(full_type);
+        pointer_levels++;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    TypeKind return_kind = (pointer_levels > 0) ? TYPE_POINTER : base_kind;
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
     func->decl_type = return_kind;
+    if (pointer_levels > 0) {
+        func->full_type = full_type;
+    }
 
     parser_expect(parser, TOKEN_LPAREN);
     if (parser->current.type != TOKEN_RPAREN) {

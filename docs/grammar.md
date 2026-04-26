@@ -5,7 +5,7 @@
 
 <external-declaration> ::= <function>
 
-<function> ::= <integer_type> <identifier> "(" [ <parameter_list> ] ")" ( <block_statement> | ";" )
+<function> ::= <type> <identifier> "(" [ <parameter_list> ] ")" ( <block_statement> | ";" )
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
