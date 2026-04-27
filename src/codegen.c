@@ -288,6 +288,58 @@ static Type *local_var_type(LocalVar *lv) {
     }
 }
 
+static void codegen_expression(CodeGen *cg, ASTNode *node);
+
+/*
+ * Stage 13-02: emit code to compute the address of an array subscript
+ * `a[i]` into rax. Returns the element Type so the caller can pick
+ * the matching load/store width. The base must be an identifier
+ * referring to an array local (pointer indexing is out of scope this
+ * stage). The index expression must be integer-typed; it is sign-
+ * extended to 64 bits and multiplied by `sizeof(element)` before being
+ * added to the base address. The helper leaves rbx clobbered.
+ */
+static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
+    ASTNode *base_node = node->children[0];
+    ASTNode *index_node = node->children[1];
+    if (base_node->type != AST_VAR_REF) {
+        fprintf(stderr, "error: subscript base must be an identifier\n");
+        exit(1);
+    }
+    LocalVar *lv = codegen_find_var(cg, base_node->value);
+    if (!lv) {
+        fprintf(stderr, "error: undeclared variable '%s'\n", base_node->value);
+        exit(1);
+    }
+    if (lv->kind != TYPE_ARRAY) {
+        fprintf(stderr, "error: subscript base '%s' is not an array\n",
+                base_node->value);
+        exit(1);
+    }
+    Type *element = lv->full_type->base;
+    int elem_size = type_size(element);
+
+    fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+    fprintf(cg->output, "    push rax\n");
+    cg->push_depth++;
+    codegen_expression(cg, index_node);
+    TypeKind index_kind = index_node->result_type;
+    if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+        fprintf(stderr, "error: array subscript index must be an integer\n");
+        exit(1);
+    }
+    if (index_kind != TYPE_LONG) {
+        fprintf(cg->output, "    movsxd rax, eax\n");
+    }
+    if (elem_size != 1) {
+        fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+    }
+    fprintf(cg->output, "    pop rbx\n");
+    cg->push_depth--;
+    fprintf(cg->output, "    add rax, rbx\n");
+    return element;
+}
+
 /*
  * Conservative upper bound on stack bytes needed for locals: 8 bytes
  * per scalar/pointer declaration, and the array's actual byte count
@@ -396,6 +448,23 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_CAST:
         t = node->decl_type;
         break;
+    case AST_ARRAY_INDEX: {
+        /* Stage 13-02: the result is the element type, promoted to
+         * int for char/short. Pointer elements stay TYPE_POINTER. */
+        ASTNode *base_node = node->children[0];
+        if (base_node->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base_node->value);
+            if (lv && lv->kind == TYPE_ARRAY && lv->full_type) {
+                Type *element = lv->full_type->base;
+                if (element->kind == TYPE_POINTER) {
+                    t = TYPE_POINTER;
+                } else {
+                    t = promote_kind(type_kind_from_size(element->size));
+                }
+            }
+        }
+        break;
+    }
     default:
         t = TYPE_INT;
         break;
@@ -439,6 +508,33 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_ASSIGNMENT) {
+        /* Stage 13-02: array-element assignment `a[i] = rhs`. Compute
+         * the element address, stash it, evaluate the RHS, convert it
+         * to the element type, and store through the address with the
+         * element type's width. Mirrors the deref-LHS path. */
+        if (node->child_count == 2 &&
+            node->children[0]->type == AST_ARRAY_INDEX) {
+            Type *element = emit_array_index_addr(cg, node->children[0]);
+            int sz = type_size(element);
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            emit_convert(cg, node->children[1]->result_type, element->kind);
+            fprintf(cg->output, "    pop rbx\n");
+            cg->push_depth--;
+            switch (sz) {
+            case 1: fprintf(cg->output, "    mov [rbx], al\n"); break;
+            case 2: fprintf(cg->output, "    mov [rbx], ax\n"); break;
+            case 8: fprintf(cg->output, "    mov [rbx], rax\n"); break;
+            case 4:
+            default: fprintf(cg->output, "    mov [rbx], eax\n"); break;
+            }
+            node->result_type = element->kind;
+            if (element->kind == TYPE_POINTER) {
+                node->full_type = element;
+            }
+            return;
+        }
         /* Stage 12-03: deref-LHS assignment uses a different shape —
          * two children [AST_DEREF, RHS] and no `value`. Take the
          * pointer-store path: evaluate the pointer to an address,
@@ -536,6 +632,26 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->result_type = base->kind;
         if (base->kind == TYPE_POINTER) {
             node->full_type = base;
+        }
+        return;
+    }
+    if (node->type == AST_ARRAY_INDEX) {
+        /* Stage 13-02: array subscript read. Compute the element's
+         * address and load through it using the element type's width.
+         * The result is the element value, sign-extended into eax/rax
+         * for char/short and loaded directly for int/long/pointer. */
+        Type *element = emit_array_index_addr(cg, node);
+        int sz = type_size(element);
+        switch (sz) {
+        case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
+        case 2: fprintf(cg->output, "    movsx eax, word [rax]\n"); break;
+        case 8: fprintf(cg->output, "    mov rax, [rax]\n"); break;
+        case 4:
+        default: fprintf(cg->output, "    mov eax, [rax]\n"); break;
+        }
+        node->result_type = element->kind;
+        if (element->kind == TYPE_POINTER) {
+            node->full_type = element;
         }
         return;
     }

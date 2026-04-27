@@ -149,12 +149,33 @@ static ASTNode *parse_primary(Parser *parser) {
 }
 
 /*
- * <postfix_expression> ::= <primary_expression> { "++" | "--" }
+ * <postfix_expression> ::= <primary_expression>
+ *                          { "[" <expression> "]" | "++" | "--" }
+ *
+ * Stage 13-02 adds the subscript suffix. The base must be an identifier
+ * (the only array-typed expression form this stage supports); pointer
+ * indexing is out of scope and rejected here. The wrapped node is
+ * AST_ARRAY_INDEX with children [base, index].
  */
 static ASTNode *parse_postfix(Parser *parser) {
     ASTNode *expr = parse_primary(parser);
     while (parser->current.type == TOKEN_INCREMENT ||
-           parser->current.type == TOKEN_DECREMENT) {
+           parser->current.type == TOKEN_DECREMENT ||
+           parser->current.type == TOKEN_LBRACKET) {
+        if (parser->current.type == TOKEN_LBRACKET) {
+            if (expr->type != AST_VAR_REF) {
+                fprintf(stderr, "error: subscript base must be an identifier\n");
+                exit(1);
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *index = parse_expression(parser);
+            parser_expect(parser, TOKEN_RBRACKET);
+            ASTNode *node = ast_new(AST_ARRAY_INDEX, NULL);
+            ast_add_child(node, expr);
+            ast_add_child(node, index);
+            expr = node;
+            continue;
+        }
         if (expr->type != AST_VAR_REF) {
             fprintf(stderr, "error: postfix %s requires an identifier\n",
                     parser->current.value);
@@ -420,7 +441,8 @@ static ASTNode *parse_expression(Parser *parser) {
     }
     ASTNode *lhs = parse_logical_or(parser);
     if (parser->current.type == TOKEN_ASSIGN) {
-        if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF) {
+        if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF &&
+            lhs->type != AST_ARRAY_INDEX) {
             fprintf(stderr, "error: assignment target must be an lvalue\n");
             exit(1);
         }

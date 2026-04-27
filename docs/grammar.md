@@ -83,7 +83,7 @@
 
 <unary_operator> ::= "+" | "-" | "!" | "++" | "--" | "*" | "&"
                     
-<postfix_expression> ::= <primary_expression> { "++" | "--" }                    
+<postfix_expression> ::= <primary_expression> { "[" <expression> "]" | "++" | "--" }                    
 
 <primary_expression> ::= <integer_literal>
                          | <identifier>

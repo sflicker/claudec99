@@ -1,0 +1,14 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a[3]
+      ExpressionStatement
+        Assignment:
+          ArrayIndex:
+            VariableExpression: a
+            IntLiteral: 0
+          IntLiteral: 4
+      ReturnStmt:
+        ArrayIndex:
+          VariableExpression: a
+          IntLiteral: 0

@@ -183,6 +183,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_DEREF:
         printf("Dereference:\n");
         break;
+    case AST_ARRAY_INDEX:
+        printf("ArrayIndex:\n");
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {
