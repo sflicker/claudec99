@@ -77,7 +77,14 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("Block\n");
         break;
     case AST_DECLARATION:
-        if (node->decl_type == TYPE_POINTER && node->full_type) {
+        if (node->decl_type == TYPE_ARRAY && node->full_type) {
+            /* Stage 13-01: render `<element-type> <name>[<length>]`.
+             * The element type prints with its trailing space (or
+             * pointer asterisks) via ast_print_type. */
+            printf("VariableDeclaration: ");
+            ast_print_type(node->full_type->base);
+            printf("%s[%d]\n", node->value, node->full_type->length);
+        } else if (node->decl_type == TYPE_POINTER && node->full_type) {
             printf("VariableDeclaration: ");
             ast_print_type(node->full_type);
             printf("%s\n", node->value);

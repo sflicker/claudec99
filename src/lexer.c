@@ -53,6 +53,8 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == ')') { token.type = TOKEN_RPAREN;    token.value[0] = c; lexer->pos++; return token; }
     if (c == '{') { token.type = TOKEN_LBRACE;    token.value[0] = c; lexer->pos++; return token; }
     if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer->pos++; return token; }
+    if (c == '[') { token.type = TOKEN_LBRACKET;  token.value[0] = c; lexer->pos++; return token; }
+    if (c == ']') { token.type = TOKEN_RBRACKET;  token.value[0] = c; lexer->pos++; return token; }
     if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer->pos++; return token; }
     if (c == ':') { token.type = TOKEN_COLON;     token.value[0] = c; lexer->pos++; return token; }
     if (c == ',') { token.type = TOKEN_COMMA;     token.value[0] = c; lexer->pos++; return token; }

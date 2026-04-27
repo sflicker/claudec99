@@ -25,7 +25,7 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <type> <identifier> [ "=" <expression> ] ";"
+<declaration> ::= <type> <identifier> [ "[" <integer_literal> "]" ] [ "=" <expression> ] ";"
 
 <type> ::= <integer_type> { "*" }
 

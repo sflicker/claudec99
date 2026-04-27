@@ -15,7 +15,8 @@ typedef enum {
     TYPE_SHORT,
     TYPE_INT,
     TYPE_LONG,
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_ARRAY
 } TypeKind;
 
 typedef struct Type {
@@ -24,6 +25,10 @@ typedef struct Type {
     int alignment;
     int is_signed;
     struct Type *base;
+    /* Stage 13-01: number of elements when kind == TYPE_ARRAY. The
+     * total byte count lives in `size`; `base` carries the element
+     * type. Unused for non-array kinds. */
+    int length;
 } Type;
 
 Type *type_char(void);
@@ -31,6 +36,7 @@ Type *type_short(void);
 Type *type_int(void);
 Type *type_long(void);
 Type *type_pointer(Type *base);
+Type *type_array(Type *element_type, int length);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

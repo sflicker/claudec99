@@ -1,0 +1,8 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a[3]
+      VariableDeclaration: char c[4]
+      VariableDeclaration: int *ptrs[2]
+      ReturnStmt:
+        IntLiteral: 0

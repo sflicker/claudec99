@@ -643,6 +643,40 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         ASTNode *decl = ast_new(AST_DECLARATION, name.value);
+        /* Stage 13-01: optional "[" <integer_literal> "]" suffix
+         * makes this an array declaration. The element type is the
+         * (possibly pointer-wrapped) base type. Length must be a
+         * positive integer literal; array initializers and array
+         * function parameters/returns are out of scope for this
+         * stage, so an `=` initializer following array brackets is
+         * rejected here. */
+        if (parser->current.type == TOKEN_LBRACKET) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type != TOKEN_INT_LITERAL) {
+                fprintf(stderr,
+                        "error: array size must be an integer literal\n");
+                exit(1);
+            }
+            Token size_tok = parser->current;
+            parser->current = lexer_next_token(parser->lexer);
+            int length = (int)size_tok.long_value;
+            if (length <= 0) {
+                fprintf(stderr,
+                        "error: array size must be greater than zero\n");
+                exit(1);
+            }
+            parser_expect(parser, TOKEN_RBRACKET);
+            Type *array_type = type_array(full_type, length);
+            decl->decl_type = TYPE_ARRAY;
+            decl->full_type = array_type;
+            if (parser->current.type == TOKEN_ASSIGN) {
+                fprintf(stderr,
+                        "error: array initializers not supported\n");
+                exit(1);
+            }
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return decl;
+        }
         if (pointer_levels > 0) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;

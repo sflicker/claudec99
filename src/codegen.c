@@ -11,6 +11,7 @@ static int type_kind_bytes(TypeKind kind) {
     case TYPE_INT:     return 4;
     case TYPE_LONG:    return 8;
     case TYPE_POINTER: return 8;
+    case TYPE_ARRAY:   return 0; /* size lives on full_type; caller uses that */
     }
     return 4;
 }
@@ -243,18 +244,24 @@ static LocalVar *codegen_find_var(CodeGen *cg, const char *name) {
 }
 
 /*
- * Allocate a local of `size` bytes. Stack grows down from rbp, so the
- * variable's rbp-relative offset is advanced by `size` and then aligned
- * up to a multiple of `size` (natural alignment for our integer types).
+ * Allocate a local of `size` bytes with `align`-byte natural
+ * alignment. Stack grows down from rbp, so the variable's
+ * rbp-relative offset is advanced by `size` and then aligned up to a
+ * multiple of `align`.
  *
  * Stage 12-02: also records the declared kind and (for pointers) the
  * full Type chain so address-of and dereference codegen can recover
  * the pointed-to type.
+ *
+ * Stage 13-01: split alignment from size so array locals (whose total
+ * size is element_size * length and is not a power of two in general)
+ * align to the element's natural alignment instead of their total
+ * byte count.
  */
-static int codegen_add_var(CodeGen *cg, const char *name, int size,
+static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
                            TypeKind kind, Type *full_type) {
     cg->stack_offset += size;
-    cg->stack_offset = (cg->stack_offset + size - 1) & ~(size - 1);
+    cg->stack_offset = (cg->stack_offset + align - 1) & ~(align - 1);
     strncpy(cg->locals[cg->local_count].name, name, 255);
     cg->locals[cg->local_count].name[255] = '\0';
     cg->locals[cg->local_count].offset = cg->stack_offset;
@@ -283,12 +290,20 @@ static Type *local_var_type(LocalVar *lv) {
 
 /*
  * Conservative upper bound on stack bytes needed for locals: 8 bytes
- * per declaration (largest supported integer type plus worst-case
- * alignment padding). The prologue rounds this up to 16.
+ * per scalar/pointer declaration, and the array's actual byte count
+ * plus 7 bytes of alignment slack per array declaration. The
+ * prologue rounds the total up to 16.
  */
 static int compute_decl_bytes(ASTNode *node) {
     if (!node) return 0;
-    int total = (node->type == AST_DECLARATION) ? 8 : 0;
+    int total = 0;
+    if (node->type == AST_DECLARATION) {
+        if (node->decl_type == TYPE_ARRAY && node->full_type) {
+            total = node->full_type->size + 7;
+        } else {
+            total = 8;
+        }
+    }
     for (int i = 0; i < node->child_count; i++) {
         total += compute_decl_bytes(node->children[i]);
     }
@@ -406,6 +421,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
+        /* Stage 13-01: array names cannot be used as values — indexing
+         * and array-to-pointer decay are out of scope. */
+        if (lv->kind == TYPE_ARRAY) {
+            fprintf(stderr,
+                    "error: cannot use array variable '%s' as a value\n",
+                    node->value);
+            exit(1);
+        }
         if (lv->kind == TYPE_POINTER) {
             node->result_type = TYPE_POINTER;
             node->full_type = lv->full_type;
@@ -455,6 +478,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         LocalVar *lv = codegen_find_var(cg, node->value);
         if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
+            exit(1);
+        }
+        /* Stage 13-01: arrays are not assignable. */
+        if (lv->kind == TYPE_ARRAY) {
+            fprintf(stderr, "error: arrays are not assignable\n");
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
@@ -883,8 +911,20 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 exit(1);
             }
         }
+        /* Stage 13-01: array locals get sized from the array Type
+         * (element_size * length) and aligned to the element's
+         * natural alignment. The parser has already rejected any
+         * initializer for arrays, so the init path below is not
+         * entered for TYPE_ARRAY. */
+        if (node->decl_type == TYPE_ARRAY) {
+            int size = node->full_type->size;
+            int align = node->full_type->base->alignment;
+            codegen_add_var(cg, node->value, size, align,
+                            node->decl_type, node->full_type);
+            return;
+        }
         int size = type_kind_bytes(node->decl_type);
-        int offset = codegen_add_var(cg, node->value, size,
+        int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
@@ -1255,7 +1295,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         for (int i = 0; i < num_params; i++) {
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
-            int offset = codegen_add_var(cg, node->children[i]->value, sz,
+            int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
             const char *reg;
             switch (sz) {

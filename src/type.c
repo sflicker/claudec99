@@ -9,10 +9,10 @@
  * any of them yet.
  */
 
-static Type type_char_singleton  = { TYPE_CHAR,  1, 1, 1, NULL };
-static Type type_short_singleton = { TYPE_SHORT, 2, 2, 1, NULL };
-static Type type_int_singleton   = { TYPE_INT,   4, 4, 1, NULL };
-static Type type_long_singleton  = { TYPE_LONG,  8, 8, 1, NULL };
+static Type type_char_singleton  = { TYPE_CHAR,  1, 1, 1, NULL, 0 };
+static Type type_short_singleton = { TYPE_SHORT, 2, 2, 1, NULL, 0 };
+static Type type_int_singleton   = { TYPE_INT,   4, 4, 1, NULL, 0 };
+static Type type_long_singleton  = { TYPE_LONG,  8, 8, 1, NULL, 0 };
 
 Type *type_char(void)  { return &type_char_singleton;  }
 Type *type_short(void) { return &type_short_singleton; }
@@ -38,6 +38,26 @@ Type *type_pointer(Type *base) {
     return t;
 }
 
+/*
+ * Stage 13-01: heap-allocate an array Type. `size` records the total
+ * byte count (element_size * length); `alignment` mirrors the
+ * element's natural alignment. `base` carries the element type.
+ */
+Type *type_array(Type *element_type, int length) {
+    Type *t = calloc(1, sizeof(Type));
+    if (!t) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    t->kind = TYPE_ARRAY;
+    t->size = element_type->size * length;
+    t->alignment = element_type->alignment;
+    t->is_signed = 0;
+    t->base = element_type;
+    t->length = length;
+    return t;
+}
+
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
     case TYPE_CHAR:    return "char";
@@ -45,6 +65,7 @@ const char *type_kind_name(TypeKind kind) {
     case TYPE_INT:     return "int";
     case TYPE_LONG:    return "long";
     case TYPE_POINTER: return "pointer";
+    case TYPE_ARRAY:   return "array";
     }
     return "unknown";
 }
@@ -66,6 +87,7 @@ int type_is_integer(Type *t) {
     case TYPE_LONG:
         return 1;
     case TYPE_POINTER:
+    case TYPE_ARRAY:
         return 0;
     }
     return 0;
