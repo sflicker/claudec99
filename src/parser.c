@@ -218,7 +218,10 @@ static ASTNode *parse_unary(Parser *parser) {
     if (parser->current.type == TOKEN_AMPERSAND) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
-        if (operand->type != AST_VAR_REF) {
+        /* Stage 13-04: address-of also accepts an array subscript so
+         * `&a[i]` produces a pointer to the i-th element. */
+        if (operand->type != AST_VAR_REF &&
+            operand->type != AST_ARRAY_INDEX) {
             fprintf(stderr, "error: address-of requires an lvalue\n");
             exit(1);
         }

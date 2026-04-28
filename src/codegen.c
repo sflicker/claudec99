@@ -442,7 +442,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
-            t = common_arith_kind(lt, rt);
+            /* Stage 13-04: pointer arithmetic — `T* +/- int` and
+             * `int + T*` produce a pointer. Validation of the
+             * specific combinations happens in codegen. */
+            if ((strcmp(op, "+") == 0 || strcmp(op, "-") == 0) &&
+                (lt == TYPE_POINTER || rt == TYPE_POINTER)) {
+                t = TYPE_POINTER;
+            } else {
+                t = common_arith_kind(lt, rt);
+            }
         } else {
             t = TYPE_INT; /* comparisons, && , || stay 32-bit */
         }
@@ -613,10 +621,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_ADDR_OF) {
-        /* Operand is restricted to AST_VAR_REF by the parser. Compute
-         * the variable's address with `lea` instead of loading its
-         * value. The result type is pointer-to-<var type>. */
+        /* Operand is AST_VAR_REF or AST_ARRAY_INDEX (parser-enforced).
+         * For a var-ref, take the variable's address with `lea`. For
+         * an array subscript, reuse the array-index address helper:
+         * `&a[i]` evaluates `a + i * sizeof(*a)` without loading
+         * through it. The result type is pointer-to-element in both
+         * cases. */
         ASTNode *operand = node->children[0];
+        if (operand->type == AST_ARRAY_INDEX) {
+            Type *element = emit_array_index_addr(cg, operand);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(element);
+            return;
+        }
         LocalVar *lv = codegen_find_var(cg, operand->value);
         if (!lv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", operand->value);
@@ -891,22 +908,49 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Stage 12-06: a pointer operand on either side of `==` or
          * `!=` makes this a pointer comparison: use the 64-bit cmp
          * path and skip the integer movsxd widening on pointer
-         * operands (they are already in the full rax). Other operators
-         * with a pointer operand (relational, arithmetic) are out of
-         * scope this stage and rejected after evaluation. */
+         * operands (they are already in the full rax).
+         *
+         * Stage 13-04: `T* + int`, `int + T*`, and `T* - int` are
+         * pointer arithmetic — the integer side is scaled by
+         * sizeof(*p) before the add/sub. `T* + T*`, `int - T*`,
+         * and other operators with a pointer operand are rejected.
+         */
         int is_pointer_cmp = 0;
+        int is_pointer_arith = 0;
         if (is_arith || is_cmp) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
-                if (strcmp(op, "==") != 0 && strcmp(op, "!=") != 0) {
+                if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+                    is_pointer_cmp = 1;
+                    common = TYPE_LONG;
+                } else if (strcmp(op, "+") == 0) {
+                    if (lt == TYPE_POINTER && rt == TYPE_POINTER) {
+                        fprintf(stderr,
+                                "error: cannot add two pointers\n");
+                        exit(1);
+                    }
+                    is_pointer_arith = 1;
+                    common = TYPE_LONG;
+                } else if (strcmp(op, "-") == 0) {
+                    if (lt == TYPE_POINTER && rt == TYPE_POINTER) {
+                        fprintf(stderr,
+                                "error: pointer subtraction not supported\n");
+                        exit(1);
+                    }
+                    if (rt == TYPE_POINTER) {
+                        fprintf(stderr,
+                                "error: cannot subtract pointer from integer\n");
+                        exit(1);
+                    }
+                    is_pointer_arith = 1;
+                    common = TYPE_LONG;
+                } else {
                     fprintf(stderr,
                             "error: operator '%s' not supported on pointer operands\n",
                             op);
                     exit(1);
                 }
-                is_pointer_cmp = 1;
-                common = TYPE_LONG;
             } else {
                 common = common_arith_kind(lt, rt);
             }
@@ -961,6 +1005,47 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     exit(1);
                 }
             }
+        }
+
+        /* Stage 13-04: pointer arithmetic. By the time we get here both
+         * sides are evaluated; rcx = LHS, rax = RHS. The existing
+         * widening at LHS/RHS evaluation has already promoted the
+         * integer side to 64 bits (common == TYPE_LONG). The pointer
+         * side is in full rax/rcx unchanged. Scale the integer side
+         * by sizeof(*p), then add/subtract. The pointer side has
+         * already populated full_type via codegen_expression. */
+        if (is_pointer_arith) {
+            int lhs_is_ptr = (node->children[0]->result_type == TYPE_POINTER);
+            Type *ptr_type = lhs_is_ptr ? node->children[0]->full_type
+                                        : node->children[1]->full_type;
+            if (!ptr_type || ptr_type->kind != TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: pointer arithmetic missing pointer type\n");
+                exit(1);
+            }
+            int elem_size = type_size(ptr_type->base);
+            if (lhs_is_ptr) {
+                /* Pointer in rcx, integer in rax. */
+                if (elem_size != 1) {
+                    fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+                }
+                if (strcmp(op, "+") == 0) {
+                    fprintf(cg->output, "    add rax, rcx\n");
+                } else { /* "-" */
+                    fprintf(cg->output, "    sub rcx, rax\n");
+                    fprintf(cg->output, "    mov rax, rcx\n");
+                }
+            } else {
+                /* Integer in rcx, pointer in rax. Op is "+" — `int - ptr`
+                 * was rejected in the type-check phase above. */
+                if (elem_size != 1) {
+                    fprintf(cg->output, "    imul rcx, rcx, %d\n", elem_size);
+                }
+                fprintf(cg->output, "    add rax, rcx\n");
+            }
+            node->result_type = TYPE_POINTER;
+            node->full_type = ptr_type;
+            return;
         }
 
         if (is_arith && common == TYPE_LONG) {
