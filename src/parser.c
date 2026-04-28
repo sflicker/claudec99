@@ -152,10 +152,12 @@ static ASTNode *parse_primary(Parser *parser) {
  * <postfix_expression> ::= <primary_expression>
  *                          { "[" <expression> "]" | "++" | "--" }
  *
- * Stage 13-02 adds the subscript suffix. The base must be an identifier
- * (the only array-typed expression form this stage supports); pointer
- * indexing is out of scope and rejected here. The wrapped node is
- * AST_ARRAY_INDEX with children [base, index].
+ * Stage 13-02 added the subscript suffix; Stage 13-05 formalizes the
+ * pointer-base case so the same suffix applies whether the identifier
+ * names an array or a pointer. The base must still be an identifier in
+ * this stage. The wrapped node is AST_ARRAY_INDEX with children
+ * [base, index]. Type-driven dispatch (array vs pointer) and the
+ * integer-index check happen in codegen.
  */
 static ASTNode *parse_postfix(Parser *parser) {
     ASTNode *expr = parse_primary(parser);
