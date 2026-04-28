@@ -291,13 +291,16 @@ static Type *local_var_type(LocalVar *lv) {
 static void codegen_expression(CodeGen *cg, ASTNode *node);
 
 /*
- * Stage 13-02: emit code to compute the address of an array subscript
- * `a[i]` into rax. Returns the element Type so the caller can pick
+ * Emit code to compute the address of an array/pointer subscript
+ * `b[i]` into rax. Returns the element Type so the caller can pick
  * the matching load/store width. The base must be an identifier
- * referring to an array local (pointer indexing is out of scope this
- * stage). The index expression must be integer-typed; it is sign-
- * extended to 64 bits and multiplied by `sizeof(element)` before being
- * added to the base address. The helper leaves rbx clobbered.
+ * referring to either an array local (Stage 13-02) or a pointer local
+ * (Stage 13-03 — needed once a pointer parameter can receive a
+ * decayed array). For an array the slot's address is the base; for a
+ * pointer the slot's value is the base. The index expression must be
+ * integer-typed; it is sign-extended to 64 bits and multiplied by
+ * `sizeof(element)` before being added to the base address. The helper
+ * leaves rbx clobbered.
  */
 static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     ASTNode *base_node = node->children[0];
@@ -311,15 +314,21 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         fprintf(stderr, "error: undeclared variable '%s'\n", base_node->value);
         exit(1);
     }
-    if (lv->kind != TYPE_ARRAY) {
-        fprintf(stderr, "error: subscript base '%s' is not an array\n",
+    Type *element;
+    if (lv->kind == TYPE_ARRAY) {
+        element = lv->full_type->base;
+        fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+    } else if (lv->kind == TYPE_POINTER) {
+        element = lv->full_type->base;
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+    } else {
+        fprintf(stderr,
+                "error: subscript base '%s' is not an array or pointer\n",
                 base_node->value);
         exit(1);
     }
-    Type *element = lv->full_type->base;
     int elem_size = type_size(element);
 
-    fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
     fprintf(cg->output, "    push rax\n");
     cg->push_depth++;
     codegen_expression(cg, index_node);
@@ -408,7 +417,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
-        if (lv && lv->kind == TYPE_POINTER) {
+        if (lv && (lv->kind == TYPE_POINTER || lv->kind == TYPE_ARRAY)) {
+            /* Stage 13-03: an array name in a value context decays to
+             * a pointer to its element type. */
             t = TYPE_POINTER;
         } else {
             t = lv ? promote_kind(type_kind_from_size(lv->size)) : TYPE_INT;
@@ -449,12 +460,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         t = node->decl_type;
         break;
     case AST_ARRAY_INDEX: {
-        /* Stage 13-02: the result is the element type, promoted to
-         * int for char/short. Pointer elements stay TYPE_POINTER. */
+        /* The result is the element type, promoted to int for
+         * char/short. Pointer elements stay TYPE_POINTER. The base
+         * may be an array local (Stage 13-02) or a pointer local
+         * (Stage 13-03). */
         ASTNode *base_node = node->children[0];
         if (base_node->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base_node->value);
-            if (lv && lv->kind == TYPE_ARRAY && lv->full_type) {
+            if (lv && lv->full_type &&
+                (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER)) {
                 Type *element = lv->full_type->base;
                 if (element->kind == TYPE_POINTER) {
                     t = TYPE_POINTER;
@@ -490,13 +504,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
-        /* Stage 13-01: array names cannot be used as values — indexing
-         * and array-to-pointer decay are out of scope. */
+        /* Stage 13-03: array name in a value context decays to a
+         * pointer to its element type. The value is the array's base
+         * address (lea), not a load from the slot. Whole-array
+         * assignment is still rejected by the AST_ASSIGNMENT path,
+         * which checks the LHS name before reaching this code. */
         if (lv->kind == TYPE_ARRAY) {
-            fprintf(stderr,
-                    "error: cannot use array variable '%s' as a value\n",
-                    node->value);
-            exit(1);
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(lv->full_type->base);
+            return;
         }
         if (lv->kind == TYPE_POINTER) {
             node->result_type = TYPE_POINTER;

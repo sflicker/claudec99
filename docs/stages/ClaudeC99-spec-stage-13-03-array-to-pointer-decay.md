@@ -40,7 +40,7 @@ when used as a value expression.
 ### Codegen rules
 For a local array variable used in a decayed expression, generate the address of the first element.
 So `int *p = a;`  Should behave like `int *p = &a[0];`
-The generatec value is the array base address, not a load from the stack slot.
+The generated value is the array base address, not a load from the stack slot.
 
 ### Do not decay in these context
   - For this stage, array decay should not make whole-array assignment legal:
@@ -110,7 +110,7 @@ Long array decay
     int main() {
         long a[2];
         a[0] = 42;
-        return first(a);   expect 42
+        return first(a);   // expect 42
     }
 ```
 
