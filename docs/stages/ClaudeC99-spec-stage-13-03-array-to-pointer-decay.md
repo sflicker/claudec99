@@ -1,4 +1,4 @@
-# ClaudeC99 Stage 13.4
+# ClaudeC99 Stage 13.3
 
 ## Task
   - Add array-to-pointer decay in expression contexts
