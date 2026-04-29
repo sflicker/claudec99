@@ -42,3 +42,5 @@ Token values:
     "A\n"
 ```
 
+### Tests
+  - Add a print_tokens test for the new STRING_LITERAL type
