@@ -98,6 +98,19 @@ static ASTNode *parse_primary(Parser *parser) {
         node->decl_type = token.literal_type;
         return node;
     }
+    /* Stage 14-02: a string literal is a primary expression whose
+     * logical type is char[N+1], where N is the literal's byte
+     * length and the trailing slot holds the implicit NUL. The
+     * payload bytes ride on node->value (set by ast_new) and the
+     * length is preserved on full_type->length. */
+    if (parser->current.type == TOKEN_STRING_LITERAL) {
+        Token token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *node = ast_new(AST_STRING_LITERAL, token.value);
+        node->decl_type = TYPE_ARRAY;
+        node->full_type = type_array(type_char(), token.length + 1);
+        return node;
+    }
     if (parser->current.type == TOKEN_IDENTIFIER) {
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
         if (parser->current.type == TOKEN_LPAREN) {

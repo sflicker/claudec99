@@ -99,6 +99,14 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_INT_LITERAL:
         printf("IntLiteral: %s\n", node->value);
         break;
+    case AST_STRING_LITERAL: {
+        /* Stage 14-02: byte length is preserved as
+         * full_type->length - 1 (full_type carries char[N+1]). */
+        int byte_length = node->full_type ? node->full_type->length - 1 : 0;
+        printf("StringLiteral: \"%s\" (length %d)\n",
+               node->value, byte_length);
+        break;
+    }
     case AST_VAR_REF:
         printf("VariableExpression: %s\n", node->value);
         break;

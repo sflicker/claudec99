@@ -86,6 +86,7 @@
 <postfix_expression> ::= <primary_expression> { "[" <expression> "]" | "++" | "--" }                    
 
 <primary_expression> ::= <integer_literal>
+                         | <string_literal>
                          | <identifier>
                          | <function_call>
                          | "(" <expression> ")"
@@ -97,5 +98,7 @@
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
 <integer_literal> ::= [0-9]+ [Ll]?
+
+<string_literal> ::= TOKEN_STRING_LITERAL
 
 ```
