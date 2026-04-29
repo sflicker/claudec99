@@ -1,0 +1,43 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[5 ] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[6 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[7 ] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[8 ] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[9 ] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[10] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[11] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[12] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[13] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[14] TOKEN:: 0                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[15] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[16] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[17] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[18] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[19] TOKEN:: &&                  TOKEN_TYPE: TOKEN_AND_AND
+[20] TOKEN:: !                   TOKEN_TYPE: TOKEN_BANG
+[21] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[22] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[23] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[24] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[25] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[26] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[27] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[28] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[29] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[30] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[31] TOKEN:: ||                  TOKEN_TYPE: TOKEN_OR_OR
+[32] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[33] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[34] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[35] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[36] TOKEN:: 2                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[37] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[38] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[39] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[40] TOKEN:: 0                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[41] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[42] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[43] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

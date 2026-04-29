@@ -1,0 +1,2 @@
+[1] TOKEN:: 42                  TOKEN_TYPE: TOKEN_INT_LITERAL
+[2] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

@@ -1,0 +1,54 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[5 ] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[6 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[7 ] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[8 ] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[9 ] TOKEN:: 10                  TOKEN_TYPE: TOKEN_INT_LITERAL
+[10] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[11] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[12] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[13] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[14] TOKEN:: 3                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[15] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[16] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[17] TOKEN:: s                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[18] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[19] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[20] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[21] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[22] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[23] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[24] TOKEN:: d                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[25] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[26] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[27] TOKEN:: -                   TOKEN_TYPE: TOKEN_MINUS
+[28] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[29] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[30] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[31] TOKEN:: m                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[32] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[33] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[34] TOKEN:: *                   TOKEN_TYPE: TOKEN_STAR
+[35] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[36] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[37] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[38] TOKEN:: q                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[39] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[40] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[41] TOKEN:: /                   TOKEN_TYPE: TOKEN_SLASH
+[42] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[43] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[44] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[45] TOKEN:: s                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[46] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[47] TOKEN:: d                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[48] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[49] TOKEN:: m                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[50] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[51] TOKEN:: q                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[52] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[53] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[54] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

@@ -1,0 +1,19 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[4 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[5 ] TOKEN:: y                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[6 ] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[7 ] TOKEN:: 5                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[8 ] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[9 ] TOKEN:: short               TOKEN_TYPE: TOKEN_SHORT
+[10] TOKEN:: s                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[11] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[12] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[13] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[14] TOKEN:: long                TOKEN_TYPE: TOKEN_LONG
+[15] TOKEN:: l                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[16] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[17] TOKEN:: 100                 TOKEN_TYPE: TOKEN_INT_LITERAL
+[18] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[19] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

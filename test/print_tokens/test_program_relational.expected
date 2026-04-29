@@ -1,0 +1,86 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[5 ] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[6 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[7 ] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[8 ] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[9 ] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[10] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[11] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[12] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[13] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[14] TOKEN:: 2                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[15] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[16] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[17] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[18] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[19] TOKEN:: <                   TOKEN_TYPE: TOKEN_LT
+[20] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[21] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[22] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[23] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[24] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[25] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[26] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[27] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[28] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[29] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[30] TOKEN:: <=                  TOKEN_TYPE: TOKEN_LE
+[31] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[32] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[33] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[34] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[35] TOKEN:: 2                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[36] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[37] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[38] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[39] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[40] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[41] TOKEN:: >                   TOKEN_TYPE: TOKEN_GT
+[42] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[43] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[44] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[45] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[46] TOKEN:: 3                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[47] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[48] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[49] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[50] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[51] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[52] TOKEN:: >=                  TOKEN_TYPE: TOKEN_GE
+[53] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[54] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[55] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[56] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[57] TOKEN:: 4                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[58] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[59] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[60] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[61] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[62] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[63] TOKEN:: ==                  TOKEN_TYPE: TOKEN_EQ
+[64] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[65] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[66] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[67] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[68] TOKEN:: 5                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[69] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[70] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[71] TOKEN:: if                  TOKEN_TYPE: TOKEN_IF
+[72] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[73] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[74] TOKEN:: !=                  TOKEN_TYPE: TOKEN_NE
+[75] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[76] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[77] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[78] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[79] TOKEN:: 6                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[80] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[81] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[82] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[83] TOKEN:: 0                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[84] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[85] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[86] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

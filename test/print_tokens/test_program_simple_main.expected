@@ -1,0 +1,10 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[5 ] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[6 ] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[7 ] TOKEN:: 0                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[8 ] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[9 ] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[10] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

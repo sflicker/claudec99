@@ -1,0 +1,45 @@
+[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] TOKEN:: compute             TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[5 ] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[6 ] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[7 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[8 ] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[9 ] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[10] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[11] TOKEN:: c                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[12] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[13] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[14] TOKEN:: d                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[15] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[16] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[17] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[18] TOKEN:: a                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[19] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[20] TOKEN:: b                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[21] TOKEN:: -                   TOKEN_TYPE: TOKEN_MINUS
+[22] TOKEN:: c                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[23] TOKEN:: +                   TOKEN_TYPE: TOKEN_PLUS
+[24] TOKEN:: d                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[25] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[26] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[27] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[28] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[29] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[30] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[31] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[32] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[33] TOKEN:: compute             TOKEN_TYPE: TOKEN_IDENTIFIER
+[34] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[35] TOKEN:: 1                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[36] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[37] TOKEN:: 2                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[38] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[39] TOKEN:: 3                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[40] TOKEN:: ,                   TOKEN_TYPE: TOKEN_COMMA
+[41] TOKEN:: 4                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[42] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[43] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[44] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[45] TOKEN::                     TOKEN_TYPE: TOKEN_EOF
