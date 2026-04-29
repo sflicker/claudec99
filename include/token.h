@@ -23,6 +23,7 @@ typedef enum {
     TOKEN_GOTO,
     TOKEN_IDENTIFIER,
     TOKEN_INT_LITERAL,
+    TOKEN_STRING_LITERAL,
     TOKEN_LPAREN,
     TOKEN_RPAREN,
     TOKEN_LBRACE,
@@ -57,6 +58,7 @@ typedef enum {
 typedef struct {
     TokenType type;
     char value[256];
+    int length;
     long long_value;
     TypeKind literal_type;
 } Token;

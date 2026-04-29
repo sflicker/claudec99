@@ -37,6 +37,7 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_GOTO:          return "TOKEN_GOTO";
         case TOKEN_IDENTIFIER:    return "TOKEN_IDENTIFIER";
         case TOKEN_INT_LITERAL:   return "TOKEN_INT_LITERAL";
+        case TOKEN_STRING_LITERAL: return "TOKEN_STRING_LITERAL";
         case TOKEN_LPAREN:        return "TOKEN_LPAREN";
         case TOKEN_RPAREN:        return "TOKEN_RPAREN";
         case TOKEN_LBRACE:        return "TOKEN_LBRACE";

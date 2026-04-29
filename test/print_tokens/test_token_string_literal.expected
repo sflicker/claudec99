@@ -1,0 +1,4 @@
+[1] TOKEN:: Hello               TOKEN_TYPE: TOKEN_STRING_LITERAL
+[2] TOKEN:: abc                 TOKEN_TYPE: TOKEN_STRING_LITERAL
+[3] TOKEN::                     TOKEN_TYPE: TOKEN_STRING_LITERAL
+[4] TOKEN::                     TOKEN_TYPE: TOKEN_EOF
