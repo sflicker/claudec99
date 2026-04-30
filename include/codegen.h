@@ -10,6 +10,7 @@
 #define MAX_SWITCH_DEPTH 16
 #define MAX_SWITCH_LABELS 64
 #define MAX_USER_LABELS 64
+#define MAX_STRING_LITERALS 256
 
 typedef struct {
     char name[256];
@@ -78,6 +79,15 @@ typedef struct {
      * callee's AST_FUNCTION_DECL (and through it, the declared
      * parameter types) at each call site for argument conversion. */
     ASTNode *tu_root;
+    /* Stage 14-03: per-translation-unit pool of string literals.
+     * Each AST_STRING_LITERAL encountered during expression emission
+     * is appended here and assigned the index `string_pool_count`
+     * (used as the suffix in `Lstr<N>`). After all functions are
+     * emitted, the pool is walked once to write the `.rodata`
+     * section. Storing AST node pointers is safe because the AST
+     * outlives `codegen_translation_unit`. */
+    ASTNode *string_pool[MAX_STRING_LITERALS];
+    int string_pool_count;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

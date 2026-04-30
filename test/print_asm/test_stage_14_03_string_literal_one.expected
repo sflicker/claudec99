@@ -1,0 +1,10 @@
+section .text
+global main
+main:
+    lea rax, [rel Lstr0]
+    mov edi, eax
+    mov eax, 60
+    syscall
+section .rodata
+Lstr0:
+    db 111, 110, 101, 0

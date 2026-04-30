@@ -141,6 +141,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_return_type = TYPE_INT;
     cg->current_return_full_type = NULL;
     cg->tu_root = NULL;
+    cg->string_pool_count = 0;
 }
 
 /*
@@ -504,6 +505,27 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    mov eax, %s\n", node->value);
             node->result_type = TYPE_INT;
         }
+        return;
+    }
+    if (node->type == AST_STRING_LITERAL) {
+        /* Stage 14-03: register the literal in the per-translation-unit
+         * string pool, assigning it the next `Lstr<N>` label, then emit
+         * a PC-relative load of that label's address into rax. The
+         * `.rodata` section is written once at the end of the unit
+         * (see codegen_translation_unit). The result is typed TYPE_LONG
+         * (an 8-byte address-as-integer view) — pointer-typing of
+         * string literals is out of scope for this stage. */
+        if (cg->string_pool_count >= MAX_STRING_LITERALS) {
+            fprintf(stderr,
+                    "error: too many string literals (max %d)\n",
+                    MAX_STRING_LITERALS);
+            exit(1);
+        }
+        int idx = cg->string_pool_count;
+        cg->string_pool[idx] = node;
+        cg->string_pool_count++;
+        fprintf(cg->output, "    lea rax, [rel Lstr%d]\n", idx);
+        node->result_type = TYPE_LONG;
         return;
     }
     if (node->type == AST_VAR_REF) {
@@ -1533,6 +1555,28 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
     }
 }
 
+/*
+ * Stage 14-03: emit the static-data section after every function has
+ * been written. Each pooled AST_STRING_LITERAL becomes a `Lstr<N>`
+ * label followed by a `db` line listing the payload bytes followed by
+ * a NUL terminator. Empty literals collapse to `db 0`. The section is
+ * skipped entirely when no literals were collected.
+ */
+static void codegen_emit_string_pool(CodeGen *cg) {
+    if (cg->string_pool_count == 0) return;
+    fprintf(cg->output, "section .rodata\n");
+    for (int i = 0; i < cg->string_pool_count; i++) {
+        ASTNode *s = cg->string_pool[i];
+        int byte_len = (s->full_type ? s->full_type->length - 1 : 0);
+        fprintf(cg->output, "Lstr%d:\n", i);
+        fprintf(cg->output, "    db ");
+        for (int j = 0; j < byte_len; j++) {
+            fprintf(cg->output, "%d, ", (unsigned char)s->value[j]);
+        }
+        fprintf(cg->output, "0\n");
+    }
+}
+
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     cg->tu_root = node;
     fprintf(cg->output, "section .text\n");
@@ -1541,4 +1585,5 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
             codegen_function(cg, node->children[i]);
         }
     }
+    codegen_emit_string_pool(cg);
 }

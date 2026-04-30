@@ -12,6 +12,7 @@ suites=(
     invalid
     print_ast
     print_tokens
+    print_asm
 )
 
 agg_pass=0
