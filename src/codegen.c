@@ -512,9 +512,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * string pool, assigning it the next `Lstr<N>` label, then emit
          * a PC-relative load of that label's address into rax. The
          * `.rodata` section is written once at the end of the unit
-         * (see codegen_translation_unit). The result is typed TYPE_LONG
-         * (an 8-byte address-as-integer view) — pointer-typing of
-         * string literals is out of scope for this stage. */
+         * (see codegen_translation_unit).
+         *
+         * Stage 14-04: array-to-pointer decay. The literal's logical
+         * type is `char[N+1]` but in an expression context it decays
+         * to `char *` — set the result type accordingly so init,
+         * assignment, comparison, and pointer arithmetic line up with
+         * the same checks pointer locals receive. The byte payload
+         * needed by the `.rodata` emitter is recovered from
+         * `strlen(node->value)` since `full_type` no longer carries
+         * the array length. */
         if (cg->string_pool_count >= MAX_STRING_LITERALS) {
             fprintf(stderr,
                     "error: too many string literals (max %d)\n",
@@ -525,7 +532,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         cg->string_pool[idx] = node;
         cg->string_pool_count++;
         fprintf(cg->output, "    lea rax, [rel Lstr%d]\n", idx);
-        node->result_type = TYPE_LONG;
+        node->result_type = TYPE_POINTER;
+        node->full_type = type_pointer(type_char());
         return;
     }
     if (node->type == AST_VAR_REF) {
@@ -1567,7 +1575,12 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     fprintf(cg->output, "section .rodata\n");
     for (int i = 0; i < cg->string_pool_count; i++) {
         ASTNode *s = cg->string_pool[i];
-        int byte_len = (s->full_type ? s->full_type->length - 1 : 0);
+        /* Stage 14-04: `full_type` was rewritten to `char *` once the
+         * literal decayed during expression codegen, so the byte count
+         * comes from the payload string itself. The lexer rejects
+         * escape sequences, so `node->value` has no embedded NULs and
+         * `strlen` is safe. */
+        int byte_len = (int)strlen(s->value);
         fprintf(cg->output, "Lstr%d:\n", i);
         fprintf(cg->output, "    db ");
         for (int j = 0; j < byte_len; j++) {

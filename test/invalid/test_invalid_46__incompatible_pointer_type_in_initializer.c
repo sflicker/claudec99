@@ -1,4 +1,4 @@
 int main() {
-    char *s = "one";
+    int *p = "hello";
     return 0;
 }

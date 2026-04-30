@@ -1,7 +1,12 @@
 section .text
 global main
 main:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16
     lea rax, [rel Lstr0]
+    mov [rbp - 8], rax
+    mov eax, 0
     mov edi, eax
     mov eax, 60
     syscall
