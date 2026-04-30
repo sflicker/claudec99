@@ -1,4 +1,4 @@
 int main() {
-    "A\n";
+    char *s = "\x41";
     return 0;
 }

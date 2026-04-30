@@ -101,4 +101,9 @@
 
 <string_literal> ::= TOKEN_STRING_LITERAL
 
+<string_char> ::= <ordinary_char>
+                | <escape_sequence>
+
+<escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\"" | "\0"
+
 ```

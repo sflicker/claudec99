@@ -100,11 +100,25 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("IntLiteral: %s\n", node->value);
         break;
     case AST_STRING_LITERAL: {
-        /* Stage 14-02: byte length is preserved as
-         * full_type->length - 1 (full_type carries char[N+1]). */
-        int byte_length = node->full_type ? node->full_type->length - 1 : 0;
-        printf("StringLiteral: \"%s\" (length %d)\n",
-               node->value, byte_length);
+        /* Stage 14-05: re-escape decoded bytes back to source form so
+         * pretty-print output stays line-oriented and stable for diff
+         * testing. byte_length is the authoritative count after escape
+         * decoding; the payload may contain embedded NUL bytes. */
+        int byte_length = node->byte_length;
+        printf("StringLiteral: \"");
+        for (int i = 0; i < byte_length; i++) {
+            unsigned char b = (unsigned char)node->value[i];
+            switch (b) {
+            case '\n': printf("\\n");  break;
+            case '\t': printf("\\t");  break;
+            case '\r': printf("\\r");  break;
+            case '\\': printf("\\\\"); break;
+            case '"':  printf("\\\""); break;
+            case 0:    printf("\\0");  break;
+            default:   putchar(b);     break;
+            }
+        }
+        printf("\" (length %d)\n", byte_length);
         break;
     }
     case AST_VAR_REF:

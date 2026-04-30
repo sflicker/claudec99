@@ -94,14 +94,21 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '&') { token.type = TOKEN_AMPERSAND; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return finalize(token); }
 
-    /* String literals: double-quoted, ordinary characters only.
-     * Body bytes are stored in token.value (without the surrounding
-     * quotes) and token.length records the byte count. Three rejection
-     * cases:
+    /* String literals: double-quoted, with the supported backslash
+     * escape sequences decoded into their byte values. Body bytes
+     * (after decoding) are stored in token.value and token.length
+     * records the decoded byte count. Three rejection cases:
      *   - newline byte before the closing quote
      *   - end-of-file before the closing quote
-     *   - any backslash escape sequence (not yet supported)
-     * Body length is capped at 255 bytes to fit token.value[256]. */
+     *   - any backslash escape outside the supported set
+     * Body length is capped at 255 decoded bytes to fit
+     * token.value[256].
+     *
+     * Stage 14-05: decoded values may contain embedded NUL bytes (from
+     * `\0`), so token.value is no longer NUL-terminated-content; rely
+     * on token.length when iterating. The trailing NUL written below
+     * is purely a defensive sentinel for callers that still pass the
+     * buffer to string.h functions for non-string-literal tokens. */
     if (c == '"') {
         lexer->pos++;
         int i = 0;
@@ -121,15 +128,29 @@ Token lexer_next_token(Lexer *lexer) {
                         "error: newline in string literal\n");
                 exit(1);
             }
-            if (ch == '\\') {
-                fprintf(stderr,
-                        "error: escape sequences not supported in string literals\n");
-                exit(1);
-            }
             if (i >= 255) {
                 fprintf(stderr,
                         "error: string literal too long (max 255 bytes)\n");
                 exit(1);
+            }
+            if (ch == '\\') {
+                char next = lexer->source[lexer->pos + 1];
+                char decoded;
+                switch (next) {
+                case 'n':  decoded = 10;   break;
+                case 't':  decoded = 9;    break;
+                case 'r':  decoded = 13;   break;
+                case '\\': decoded = '\\'; break;
+                case '"':  decoded = '"';  break;
+                case '0':  decoded = 0;    break;
+                default:
+                    fprintf(stderr,
+                            "error: invalid escape sequence in string literal\n");
+                    exit(1);
+                }
+                token.value[i++] = decoded;
+                lexer->pos += 2;
+                continue;
             }
             token.value[i++] = ch;
             lexer->pos++;

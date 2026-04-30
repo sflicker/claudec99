@@ -1,0 +1,7 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: char *s
+        StringLiteral: "A\n\t\r\\\"\0B" (length 8)
+      ReturnStmt:
+        IntLiteral: 0

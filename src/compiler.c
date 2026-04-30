@@ -80,17 +80,67 @@ static const char *token_type_name(TokenType t) {
  *   max digit count) so all rows align.
  * - Value field is left-justified to 18 chars: up to 15 chars of the
  *   token text; if longer, the first 15 chars followed by "...".
+ *
+ * Stage 14-05: a string literal's decoded payload may contain bytes
+ * that would break the line-oriented output (embedded NUL, newline,
+ * tab, CR) or the surrounding quotes/backslash. Re-escape those
+ * bytes back to source form before applying the width logic so the
+ * printed value remains readable and the buffer length still maps
+ * onto a single line.
  */
 static void print_token_row(int index, int index_width, const Token *tok) {
+    char display[512];
+    size_t display_len = 0;
+    if (tok->type == TOKEN_STRING_LITERAL) {
+        for (int i = 0; i < tok->length && display_len + 2 < sizeof(display); i++) {
+            unsigned char b = (unsigned char)tok->value[i];
+            switch (b) {
+            case '\n':
+                display[display_len++] = '\\';
+                display[display_len++] = 'n';
+                break;
+            case '\t':
+                display[display_len++] = '\\';
+                display[display_len++] = 't';
+                break;
+            case '\r':
+                display[display_len++] = '\\';
+                display[display_len++] = 'r';
+                break;
+            case '\\':
+                display[display_len++] = '\\';
+                display[display_len++] = '\\';
+                break;
+            case '"':
+                display[display_len++] = '\\';
+                display[display_len++] = '"';
+                break;
+            case 0:
+                display[display_len++] = '\\';
+                display[display_len++] = '0';
+                break;
+            default:
+                display[display_len++] = (char)b;
+                break;
+            }
+        }
+        display[display_len] = '\0';
+    } else {
+        size_t src_len = strlen(tok->value);
+        if (src_len >= sizeof(display)) src_len = sizeof(display) - 1;
+        memcpy(display, tok->value, src_len);
+        display[src_len] = '\0';
+        display_len = src_len;
+    }
+
     char value_buf[19];
-    size_t len = strlen(tok->value);
-    if (len > 15) {
-        memcpy(value_buf, tok->value, 15);
+    if (display_len > 15) {
+        memcpy(value_buf, display, 15);
         memcpy(value_buf + 15, "...", 3);
         value_buf[18] = '\0';
     } else {
-        memcpy(value_buf, tok->value, len);
-        for (size_t i = len; i < 18; i++) {
+        memcpy(value_buf, display, display_len);
+        for (size_t i = display_len; i < 18; i++) {
             value_buf[i] = ' ';
         }
         value_buf[18] = '\0';

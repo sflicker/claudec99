@@ -1575,12 +1575,13 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     fprintf(cg->output, "section .rodata\n");
     for (int i = 0; i < cg->string_pool_count; i++) {
         ASTNode *s = cg->string_pool[i];
-        /* Stage 14-04: `full_type` was rewritten to `char *` once the
-         * literal decayed during expression codegen, so the byte count
-         * comes from the payload string itself. The lexer rejects
-         * escape sequences, so `node->value` has no embedded NULs and
-         * `strlen` is safe. */
-        int byte_len = (int)strlen(s->value);
+        /* Stage 14-05: byte count is taken from the AST node's
+         * byte_length, which the parser stamps from the lexer's
+         * decoded count. This is required because the decoded payload
+         * may contain embedded NULs (from the `\0` escape) and
+         * `full_type` was already rewritten to `char *` during the
+         * expression-time array-to-pointer decay. */
+        int byte_len = s->byte_length;
         fprintf(cg->output, "Lstr%d:\n", i);
         fprintf(cg->output, "    db ");
         for (int j = 0; j < byte_len; j++) {

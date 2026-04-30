@@ -50,6 +50,10 @@ typedef struct ASTNode {
      * non-pointer nodes; for AST_DECLARATION with decl_type ==
      * TYPE_POINTER, points to the head of the pointer Type chain. */
     struct Type *full_type;
+    /* Stage 14-05: decoded byte count for AST_STRING_LITERAL. The
+     * payload bytes live in `value` but may contain embedded NULs once
+     * `\0` escapes are supported, so length must be carried alongside. */
+    int byte_length;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);

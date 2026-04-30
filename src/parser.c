@@ -101,12 +101,23 @@ static ASTNode *parse_primary(Parser *parser) {
     /* Stage 14-02: a string literal is a primary expression whose
      * logical type is char[N+1], where N is the literal's byte
      * length and the trailing slot holds the implicit NUL. The
-     * payload bytes ride on node->value (set by ast_new) and the
-     * length is preserved on full_type->length. */
+     * payload bytes ride on node->value (copied below) and the
+     * length is preserved on full_type->length.
+     *
+     * Stage 14-05: the decoded payload may contain embedded NUL
+     * bytes (from `\0`), so the value is copied with memcpy bounded
+     * by token.length rather than via ast_new's strncpy, and the
+     * count is also stashed on byte_length for downstream consumers
+     * (notably codegen, where full_type is rewritten to `char *`
+     * during the array-to-pointer decay and the length on full_type
+     * is no longer reachable). */
     if (parser->current.type == TOKEN_STRING_LITERAL) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *node = ast_new(AST_STRING_LITERAL, token.value);
+        ASTNode *node = ast_new(AST_STRING_LITERAL, NULL);
+        memcpy(node->value, token.value, token.length);
+        node->value[token.length] = '\0';
+        node->byte_length = token.length;
         node->decl_type = TYPE_ARRAY;
         node->full_type = type_array(type_char(), token.length + 1);
         return node;
