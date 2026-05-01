@@ -9,6 +9,11 @@
   - Add invalid tests for invalid char array initialization from string literals
   - Ensure diagnostics are clear and stable enough for test expectations.
   - Ensure existing valid tests continue to pass.
+  - No Token updates
+  - No lexer updates
+  - No parser updates
+  - No AST updates
+  - No Codegen updates
 
 ## Invalid cases
 
