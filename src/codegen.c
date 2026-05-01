@@ -1277,17 +1277,17 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
              * other size changes emit an explicit sign-extend. */
             emit_convert(cg, src_kind, dst_kind);
         }
-        if (is_main) {
-            fprintf(cg->output, "    mov edi, eax\n");
-            fprintf(cg->output, "    mov eax, 60\n");
-            fprintf(cg->output, "    syscall\n");
-        } else {
-            if (cg->has_frame) {
-                fprintf(cg->output, "    mov rsp, rbp\n");
-                fprintf(cg->output, "    pop rbp\n");
-            }
-            fprintf(cg->output, "    ret\n");
+        /* Stage 14-07: main now returns normally so the gcc-linked
+         * crt0 / __libc_start_main can call libc `exit`, which runs
+         * stdio cleanup (notably flushing buffered `puts` output to
+         * non-TTY stdouts). The exit code in eax becomes
+         * __libc_start_main's return-from-main value, which it then
+         * passes to exit. */
+        if (cg->has_frame) {
+            fprintf(cg->output, "    mov rsp, rbp\n");
+            fprintf(cg->output, "    pop rbp\n");
         }
+        fprintf(cg->output, "    ret\n");
     } else if (node->type == AST_IF_STATEMENT) {
         int label_id = cg->label_count++;
         codegen_expression(cg, node->children[0]);
@@ -1523,13 +1523,21 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
-        /* Function label and prologue */
+        /* Function label and prologue. Stage 14-07: always emit
+         * `push rbp; mov rbp, rsp` so rsp is 16-byte aligned inside
+         * the function regardless of how it was entered. With the
+         * stage-14-07 link change (gcc -no-pie), `_start` calls
+         * `main` so rsp is 8 mod 16 at main entry; the unconditional
+         * push rbp restores 16-byte alignment that SysV AMD64
+         * requires at every internal call site (notably libc calls
+         * such as `puts` that use SSE-aligned loads). The
+         * `sub rsp, N` is still elided when there are no locals. */
         fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
-        cg->has_frame = (stack_size > 0);
-        if (cg->has_frame) {
-            fprintf(cg->output, "    push rbp\n");
-            fprintf(cg->output, "    mov rbp, rsp\n");
+        cg->has_frame = 1;
+        fprintf(cg->output, "    push rbp\n");
+        fprintf(cg->output, "    mov rbp, rsp\n");
+        if (stack_size > 0) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
         }
 
@@ -1607,10 +1615,71 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     }
 }
 
+/*
+ * Stage 14-07: a function whose AST_FUNCTION_DECL has no trailing
+ * AST_BLOCK is a pure declaration (parameters only). Used to decide
+ * whether to emit an `extern <name>` directive for the linker.
+ */
+static int function_has_body(ASTNode *func) {
+    if (!func) return 0;
+    for (int i = func->child_count - 1; i >= 0; i--) {
+        if (func->children[i]->type == AST_BLOCK) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Stage 14-07: scan the translation unit for an AST_FUNCTION_DECL
+ * with the given name that carries a body. Used to suppress
+ * `extern` emission for functions that have a forward declaration
+ * AND a definition in the same TU.
+ */
+static int tu_has_definition_for(ASTNode *tu, const char *name) {
+    if (!tu) return 0;
+    for (int i = 0; i < tu->child_count; i++) {
+        ASTNode *c = tu->children[i];
+        if (c->type == AST_FUNCTION_DECL &&
+            strcmp(c->value, name) == 0 &&
+            function_has_body(c)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Stage 14-07: emit `extern <name>` directives for every function
+ * that is declared but never defined in this translation unit, so
+ * NASM marks the symbol as undefined and the linker resolves it
+ * (e.g. against libc's `puts`). Multiple non-defining declarations
+ * of the same name collapse to a single `extern` line.
+ */
+static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
+    for (int i = 0; i < tu->child_count; i++) {
+        ASTNode *c = tu->children[i];
+        if (c->type != AST_FUNCTION_DECL) continue;
+        if (function_has_body(c)) continue;
+        if (tu_has_definition_for(tu, c->value)) continue;
+        int already_emitted = 0;
+        for (int k = 0; k < i; k++) {
+            ASTNode *p = tu->children[k];
+            if (p->type == AST_FUNCTION_DECL &&
+                !function_has_body(p) &&
+                strcmp(p->value, c->value) == 0) {
+                already_emitted = 1;
+                break;
+            }
+        }
+        if (already_emitted) continue;
+        fprintf(cg->output, "extern %s\n", c->value);
+    }
+}
+
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     cg->tu_root = node;
     fprintf(cg->output, "section .text\n");
     if (node->type == AST_TRANSLATION_UNIT) {
+        codegen_emit_externs(cg, node);
         for (int i = 0; i < node->child_count; i++) {
             codegen_function(cg, node->children[i]);
         }

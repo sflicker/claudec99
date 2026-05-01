@@ -10,6 +10,6 @@ main:
     mov byte [rbp - 2], 0
     mov byte [rbp - 1], 0
     mov eax, 0
-    mov edi, eax
-    mov eax, 60
-    syscall
+    mov rsp, rbp
+    pop rbp
+    ret

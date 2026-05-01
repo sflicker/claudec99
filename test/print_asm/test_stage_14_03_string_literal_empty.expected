@@ -7,9 +7,9 @@ main:
     lea rax, [rel Lstr0]
     mov [rbp - 8], rax
     mov eax, 0
-    mov edi, eax
-    mov eax, 60
-    syscall
+    mov rsp, rbp
+    pop rbp
+    ret
 section .rodata
 Lstr0:
     db 0

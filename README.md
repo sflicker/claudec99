@@ -56,9 +56,14 @@ End-to-end build and run:
 ```
 ./build/ccompiler hello.c
 nasm -f elf64 hello.asm -o hello.o
-ld -e main hello.o -o hello
+gcc -no-pie hello.o -o hello
 ./hello ; echo $?
 ```
+
+`gcc -no-pie` is used in place of bare `ld` so crt0 and libc are
+linked in. This lets generated programs call libc functions
+(declared in the source via `int puts(char *s);` and similar) and
+ensures stdio buffers are flushed at exit.
 
 ## Example
 
@@ -84,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 14-06 (initializing local `char` arrays from string literals):
+Through stage 14-07 (calling libc `puts`):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -93,7 +98,9 @@ Through stage 14-06 (initializing local `char` arrays from string literals):
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
   declarations, SysV AMD64 calls with up to 6 arguments, typed parameter
-  and return-type conversions at the call boundary.
+  and return-type conversions at the call boundary, calls into libc
+  via `extern` emission for declared-but-not-defined functions
+  (e.g. `int puts(char *s);`).
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -136,9 +143,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 14-06 all
-402 tests pass (250 valid, 49 invalid, 23 print-AST, 73 print-tokens,
-7 print-asm).
+`Aggregate: P passed, F failed, T total` line. As of stage 14-07 all
+405 tests pass (252 valid, 49 invalid, 23 print-AST, 73 print-tokens,
+8 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

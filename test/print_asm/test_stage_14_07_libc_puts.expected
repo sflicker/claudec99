@@ -1,15 +1,17 @@
 section .text
+extern puts
 global main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 16
     lea rax, [rel Lstr0]
-    mov [rbp - 8], rax
+    push rax
+    pop rdi
+    call puts
     mov eax, 0
     mov rsp, rbp
     pop rbp
     ret
 section .rodata
 Lstr0:
-    db 111, 110, 101, 0
+    db 104, 101, 108, 108, 111, 0

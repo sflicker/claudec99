@@ -46,16 +46,19 @@ for src in "$SCRIPT_DIR"/*.c; do
         continue
     fi
 
-    # Link — use main as the explicit entry point so helper definitions that
-    # precede main in the translation unit do not become the entry.
-    if ! ld -e main "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" 2>/dev/null; then
+    # Link — gcc -no-pie pulls in crt0 (which calls `main` from `_start`)
+    # and libc, so external libc symbols like `puts` resolve. Our
+    # generated `main` exits via direct syscall, which is compatible
+    # with crt0 (it never returns to `_start`).
+    if ! gcc -no-pie "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue
     fi
 
-    # Run and check exit code
-    "$WORK_DIR/${name}"
+    # Run and check exit code. Stdout is redirected so tests that print
+    # don't pollute the runner's PASS/FAIL output.
+    "$WORK_DIR/${name}" >/dev/null
     actual=$?
 
     if [ "$actual" -eq "$expected" ]; then
