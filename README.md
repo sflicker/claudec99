@@ -20,7 +20,7 @@ include/    public headers (ast, codegen, lexer, parser, type, util, token)
 src/        compiler implementation
 test/       test suites and runner scripts
 docs/
-  stages/      per-stage specifications (14-06 in progress)
+  stages/      per-stage specifications
   milestones/  per-stage implementation summaries
   outlines/    overall checklist and overview
   grammar.md   current EBNF for the supported language
@@ -84,7 +84,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 14-05 (string literal escape sequences):
+Through stage 14-06 (initializing local `char` arrays from string literals):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -98,7 +98,9 @@ Through stage 14-05 (string literal escape sequences):
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
-  pointer arithmetic, subscript-as-pointer-arithmetic.
+  pointer arithmetic, subscript-as-pointer-arithmetic, initialization
+  of local `char` arrays from a string literal (with explicit or
+  inferred size).
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
@@ -107,8 +109,9 @@ Through stage 14-05 (string literal escape sequences):
 
 Structs, unions, enums; floating-point and unsigned types; `typedef`
 and storage-class specifiers; variadics; preprocessor; function
-pointers; calls with more than 6 arguments. Stage 14-06 (initializing
-`char` arrays from string literals) is in progress.
+pointers; calls with more than 6 arguments. Initializer lists for
+non-`char` arrays and global string-literal array initialization are
+not yet supported.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -133,9 +136,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 14-05 all
-389 tests pass (244 valid, 45 invalid, 22 print-AST, 73 print-tokens,
-5 print-asm).
+`Aggregate: P passed, F failed, T total` line. As of stage 14-06 all
+402 tests pass (250 valid, 49 invalid, 23 print-AST, 73 print-tokens,
+7 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

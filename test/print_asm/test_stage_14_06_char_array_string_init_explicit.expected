@@ -1,0 +1,15 @@
+section .text
+global main
+main:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16
+    mov byte [rbp - 5], 104
+    mov byte [rbp - 4], 105
+    mov byte [rbp - 3], 0
+    mov byte [rbp - 2], 0
+    mov byte [rbp - 1], 0
+    mov eax, 0
+    mov edi, eax
+    mov eax, 60
+    syscall

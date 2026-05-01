@@ -1,0 +1,9 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: char s[3]
+        StringLiteral: "hi" (length 2)
+      VariableDeclaration: char t[4]
+        StringLiteral: "A\0B" (length 3)
+      ReturnStmt:
+        IntLiteral: 0

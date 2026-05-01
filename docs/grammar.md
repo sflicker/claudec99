@@ -25,7 +25,11 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <type> <identifier> [ "[" <integer_literal> "]" ] [ "=" <expression> ] ";"
+<declaration> ::= <type> <identifier> [ "[" [ <integer_literal> ] "]" ] [ "=" <expression> ] ";"
+
+# Restriction: an omitted array size is only allowed when the
+# declaration has a string-literal initializer. The string-literal
+# initializer form is only allowed when the element type is `char`.
 
 <type> ::= <integer_type> { "*" }
 

@@ -1161,14 +1161,30 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
         /* Stage 13-01: array locals get sized from the array Type
          * (element_size * length) and aligned to the element's
-         * natural alignment. The parser has already rejected any
-         * initializer for arrays, so the init path below is not
-         * entered for TYPE_ARRAY. */
+         * natural alignment.
+         *
+         * Stage 14-06: a `char` array may carry an AST_STRING_LITERAL
+         * child as its initializer. The literal's payload bytes are
+         * copied into the slot in order, followed by an explicit NUL
+         * terminator and zero fill out to the array's declared size.
+         * The literal is not added to the .rodata pool — codegen
+         * emits per-byte stack stores instead. */
         if (node->decl_type == TYPE_ARRAY) {
             int size = node->full_type->size;
             int align = node->full_type->base->alignment;
-            codegen_add_var(cg, node->value, size, align,
-                            node->decl_type, node->full_type);
+            int offset = codegen_add_var(cg, node->value, size, align,
+                                         node->decl_type, node->full_type);
+            if (node->child_count > 0) {
+                ASTNode *str = node->children[0];
+                for (int i = 0; i < size; i++) {
+                    unsigned char b = (i < str->byte_length)
+                        ? (unsigned char)str->value[i]
+                        : 0;
+                    fprintf(cg->output,
+                            "    mov byte [rbp - %d], %d\n",
+                            offset - i, b);
+                }
+            }
             return;
         }
         int size = type_kind_bytes(node->decl_type);

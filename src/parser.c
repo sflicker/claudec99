@@ -696,34 +696,83 @@ static ASTNode *parse_statement(Parser *parser) {
         ASTNode *decl = ast_new(AST_DECLARATION, name.value);
         /* Stage 13-01: optional "[" <integer_literal> "]" suffix
          * makes this an array declaration. The element type is the
-         * (possibly pointer-wrapped) base type. Length must be a
-         * positive integer literal; array initializers and array
-         * function parameters/returns are out of scope for this
-         * stage, so an `=` initializer following array brackets is
-         * rejected here. */
+         * (possibly pointer-wrapped) base type.
+         *
+         * Stage 14-06: the integer-literal size is now optional; an
+         * empty `[]` is allowed only when paired with a string-literal
+         * initializer, in which case the length is inferred as
+         * literal_byte_length + 1. An `=` initializer is also now
+         * allowed, but only when the initializer is a string literal
+         * and the element type is `char`. All other initializer
+         * shapes are rejected with the spec-specified error. */
         if (parser->current.type == TOKEN_LBRACKET) {
             parser->current = lexer_next_token(parser->lexer);
-            if (parser->current.type != TOKEN_INT_LITERAL) {
+            int has_size = 0;
+            int length = 0;
+            if (parser->current.type == TOKEN_INT_LITERAL) {
+                Token size_tok = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                length = (int)size_tok.long_value;
+                if (length <= 0) {
+                    fprintf(stderr,
+                            "error: array size must be greater than zero\n");
+                    exit(1);
+                }
+                has_size = 1;
+            } else if (parser->current.type != TOKEN_RBRACKET) {
                 fprintf(stderr,
                         "error: array size must be an integer literal\n");
                 exit(1);
             }
-            Token size_tok = parser->current;
-            parser->current = lexer_next_token(parser->lexer);
-            int length = (int)size_tok.long_value;
-            if (length <= 0) {
+            parser_expect(parser, TOKEN_RBRACKET);
+
+            ASTNode *str_init = NULL;
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type != TOKEN_STRING_LITERAL) {
+                    if (!has_size) {
+                        fprintf(stderr,
+                                "error: omitted array size requires string literal initializer\n");
+                    } else {
+                        fprintf(stderr,
+                                "error: array initializers not supported\n");
+                    }
+                    exit(1);
+                }
+                if (full_type->kind != TYPE_CHAR) {
+                    fprintf(stderr,
+                            "error: string initializer only supported for char arrays\n");
+                    exit(1);
+                }
+                Token str_tok = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                str_init = ast_new(AST_STRING_LITERAL, NULL);
+                memcpy(str_init->value, str_tok.value, str_tok.length);
+                str_init->value[str_tok.length] = '\0';
+                str_init->byte_length = str_tok.length;
+                str_init->decl_type = TYPE_ARRAY;
+                str_init->full_type = type_array(type_char(), str_tok.length + 1);
+                int needed = str_init->byte_length + 1;
+                if (has_size) {
+                    if (length < needed) {
+                        fprintf(stderr,
+                                "error: array too small for string literal initializer\n");
+                        exit(1);
+                    }
+                } else {
+                    length = needed;
+                }
+            } else if (!has_size) {
                 fprintf(stderr,
-                        "error: array size must be greater than zero\n");
+                        "error: array size required unless initialized from string literal\n");
                 exit(1);
             }
-            parser_expect(parser, TOKEN_RBRACKET);
+
             Type *array_type = type_array(full_type, length);
             decl->decl_type = TYPE_ARRAY;
             decl->full_type = array_type;
-            if (parser->current.type == TOKEN_ASSIGN) {
-                fprintf(stderr,
-                        "error: array initializers not supported\n");
-                exit(1);
+            if (str_init) {
+                ast_add_child(decl, str_init);
             }
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
