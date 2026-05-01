@@ -75,6 +75,8 @@ Grammar file in docs:
    the compiler. If changes are made in the specification to the grammar
    they should be reflected in docs/grammar.md   
 
+README.md - update the project README.md based on the existing format in that file.
+
 When relevant, use supporting files in this skill directory:
 
 * `stage-kickoff-template.md` for the standard step-by-step structure
