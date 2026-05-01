@@ -37,8 +37,9 @@ ld "${BASENAME}.o" -o "${BASENAME}" -e main
 
 # Run
 echo "running: ./${BASENAME}"
+STDOUT_FILE="${BASENAME}.stdout"
 set +e
-"./${BASENAME}"
+"./${BASENAME}" >"$STDOUT_FILE"
 ACTUAL=$?
 set -e
 
@@ -54,5 +55,19 @@ if [ -n "$EXPECTED" ]; then
     fi
 fi
 
+# Optional stdout comparison. If a sibling .expected file exists, the
+# captured stdout must match it byte-for-byte.
+SOURCE_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+EXPECTED_FILE="$SOURCE_DIR/${BASENAME}.expected"
+if [ -f "$EXPECTED_FILE" ]; then
+    if diff -q "$EXPECTED_FILE" "$STDOUT_FILE" >/dev/null; then
+        echo "PASS (output matched)"
+    else
+        echo "FAIL (output mismatch)"
+        diff "$EXPECTED_FILE" "$STDOUT_FILE" || true
+        exit 1
+    fi
+fi
+
 # Clean up
-rm -f "${BASENAME}.asm" "${BASENAME}.o" "${BASENAME}"
+rm -f "${BASENAME}.asm" "${BASENAME}.o" "${BASENAME}" "$STDOUT_FILE"

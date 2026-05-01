@@ -56,18 +56,39 @@ for src in "$SCRIPT_DIR"/*.c; do
         continue
     fi
 
-    # Run and check exit code. Stdout is redirected so tests that print
-    # don't pollute the runner's PASS/FAIL output.
-    "$WORK_DIR/${name}" >/dev/null
+    # Run and check exit code. Stdout is captured so tests that print
+    # don't pollute the runner's PASS/FAIL output, and so the optional
+    # .expected-file comparison below can use it.
+    stdout_file="$WORK_DIR/${name}.stdout"
+    "$WORK_DIR/${name}" >"$stdout_file"
     actual=$?
 
-    if [ "$actual" -eq "$expected" ]; then
-        echo "PASS  $name  (exit code: $actual)"
-        pass=$((pass + 1))
-    else
+    if [ "$actual" -ne "$expected" ]; then
         echo "FAIL  $name  (expected $expected, got $actual)"
         fail=$((fail + 1))
+        continue
     fi
+
+    # Optional stdout comparison. If a sibling .expected file exists in
+    # the source dir, the captured stdout must match it byte-for-byte.
+    expected_file="$SCRIPT_DIR/${name}.expected"
+    if [ -f "$expected_file" ]; then
+        if ! diff -q "$expected_file" "$stdout_file" >/dev/null; then
+            echo "FAIL  $name  (output mismatch)"
+            echo "  --- expected ---"
+            cat "$expected_file"
+            echo "  --- actual ---"
+            cat "$stdout_file"
+            echo "  --- diff ---"
+            diff "$expected_file" "$stdout_file" || true
+            fail=$((fail + 1))
+            continue
+        fi
+        echo "PASS  $name  (exit code: $actual, output matched)"
+    else
+        echo "PASS  $name  (exit code: $actual)"
+    fi
+    pass=$((pass + 1))
 done
 
 echo ""

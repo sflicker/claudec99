@@ -130,7 +130,7 @@ The test harness consists of five suites under `test/`:
 
 | Suite          | What it checks                                                      |
 | -------------- | ------------------------------------------------------------------- |
-| `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename |
+| `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
 | `print_ast`    | `--print-ast` output must match `.expected`                         |
 | `print_tokens` | `--print-tokens` output must match `.expected`                      |
