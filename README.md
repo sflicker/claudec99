@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 15-01 (character literal lexer support):
+Through stage 15-02 (character literal expression node):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -111,9 +111,10 @@ Through stage 15-01 (character literal lexer support):
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
-- **Character literals (lexer only)**: tokenization of `'A'`, `'0'`,
-  and the same escape set extended with `\'` (`\n`, `\t`, `\r`, `\\`,
-  `\'`, `\"`, `\0`). Parser/AST/codegen support is not yet wired up.
+- **Character literals**: tokenization, AST node, and codegen for
+  `'A'`, `'0'`, and the supported escape set (`\n`, `\t`, `\r`, `\\`,
+  `\'`, `\"`, `\0`). A character constant evaluates as an `int`
+  (`'A'` = 65, `'\n'` = 10, etc.) and is a valid primary expression.
 
 ## Not yet supported
 
@@ -146,8 +147,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 15-01 all
-417 tests pass (252 valid, 60 invalid, 23 print-AST, 74 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 15-02 all
+428 tests pass (262 valid, 60 invalid, 24 print-AST, 74 print-tokens,
 8 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

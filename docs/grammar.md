@@ -91,6 +91,7 @@
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
+                         | <character_literal>
                          | <identifier>
                          | <function_call>
                          | "(" <expression> ")"
@@ -107,9 +108,9 @@
 
 <character_literal> ::= TOKEN_CHAR_LITERAL
 
-# Lexical form of a character literal (lexer-only this stage; not yet
-# accepted by <primary_expression>):
+# Lexical form of a character literal:
 #   "'" ( <ordinary_char> | <character_escape_sequence> ) "'"
+# A character constant has type int.
 
 <string_char> ::= <ordinary_char>
                 | <escape_sequence>

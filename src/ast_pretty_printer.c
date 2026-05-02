@@ -99,6 +99,25 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_INT_LITERAL:
         printf("IntLiteral: %s\n", node->value);
         break;
+    case AST_CHAR_LITERAL: {
+        /* Stage 15-02: print spelling and evaluated integer value.
+         * The decoded byte sits at node->value[0]; re-escape it so the
+         * source-form spelling is recoverable in the dump. */
+        unsigned char b = (unsigned char)node->value[0];
+        printf("CharLiteral: '");
+        switch (b) {
+        case '\n': printf("\\n");  break;
+        case '\t': printf("\\t");  break;
+        case '\r': printf("\\r");  break;
+        case '\\': printf("\\\\"); break;
+        case '\'': printf("\\'");  break;
+        case '"':  printf("\\\""); break;
+        case 0:    printf("\\0");  break;
+        default:   putchar(b);     break;
+        }
+        printf("' (%d)\n", b);
+        break;
+    }
     case AST_STRING_LITERAL: {
         /* Stage 14-05: re-escape decoded bytes back to source form so
          * pretty-print output stays line-oriented and stable for diff

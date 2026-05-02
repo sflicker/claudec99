@@ -122,6 +122,22 @@ static ASTNode *parse_primary(Parser *parser) {
         node->full_type = type_array(type_char(), token.length + 1);
         return node;
     }
+    /* Stage 15-02: a character literal is a primary expression of type
+     * int. The token already carries the decoded byte at value[0] and
+     * the evaluated integer at long_value; mirror the string-literal
+     * convention by storing the decoded byte at node->value[0]. The
+     * integer value used by codegen is recovered as
+     * (unsigned char)node->value[0]. */
+    if (parser->current.type == TOKEN_CHAR_LITERAL) {
+        Token token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *node = ast_new(AST_CHAR_LITERAL, NULL);
+        node->value[0] = token.value[0];
+        node->value[1] = '\0';
+        node->byte_length = 1;
+        node->decl_type = TYPE_INT;
+        return node;
+    }
     if (parser->current.type == TOKEN_IDENTIFIER) {
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
         if (parser->current.type == TOKEN_LPAREN) {

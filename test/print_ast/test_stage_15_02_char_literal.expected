@@ -1,0 +1,5 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        CharLiteral: 'A' (65)

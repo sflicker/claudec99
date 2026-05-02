@@ -416,6 +416,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_INT_LITERAL:
         t = node->decl_type;
         break;
+    case AST_CHAR_LITERAL:
+        t = TYPE_INT;
+        break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
         if (lv && (lv->kind == TYPE_POINTER || lv->kind == TYPE_ARRAY)) {
@@ -505,6 +508,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    mov eax, %s\n", node->value);
             node->result_type = TYPE_INT;
         }
+        return;
+    }
+    if (node->type == AST_CHAR_LITERAL) {
+        /* Stage 15-02: a character constant has type int. The decoded
+         * byte sits at node->value[0]; emit the integer value
+         * directly so downstream consumers (return, arithmetic, etc.)
+         * see a 32-bit int in eax. */
+        unsigned char b = (unsigned char)node->value[0];
+        fprintf(cg->output, "    mov eax, %d\n", b);
+        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_STRING_LITERAL) {
