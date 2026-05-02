@@ -3,6 +3,7 @@
 name: implement-stage
 description: Implements a ClaudeC99 stage from a stage spec. Use when asked to read a stage spec, summarize required changes, then implement tokenizer, parser, AST, and code generation incrementally without adding extra features.
 disable-model-invocation: true
+allowed-tools: Bash(python3 *)
 ------------------------------
 
 Read this spec file first: $ARGUMENTS
