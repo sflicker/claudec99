@@ -1,0 +1,2 @@
+[1] TOKEN:: |=                  TOKEN_TYPE: TOKEN_PIPE_ASSIGN
+[2] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

@@ -56,8 +56,16 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_BANG:          return "TOKEN_BANG";
         case TOKEN_TILDE:         return "TOKEN_TILDE";
         case TOKEN_ASSIGN:        return "TOKEN_ASSIGN";
-        case TOKEN_PLUS_ASSIGN:   return "TOKEN_PLUS_ASSIGN";
-        case TOKEN_MINUS_ASSIGN:  return "TOKEN_MINUS_ASSIGN";
+        case TOKEN_PLUS_ASSIGN:         return "TOKEN_PLUS_ASSIGN";
+        case TOKEN_MINUS_ASSIGN:        return "TOKEN_MINUS_ASSIGN";
+        case TOKEN_STAR_ASSIGN:         return "TOKEN_STAR_ASSIGN";
+        case TOKEN_SLASH_ASSIGN:        return "TOKEN_SLASH_ASSIGN";
+        case TOKEN_PERCENT_ASSIGN:      return "TOKEN_PERCENT_ASSIGN";
+        case TOKEN_LEFT_SHIFT_ASSIGN:   return "TOKEN_LEFT_SHIFT_ASSIGN";
+        case TOKEN_RIGHT_SHIFT_ASSIGN:  return "TOKEN_RIGHT_SHIFT_ASSIGN";
+        case TOKEN_AMP_ASSIGN:          return "TOKEN_AMP_ASSIGN";
+        case TOKEN_CARET_ASSIGN:        return "TOKEN_CARET_ASSIGN";
+        case TOKEN_PIPE_ASSIGN:         return "TOKEN_PIPE_ASSIGN";
         case TOKEN_INCREMENT:     return "TOKEN_INCREMENT";
         case TOKEN_DECREMENT:     return "TOKEN_DECREMENT";
         case TOKEN_EQ:            return "TOKEN_EQ";

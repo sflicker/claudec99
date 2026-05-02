@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 16-04 (bitwise binary operators):
+Through stage 16-05 (remaining compound assignment operators):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -122,6 +122,10 @@ Through stage 16-04 (bitwise binary operators):
   (empty `''`, multi-character `'ab'`, unknown escapes such as
   `'\q'`, unterminated literals, and raw newline inside a literal)
   are rejected with diagnostic messages.
+- **Compound assignment operators**: `+=`, `-=`, `*=`, `/=`, `%=`,
+  `<<=`, `>>=`, `&=`, `^=`, `|=` on integer variables. Each
+  desugars to `a op= b` → `a = a op b`, so all arithmetic, shift,
+  and bitwise rules apply to the right-hand expression.
 - **Arithmetic operators**: `+`, `-`, `*`, `/`, and `%` (remainder)
   on integer operands, with the usual `*`/`/`/`%` over `+`/`-`
   precedence and left-to-right associativity. `%` is integer-only:
@@ -178,8 +182,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 16-04 all
-535 tests pass (321 valid, 91 invalid, 24 print-AST, 80 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 16-05 all
+551 tests pass (329 valid, 91 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

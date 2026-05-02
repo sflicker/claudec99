@@ -64,7 +64,8 @@
 <assignment_expression> ::= <unary_expression> <assignment_operator> <assignment_expression>
                            | <logical_or_expression>
                            
-<assignment_operator> ::= "=" | "+=" | "-="                           
+<assignment_operator> ::= "=" | "+=" | "-=" | "*=" | "/=" | "%=" |
+                          "<<=" | ">>=" | "&=" | "^=" | "|="
  
 <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }
  

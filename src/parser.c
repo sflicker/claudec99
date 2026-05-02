@@ -527,9 +527,7 @@ static ASTNode *parse_logical_or(Parser *parser) {
 /*
  * <expression> ::= <assignment_expression>
  *
- * <assignment_expression> ::= <identifier> "=" <assignment_expression>
- *                            | <identifier> "+=" <assignment_expression>
- *                            | <identifier> "-=" <assignment_expression>
+ * <assignment_expression> ::= <identifier> <assignment_operator> <assignment_expression>
  *                            | <unary_expression> "=" <assignment_expression>
  *                            | <logical_or_expression>
  *
@@ -545,15 +543,35 @@ static ASTNode *parse_expression(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_ASSIGN ||
             parser->current.type == TOKEN_PLUS_ASSIGN ||
-            parser->current.type == TOKEN_MINUS_ASSIGN) {
+            parser->current.type == TOKEN_MINUS_ASSIGN ||
+            parser->current.type == TOKEN_STAR_ASSIGN ||
+            parser->current.type == TOKEN_SLASH_ASSIGN ||
+            parser->current.type == TOKEN_PERCENT_ASSIGN ||
+            parser->current.type == TOKEN_LEFT_SHIFT_ASSIGN ||
+            parser->current.type == TOKEN_RIGHT_SHIFT_ASSIGN ||
+            parser->current.type == TOKEN_AMP_ASSIGN ||
+            parser->current.type == TOKEN_CARET_ASSIGN ||
+            parser->current.type == TOKEN_PIPE_ASSIGN) {
             Token op = parser->current;
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *rhs = parse_expression(parser);
             ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
-            if (op.type == TOKEN_PLUS_ASSIGN || op.type == TOKEN_MINUS_ASSIGN) {
-                /* a += b  =>  a = a + b */
+            if (op.type != TOKEN_ASSIGN) {
+                /* a op= b  =>  a = a op b */
                 ASTNode *var_ref = ast_new(AST_VAR_REF, saved_token.value);
-                const char *bin_op = (op.type == TOKEN_PLUS_ASSIGN) ? "+" : "-";
+                const char *bin_op;
+                switch (op.type) {
+                case TOKEN_PLUS_ASSIGN:         bin_op = "+";  break;
+                case TOKEN_MINUS_ASSIGN:        bin_op = "-";  break;
+                case TOKEN_STAR_ASSIGN:         bin_op = "*";  break;
+                case TOKEN_SLASH_ASSIGN:        bin_op = "/";  break;
+                case TOKEN_PERCENT_ASSIGN:      bin_op = "%";  break;
+                case TOKEN_LEFT_SHIFT_ASSIGN:   bin_op = "<<"; break;
+                case TOKEN_RIGHT_SHIFT_ASSIGN:  bin_op = ">>"; break;
+                case TOKEN_AMP_ASSIGN:          bin_op = "&";  break;
+                case TOKEN_CARET_ASSIGN:        bin_op = "^";  break;
+                default:                        bin_op = "|";  break;
+                }
                 ASTNode *binop = ast_new(AST_BINARY_OP, bin_op);
                 ast_add_child(binop, var_ref);
                 ast_add_child(binop, rhs);

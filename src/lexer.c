@@ -77,9 +77,18 @@ Token lexer_next_token(Lexer *lexer) {
         if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; strcpy(token.value, "-="); lexer->pos += 2; return finalize(token); }
         token.type = TOKEN_MINUS; token.value[0] = c; lexer->pos++; return finalize(token);
     }
-    if (c == '*') { token.type = TOKEN_STAR;       token.value[0] = c; lexer->pos++; return finalize(token); }
-    if (c == '/') { token.type = TOKEN_SLASH;      token.value[0] = c; lexer->pos++; return finalize(token); }
-    if (c == '%') { token.type = TOKEN_PERCENT;    token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '*') {
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_STAR_ASSIGN;    strcpy(token.value, "*="); lexer->pos += 2; return finalize(token); }
+        token.type = TOKEN_STAR;    token.value[0] = c; lexer->pos++; return finalize(token);
+    }
+    if (c == '/') {
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_SLASH_ASSIGN;   strcpy(token.value, "/="); lexer->pos += 2; return finalize(token); }
+        token.type = TOKEN_SLASH;   token.value[0] = c; lexer->pos++; return finalize(token);
+    }
+    if (c == '%') {
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PERCENT_ASSIGN; strcpy(token.value, "%="); lexer->pos += 2; return finalize(token); }
+        token.type = TOKEN_PERCENT; token.value[0] = c; lexer->pos++; return finalize(token);
+    }
     if (c == '~') { token.type = TOKEN_TILDE;      token.value[0] = c; lexer->pos++; return finalize(token); }
 
     /* Two-character or single-character relational/equality tokens */
@@ -88,16 +97,25 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '=') { token.type = TOKEN_ASSIGN; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer->pos += 2; return finalize(token); }
     if (c == '!') { token.type = TOKEN_BANG; token.value[0] = c; lexer->pos++; return finalize(token); }
-    if (c == '<' && n == '<') { token.type = TOKEN_LEFT_SHIFT;  strcpy(token.value, "<<"); lexer->pos += 2; return finalize(token); }
-    if (c == '>' && n == '>') { token.type = TOKEN_RIGHT_SHIFT; strcpy(token.value, ">>"); lexer->pos += 2; return finalize(token); }
+    if (c == '<' && n == '<') {
+        if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_LEFT_SHIFT_ASSIGN;  strcpy(token.value, "<<="); lexer->pos += 3; return finalize(token); }
+        token.type = TOKEN_LEFT_SHIFT;  strcpy(token.value, "<<"); lexer->pos += 2; return finalize(token);
+    }
+    if (c == '>' && n == '>') {
+        if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_RIGHT_SHIFT_ASSIGN; strcpy(token.value, ">>="); lexer->pos += 3; return finalize(token); }
+        token.type = TOKEN_RIGHT_SHIFT; strcpy(token.value, ">>"); lexer->pos += 2; return finalize(token);
+    }
     if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer->pos += 2; return finalize(token); }
     if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer->pos += 2; return finalize(token); }
     if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '>') { token.type = TOKEN_GT; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '&' && n == '&') { token.type = TOKEN_AND_AND; strcpy(token.value, "&&"); lexer->pos += 2; return finalize(token); }
+    if (c == '&' && n == '=') { token.type = TOKEN_AMP_ASSIGN;   strcpy(token.value, "&="); lexer->pos += 2; return finalize(token); }
     if (c == '&') { token.type = TOKEN_AMPERSAND; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return finalize(token); }
+    if (c == '|' && n == '=') { token.type = TOKEN_PIPE_ASSIGN;  strcpy(token.value, "|="); lexer->pos += 2; return finalize(token); }
     if (c == '|') { token.type = TOKEN_PIPE;  token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '^' && n == '=') { token.type = TOKEN_CARET_ASSIGN; strcpy(token.value, "^="); lexer->pos += 2; return finalize(token); }
     if (c == '^') { token.type = TOKEN_CARET; token.value[0] = c; lexer->pos++; return finalize(token); }
 
     /* String literals: double-quoted, with the supported backslash
