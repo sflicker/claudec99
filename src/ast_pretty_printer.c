@@ -17,6 +17,9 @@ static const char *operator_name(const char *op) {
     if (strcmp(op, "!") == 0)  return "NOT";
     if (strcmp(op, "&&") == 0) return "AND";
     if (strcmp(op, "||") == 0) return "OR";
+    if (strcmp(op, "&") == 0)  return "BITAND";
+    if (strcmp(op, "^") == 0)  return "BITXOR";
+    if (strcmp(op, "|") == 0)  return "BITOR";
     if (strcmp(op, "++") == 0) return "INCREMENT";
     if (strcmp(op, "--") == 0) return "DECREMENT";
     return op;

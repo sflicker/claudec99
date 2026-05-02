@@ -68,8 +68,14 @@
  
 <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }
  
-<logical_and_expression> ::= <equality_expression> { "&&" <equality_expression> }
- 
+<logical_and_expression> ::= <bitwise_or_expression> { "&&" <bitwise_or_expression> }
+
+<bitwise_or_expression> ::= <bitwise_xor_expression> { "|" <bitwise_xor_expression> }
+
+<bitwise_xor_expression> ::= <bitwise_and_expression> { "^" <bitwise_and_expression> }
+
+<bitwise_and_expression> ::= <equality_expression> { "&" <equality_expression> }
+
 <equality_expression> ::= <relational_expression> { ("==" | "!=") <relational_expression> }
 
 <relational_expression> ::= <shift_expression> { ( "<" | "<=" | ">" | ">=") <shift_expression> }

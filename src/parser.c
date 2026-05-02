@@ -435,14 +435,70 @@ static ASTNode *parse_equality(Parser *parser) {
 }
 
 /*
- * <logical_and_expression> ::= <equality_expression> { "&&" <equality_expression> }
+ * <bitwise_and_expression> ::= <equality_expression> { "&" <equality_expression> }
+ *
+ * Stage 16-04: bitwise AND on integer operands. The same `&` lexeme is
+ * used by unary address-of in `parse_unary`; the parser reaches this
+ * production only after a primary/postfix expression has been
+ * consumed, so a `&` seen here is unambiguously the binary form.
  */
-static ASTNode *parse_logical_and(Parser *parser) {
+static ASTNode *parse_bitwise_and(Parser *parser) {
     ASTNode *left = parse_equality(parser);
-    while (parser->current.type == TOKEN_AND_AND) {
+    while (parser->current.type == TOKEN_AMPERSAND) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_equality(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <bitwise_xor_expression> ::= <bitwise_and_expression> { "^" <bitwise_and_expression> }
+ */
+static ASTNode *parse_bitwise_xor(Parser *parser) {
+    ASTNode *left = parse_bitwise_and(parser);
+    while (parser->current.type == TOKEN_CARET) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_bitwise_and(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <bitwise_or_expression> ::= <bitwise_xor_expression> { "|" <bitwise_xor_expression> }
+ */
+static ASTNode *parse_bitwise_or(Parser *parser) {
+    ASTNode *left = parse_bitwise_xor(parser);
+    while (parser->current.type == TOKEN_PIPE) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_bitwise_xor(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <logical_and_expression> ::= <bitwise_or_expression> { "&&" <bitwise_or_expression> }
+ */
+static ASTNode *parse_logical_and(Parser *parser) {
+    ASTNode *left = parse_bitwise_or(parser);
+    while (parser->current.type == TOKEN_AND_AND) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_bitwise_or(parser);
         ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);

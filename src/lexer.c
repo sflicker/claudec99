@@ -97,6 +97,8 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '&' && n == '&') { token.type = TOKEN_AND_AND; strcpy(token.value, "&&"); lexer->pos += 2; return finalize(token); }
     if (c == '&') { token.type = TOKEN_AMPERSAND; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;   strcpy(token.value, "||"); lexer->pos += 2; return finalize(token); }
+    if (c == '|') { token.type = TOKEN_PIPE;  token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '^') { token.type = TOKEN_CARET; token.value[0] = c; lexer->pos++; return finalize(token); }
 
     /* String literals: double-quoted, with the supported backslash
      * escape sequences decoded into their byte values. Body bytes

@@ -1,0 +1,18 @@
+section .text
+global f
+f:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16
+    mov rax, 6
+    mov [rbp - 8], rax
+    mov rax, 3
+    mov [rbp - 16], rax
+    mov rax, [rbp - 8]
+    push rax
+    mov rax, [rbp - 16]
+    pop rcx
+    and rax, rcx
+    mov rsp, rbp
+    pop rbp
+    ret

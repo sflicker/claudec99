@@ -463,6 +463,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
              * type of the LEFT operand only. The right operand is a
              * shift count and does not participate. */
             t = promote_kind(expr_result_type(cg, node->children[0]));
+        } else if (strcmp(op, "&") == 0 || strcmp(op, "^") == 0 ||
+                   strcmp(op, "|") == 0) {
+            /* Stage 16-04: bitwise binary operators use the standard
+             * common-arithmetic-type rule (char/short/int → int;
+             * either side long → long). Pointer operands are
+             * rejected at codegen. */
+            TypeKind lt = expr_result_type(cg, node->children[0]);
+            TypeKind rt = expr_result_type(cg, node->children[1]);
+            t = common_arith_kind(lt, rt);
         } else {
             t = TYPE_INT; /* comparisons, && , || stay 32-bit */
         }
@@ -969,6 +978,48 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * promoted, and only its low byte (cl) is consumed as the
          * shift count. Pointer or array operands on either side are
          * rejected with the existing diagnostic shape. */
+        /* Stage 16-04: bitwise binary operators `&` / `^` / `|` are
+         * integer-only. Operands undergo the usual integer promotion
+         * (char/short → int; long stays long; mixed → long). The
+         * result type follows the common arithmetic type. Pointer or
+         * array operands on either side are rejected with the
+         * existing diagnostic shape. */
+        if (strcmp(node->value, "&") == 0 || strcmp(node->value, "^") == 0 ||
+            strcmp(node->value, "|") == 0) {
+            const char *bw = node->value;
+            TypeKind lt = expr_result_type(cg, node->children[0]);
+            TypeKind rt = expr_result_type(cg, node->children[1]);
+            if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: operator '%s' not supported on pointer operands\n",
+                        bw);
+                exit(1);
+            }
+            TypeKind common = common_arith_kind(lt, rt);
+            codegen_expression(cg, node->children[0]);
+            if (common == TYPE_LONG &&
+                node->children[0]->result_type != TYPE_LONG) {
+                fprintf(cg->output, "    movsxd rax, eax\n");
+            }
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            if (common == TYPE_LONG &&
+                node->children[1]->result_type != TYPE_LONG) {
+                fprintf(cg->output, "    movsxd rax, eax\n");
+            }
+            fprintf(cg->output, "    pop rcx\n");
+            cg->push_depth--;
+            const char *insn = (strcmp(bw, "&") == 0) ? "and"
+                             : (strcmp(bw, "^") == 0) ? "xor" : "or";
+            if (common == TYPE_LONG) {
+                fprintf(cg->output, "    %s rax, rcx\n", insn);
+            } else {
+                fprintf(cg->output, "    %s eax, ecx\n", insn);
+            }
+            node->result_type = common;
+            return;
+        }
         if (strcmp(node->value, "<<") == 0 || strcmp(node->value, ">>") == 0) {
             const char *sop = node->value;
             TypeKind lt = expr_result_type(cg, node->children[0]);

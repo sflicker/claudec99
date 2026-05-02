@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 16-03 (shift operators):
+Through stage 16-04 (bitwise binary operators):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -133,6 +133,14 @@ Through stage 16-03 (shift operators):
   or array operands on either side are rejected. Shift binds less
   tightly than `+`/`-` and more tightly than `<`/`>`/`<=`/`>=`,
   matching C's standard precedence.
+- **Bitwise binary operators**: `&` (bitwise AND), `^` (bitwise XOR),
+  and `|` (bitwise OR) on integer operands. Operands undergo the
+  usual integer promotions and the result follows the common
+  arithmetic type (`char`/`short`/`int` → `int`; either side `long`
+  → `long`). Pointer or array operands on either side are rejected.
+  Precedence sits between equality and `&&`, ordered (tightest
+  first) `&` > `^` > `|`, so `1 | 2 & 4` parses as `1 | (2 & 4)` and
+  `1 & 3 == 3` parses as `1 & (3 == 3)`.
 - **Unary operators**: `+`, `-`, `!` (logical not), `~` (bitwise
   complement), `++`/`--` (prefix and postfix), `*` (dereference),
   `&` (address-of). `~` and `!` are integer-only: pointer and array
@@ -170,9 +178,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 16-03 all
-505 tests pass (308 valid, 80 invalid, 24 print-AST, 78 print-tokens,
-15 print-asm).
+`Aggregate: P passed, F failed, T total` line. As of stage 16-04 all
+535 tests pass (321 valid, 91 invalid, 24 print-AST, 80 print-tokens,
+19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
