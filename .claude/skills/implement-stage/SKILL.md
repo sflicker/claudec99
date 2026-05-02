@@ -58,7 +58,7 @@ Output Requirements:
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
 * After completing the stage, produce a clearly labeled **Milestone Summary** suitable for saving in the milestones directory.
   The Summary should brief be focusing on what was completed by the stage.
-* After completing the stage, generate a transcript using `transcript-format.md` and save it in the sessions directory.
+* After completing the stage, generate a transcript using `${CLAUDE_SKILL_DIR}/templates/transcript-format.md` and save it in the sessions directory.
 * Use `STAGE_LABEL` in all generated artifact filenames.
 
 Grammar file in docs:
@@ -70,6 +70,6 @@ README.md - update the project README.md based on the existing format in that fi
 
 When relevant, use supporting files in this skill directory:
 
-* `stage-kickoff-template.md` for the standard step-by-step structure
-* `notes.md` for project-specific implementation reminders
-* `transcript-format.md` for generating the session transcript
+* `${CLAUDE_SKILL_DIR}/templates/stage-kickoff-template.md` for the standard step-by-step structure
+* `${CLAUDE_SKILL_DIR}/notes.md` for project-specific implementation reminders
+* `${CLAUDE_SKILL_DIR}/templates/transcript-format.md` for generating the session transcript
