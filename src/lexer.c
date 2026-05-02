@@ -168,7 +168,8 @@ Token lexer_next_token(Lexer *lexer) {
      * with literal_type = TYPE_INT (per C, character constants have
      * type int). Rejected forms:
      *   - empty `''`
-     *   - newline or EOF before the closing quote
+     *   - EOF before the closing quote (unterminated literal)
+     *   - raw newline before the closing quote
      *   - more than one byte before the closing quote (multi-char
      *     constant, e.g. 'ab')
      *   - any unsupported backslash escape (octal `\1`-`\7`, hex
@@ -176,9 +177,14 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '\'') {
         lexer->pos++;
         char ch = lexer->source[lexer->pos];
-        if (ch == '\0' || ch == '\n') {
+        if (ch == '\0') {
             fprintf(stderr,
                     "error: unterminated character literal\n");
+            exit(1);
+        }
+        if (ch == '\n') {
+            fprintf(stderr,
+                    "error: newline in character literal\n");
             exit(1);
         }
         if (ch == '\'') {
@@ -190,12 +196,17 @@ Token lexer_next_token(Lexer *lexer) {
         if (ch == '\\') {
             char next = lexer->source[lexer->pos + 1];
             switch (next) {
+            case 'a':  decoded = 7;    break;
+            case 'b':  decoded = 8;    break;
+            case 'f':  decoded = 12;   break;
             case 'n':  decoded = 10;   break;
-            case 't':  decoded = 9;    break;
             case 'r':  decoded = 13;   break;
+            case 't':  decoded = 9;    break;
+            case 'v':  decoded = 11;   break;
             case '\\': decoded = '\\'; break;
             case '\'': decoded = '\''; break;
             case '"':  decoded = '"';  break;
+            case '?':  decoded = '?';  break;
             case '0':  decoded = 0;    break;
             default:
                 fprintf(stderr,

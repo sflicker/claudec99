@@ -119,7 +119,8 @@
 
 <escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\"" | "\0"
 
-<character_escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\'" | "\"" | "\0"
+<character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
+                              | "\\" | "\'" | "\"" | "\?" | "\0"
 
 # Current Restriction : Only one declarator per declaration
 # Current Restriction : no file-scope variable declarations
