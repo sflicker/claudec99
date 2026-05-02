@@ -80,6 +80,7 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '*') { token.type = TOKEN_STAR;       token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '/') { token.type = TOKEN_SLASH;      token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '%') { token.type = TOKEN_PERCENT;    token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '~') { token.type = TOKEN_TILDE;      token.value[0] = c; lexer->pos++; return finalize(token); }
 
     /* Two-character or single-character relational/equality tokens */
     char n = lexer->source[lexer->pos + 1];

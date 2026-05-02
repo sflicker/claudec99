@@ -434,7 +434,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         t = TYPE_POINTER;
         break;
     case AST_UNARY_OP:
-        if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) {
+        if (strcmp(node->value, "+") == 0 ||
+            strcmp(node->value, "-") == 0 ||
+            strcmp(node->value, "~") == 0) {
             t = promote_kind(expr_result_type(cg, node->children[0]));
         } else {
             t = TYPE_INT; /* ! stays 32-bit */
@@ -745,6 +747,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             }
             node->result_type = ot;
         } else if (strcmp(op, "!") == 0) {
+            if (node->children[0]->result_type == TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: operator '!' not supported on pointer operands\n");
+                exit(1);
+            }
             if (node->children[0]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
@@ -753,6 +760,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    sete al\n");
             fprintf(cg->output, "    movzx eax, al\n");
             node->result_type = TYPE_INT;
+        } else if (strcmp(op, "~") == 0) {
+            if (node->children[0]->result_type == TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: operator '~' not supported on pointer operands\n");
+                exit(1);
+            }
+            TypeKind ot = promote_kind(node->children[0]->result_type);
+            if (ot == TYPE_LONG) {
+                fprintf(cg->output, "    not rax\n");
+            } else {
+                fprintf(cg->output, "    not eax\n");
+            }
+            node->result_type = ot;
         } else {
             /* unary + is a no-op; promoted type propagates */
             node->result_type = promote_kind(node->children[0]->result_type);

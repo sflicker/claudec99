@@ -54,6 +54,7 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_SLASH:         return "TOKEN_SLASH";
         case TOKEN_PERCENT:       return "TOKEN_PERCENT";
         case TOKEN_BANG:          return "TOKEN_BANG";
+        case TOKEN_TILDE:         return "TOKEN_TILDE";
         case TOKEN_ASSIGN:        return "TOKEN_ASSIGN";
         case TOKEN_PLUS_ASSIGN:   return "TOKEN_PLUS_ASSIGN";
         case TOKEN_MINUS_ASSIGN:  return "TOKEN_MINUS_ASSIGN";

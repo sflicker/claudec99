@@ -233,7 +233,7 @@ static ASTNode *parse_postfix(Parser *parser) {
 }
 
 /*
- * <unary_expr> ::= ( "+" | "-" | "!" | "++" | "--" | "*" | "&" ) <unary_expr>
+ * <unary_expr> ::= ( "+" | "-" | "!" | "~" | "++" | "--" | "*" | "&" ) <unary_expr>
  *                | <postfix_expression>
  *
  * Stage 12-02 adds unary "&" (address-of) and unary "*" (dereference).
@@ -242,6 +242,9 @@ static ASTNode *parse_postfix(Parser *parser) {
  * Unary "*" only fires when "*" begins a unary expression — binary
  * "*" continues to work because parse_term consumes the left operand
  * before looking for "*".
+ *
+ * Stage 16-02 adds unary "~" (bitwise complement) on integer operands;
+ * pointer/array operands are rejected at codegen.
  */
 static ASTNode *parse_unary(Parser *parser) {
     if (parser->current.type == TOKEN_INCREMENT ||
@@ -280,7 +283,8 @@ static ASTNode *parse_unary(Parser *parser) {
     }
     if (parser->current.type == TOKEN_PLUS ||
         parser->current.type == TOKEN_MINUS ||
-        parser->current.type == TOKEN_BANG) {
+        parser->current.type == TOKEN_BANG ||
+        parser->current.type == TOKEN_TILDE) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);

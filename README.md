@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 16-01 (remainder operator):
+Through stage 16-02 (unary bitwise complement):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -126,6 +126,11 @@ Through stage 16-01 (remainder operator):
   on integer operands, with the usual `*`/`/`/`%` over `+`/`-`
   precedence and left-to-right associativity. `%` is integer-only:
   pointer or array operands are rejected.
+- **Unary operators**: `+`, `-`, `!` (logical not), `~` (bitwise
+  complement), `++`/`--` (prefix and postfix), `*` (dereference),
+  `&` (address-of). `~` and `!` are integer-only: pointer and array
+  operands are rejected. `~` follows the usual integer promotions
+  (`char`/`short`/`int` → `int`; `long` → `long`).
 
 ## Not yet supported
 
@@ -158,9 +163,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 16-01 all
-461 tests pass (284 valid, 68 invalid, 24 print-AST, 75 print-tokens,
-10 print-asm).
+`Aggregate: P passed, F failed, T total` line. As of stage 16-02 all
+477 tests pass (293 valid, 72 invalid, 24 print-AST, 76 print-tokens,
+12 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
