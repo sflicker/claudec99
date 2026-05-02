@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 14-08 (additional invalid tests for char-array support):
+Through stage 15-01 (character literal lexer support):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -111,6 +111,9 @@ Through stage 14-08 (additional invalid tests for char-array support):
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
+- **Character literals (lexer only)**: tokenization of `'A'`, `'0'`,
+  and the same escape set extended with `\'` (`\n`, `\t`, `\r`, `\\`,
+  `\'`, `\"`, `\0`). Parser/AST/codegen support is not yet wired up.
 
 ## Not yet supported
 
@@ -143,8 +146,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 14-08 all
-409 tests pass (252 valid, 53 invalid, 23 print-AST, 73 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 15-01 all
+417 tests pass (252 valid, 60 invalid, 23 print-AST, 74 print-tokens,
 8 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

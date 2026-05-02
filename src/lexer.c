@@ -161,6 +161,92 @@ Token lexer_next_token(Lexer *lexer) {
         return token;
     }
 
+    /* Character literals: single-quoted single character or one of
+     * the supported backslash escapes. Decoded byte is placed in
+     * token.value[0] (length 1, NUL sentinel at value[1]); the
+     * evaluated integer value is also recorded in token.long_value
+     * with literal_type = TYPE_INT (per C, character constants have
+     * type int). Rejected forms:
+     *   - empty `''`
+     *   - newline or EOF before the closing quote
+     *   - more than one byte before the closing quote (multi-char
+     *     constant, e.g. 'ab')
+     *   - any unsupported backslash escape (octal `\1`-`\7`, hex
+     *     `\x...`, or any byte outside the supported set). */
+    if (c == '\'') {
+        lexer->pos++;
+        char ch = lexer->source[lexer->pos];
+        if (ch == '\0' || ch == '\n') {
+            fprintf(stderr,
+                    "error: unterminated character literal\n");
+            exit(1);
+        }
+        if (ch == '\'') {
+            fprintf(stderr,
+                    "error: empty character literal\n");
+            exit(1);
+        }
+        char decoded;
+        if (ch == '\\') {
+            char next = lexer->source[lexer->pos + 1];
+            switch (next) {
+            case 'n':  decoded = 10;   break;
+            case 't':  decoded = 9;    break;
+            case 'r':  decoded = 13;   break;
+            case '\\': decoded = '\\'; break;
+            case '\'': decoded = '\''; break;
+            case '"':  decoded = '"';  break;
+            case '0':  decoded = 0;    break;
+            default:
+                fprintf(stderr,
+                        "error: invalid escape sequence in character literal\n");
+                exit(1);
+            }
+            lexer->pos += 2;
+        } else {
+            decoded = ch;
+            lexer->pos++;
+        }
+        if (lexer->source[lexer->pos] != '\'') {
+            /* Disambiguate: scan ahead. If a closing quote exists
+             * before \n/\0, the literal contained more than one
+             * source byte and is a multi-character constant;
+             * otherwise it is unterminated. */
+            int p = lexer->pos;
+            while (lexer->source[p] != '\0' &&
+                   lexer->source[p] != '\n' &&
+                   lexer->source[p] != '\'') {
+                p++;
+            }
+            if (lexer->source[p] == '\'') {
+                fprintf(stderr,
+                        "error: multi character constant\n");
+            } else {
+                fprintf(stderr,
+                        "error: unterminated character literal\n");
+            }
+            exit(1);
+        }
+        lexer->pos++;
+        token.value[0] = decoded;
+        token.value[1] = '\0';
+        token.length = 1;
+        token.long_value = (long)(unsigned char)decoded;
+        token.literal_type = TYPE_INT;
+        token.type = TOKEN_CHAR_LITERAL;
+        return token;
+    }
+
+    /* Wide-character literals (L'A', U'A', u'A') are out of scope.
+     * Reject explicitly here so the prefix is not consumed by the
+     * identifier branch below. */
+    if ((c == 'L' || c == 'U' || c == 'u') &&
+        lexer->source[lexer->pos + 1] == '\'') {
+        fprintf(stderr,
+                "error: wide character literal not supported\n");
+        exit(1);
+    }
+
     /* Integer literals: digits, optional 'L' or 'l' suffix forces long.
      * Without a suffix, the type is int when the value fits in a signed
      * 32-bit int and long otherwise. Values that exceed the long range

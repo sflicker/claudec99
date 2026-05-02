@@ -38,6 +38,7 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_IDENTIFIER:    return "TOKEN_IDENTIFIER";
         case TOKEN_INT_LITERAL:   return "TOKEN_INT_LITERAL";
         case TOKEN_STRING_LITERAL: return "TOKEN_STRING_LITERAL";
+        case TOKEN_CHAR_LITERAL:  return "TOKEN_CHAR_LITERAL";
         case TOKEN_LPAREN:        return "TOKEN_LPAREN";
         case TOKEN_RPAREN:        return "TOKEN_RPAREN";
         case TOKEN_LBRACE:        return "TOKEN_LBRACE";
@@ -91,7 +92,8 @@ static const char *token_type_name(TokenType t) {
 static void print_token_row(int index, int index_width, const Token *tok) {
     char display[512];
     size_t display_len = 0;
-    if (tok->type == TOKEN_STRING_LITERAL) {
+    if (tok->type == TOKEN_STRING_LITERAL ||
+        tok->type == TOKEN_CHAR_LITERAL) {
         for (int i = 0; i < tok->length && display_len + 2 < sizeof(display); i++) {
             unsigned char b = (unsigned char)tok->value[i];
             switch (b) {
@@ -114,6 +116,10 @@ static void print_token_row(int index, int index_width, const Token *tok) {
             case '"':
                 display[display_len++] = '\\';
                 display[display_len++] = '"';
+                break;
+            case '\'':
+                display[display_len++] = '\\';
+                display[display_len++] = '\'';
                 break;
             case 0:
                 display[display_len++] = '\\';

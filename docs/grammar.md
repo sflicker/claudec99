@@ -105,9 +105,17 @@
 
 <string_literal> ::= TOKEN_STRING_LITERAL
 
+<character_literal> ::= TOKEN_CHAR_LITERAL
+
+# Lexical form of a character literal (lexer-only this stage; not yet
+# accepted by <primary_expression>):
+#   "'" ( <ordinary_char> | <character_escape_sequence> ) "'"
+
 <string_char> ::= <ordinary_char>
                 | <escape_sequence>
 
 <escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\"" | "\0"
+
+<character_escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\'" | "\"" | "\0"
 
 ```

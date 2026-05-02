@@ -1,0 +1,10 @@
+[1 ] TOKEN:: A                   TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[2 ] TOKEN:: 0                   TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[3 ] TOKEN:: \n                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[4 ] TOKEN:: \t                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[5 ] TOKEN:: \r                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[6 ] TOKEN:: \\                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[7 ] TOKEN:: \'                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[8 ] TOKEN:: \"                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[9 ] TOKEN:: \0                  TOKEN_TYPE: TOKEN_CHAR_LITERAL
+[10] TOKEN::                     TOKEN_TYPE: TOKEN_EOF
