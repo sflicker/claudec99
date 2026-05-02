@@ -51,7 +51,7 @@
                       | "case" <constant_expression> ":" <statement>
                       | "default" ":" <statement>
 
-<constant_expression> ::= <integer_literal>
+<constant_expression> ::= <integer_literal> | <character_literal>
 
 <jump_statement> ::= "continue" ";"
                     | "break" ";"
@@ -61,11 +61,10 @@
 
 <expression> ::= <assignment_expression>
 
-<assignment_expression> ::= <identifier> "=" <assignment_expression>
-                           | <identifier> "+=" <assignment_expression>
-                           | <identifier> "-=" <assignment_expression>
-                           | <unary_expression> "=" <assignment_expression>
+<assignment_expression> ::= <unary_expression> <assignment_operator> <assignment_expression>
                            | <logical_or_expression>
+                           
+<assignment_operator> ::= "=" | "+=" | "-="                           
  
 <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }
  
@@ -80,20 +79,23 @@
 <multiplicative_expression> ::= <cast_expression> { ("*" | "/") <cast_expression> }
 
 <cast_expression> ::= <unary_expression>
-                    | "(" <integer_type> ")" <cast_expression>
+                    | "(" <type> ")" <cast_expression>
 
 <unary_expression> ::= <unary_operator> <unary_expression>
                     | <postfix_expression>
 
 <unary_operator> ::= "+" | "-" | "!" | "++" | "--" | "*" | "&"
                     
-<postfix_expression> ::= <primary_expression> { "[" <expression> "]" | "++" | "--" }                    
+<postfix_expression> ::= <primary_expression> 
+                    { "[" <expression> "]"                     
+                      | "++" 
+                      | "--" }                    
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
                          | <character_literal>
-                         | <identifier>
                          | <function_call>
+                         | <identifier>
                          | "(" <expression> ")"
 
 <function_call> ::= <identifier> "(" [ <argument-expression-list> ] ")"
@@ -118,5 +120,11 @@
 <escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\"" | "\0"
 
 <character_escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\'" | "\"" | "\0"
+
+# Current Restriction : Only one declarator per declaration
+# Current Restriction : no file-scope variable declarations
+# Current Restriction : for-loop initializers are expressions only, not declarations
+# Current Restriction : array declarations are limited to a single bracket suffix.
+# Semantic Restriction : assignment left-hand sides must be valid lvalues.
 
 ```
