@@ -1,0 +1,6 @@
+int main() {
+    if ('\0') {
+        return 7;
+    }
+    return 3;
+}
