@@ -27,11 +27,16 @@ Usage:
 
    * `STAGE_DISPLAY: <value>`
 
+Before beginning, read these supporting files when relevant:
+  - `${CLAUDE_SKILL_DIR}/reference-artifacts.md`
+  - `${CLAUDE_SKILL_DIR}/notes.md`
+
 Then do the following:
 
 1. Read and summarize the stage spec.
 2. Identify exactly what must change from the previous stage.
 3. Call out any ambiguity, inconsistency, or grammar/spec issue before implementation.
+4. Produce the Kickoff artifact.
 4. Propose an implementation plan in this order:
 
    * tokenizer
@@ -54,11 +59,9 @@ Implementation Rules:
 
 Output Requirements:
 
-* After reading the spec, produce a clearly labeled **Kickoff Summary** for saving and save into in the kickoffs directory.
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
-* After completing the stage, produce a clearly labeled **Milestone Summary** suitable for saving in the milestones directory.
-  The Summary should brief be focusing on what was completed by the stage.
-* After completing the stage, generate a transcript using `${CLAUDE_SKILL_DIR}/templates/transcript-format.md` and save it in the sessions directory.
+* After completing the stage, produce the  **Milestone Summary**.
+* After completing the stage, produce the **Transcript** artifact. 
 * Use `STAGE_LABEL` in all generated artifact filenames.
 
 Grammar file in docs:
@@ -67,9 +70,3 @@ Grammar file in docs:
    they should be reflected in docs/grammar.md   
 
 README.md - update the project README.md based on the existing format in that file.
-
-When relevant, use supporting files in this skill directory:
-
-* `${CLAUDE_SKILL_DIR}/templates/stage-kickoff-template.md` for the standard step-by-step structure
-* `${CLAUDE_SKILL_DIR}/notes.md` for project-specific implementation reminders
-* `${CLAUDE_SKILL_DIR}/templates/transcript-format.md` for generating the session transcript
