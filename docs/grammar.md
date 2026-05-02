@@ -72,7 +72,9 @@
  
 <equality_expression> ::= <relational_expression> { ("==" | "!=") <relational_expression> }
 
-<relational_expression> ::= <additive_expression> { ( "<" | "<=" | ">" | ">=") <additive_expression> }
+<relational_expression> ::= <shift_expression> { ( "<" | "<=" | ">" | ">=") <shift_expression> }
+
+<shift_expression> ::= <additive_expression> { ( "<<" | ">>" ) <additive_expression> }
 
 <additive_expression> ::= <multiplicative_expression> { ("+" | "-") <multiplicative_expression> }
 

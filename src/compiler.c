@@ -66,6 +66,8 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_LE:            return "TOKEN_LE";
         case TOKEN_GT:            return "TOKEN_GT";
         case TOKEN_GE:            return "TOKEN_GE";
+        case TOKEN_LEFT_SHIFT:    return "TOKEN_LEFT_SHIFT";
+        case TOKEN_RIGHT_SHIFT:   return "TOKEN_RIGHT_SHIFT";
         case TOKEN_AND_AND:       return "TOKEN_AND_AND";
         case TOKEN_OR_OR:         return "TOKEN_OR_OR";
         case TOKEN_AMPERSAND:     return "TOKEN_AMPERSAND";

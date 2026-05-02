@@ -88,6 +88,8 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == '=') { token.type = TOKEN_ASSIGN; token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer->pos += 2; return finalize(token); }
     if (c == '!') { token.type = TOKEN_BANG; token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '<' && n == '<') { token.type = TOKEN_LEFT_SHIFT;  strcpy(token.value, "<<"); lexer->pos += 2; return finalize(token); }
+    if (c == '>' && n == '>') { token.type = TOKEN_RIGHT_SHIFT; strcpy(token.value, ">>"); lexer->pos += 2; return finalize(token); }
     if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer->pos += 2; return finalize(token); }
     if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer->pos += 2; return finalize(token); }
     if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer->pos++; return finalize(token); }

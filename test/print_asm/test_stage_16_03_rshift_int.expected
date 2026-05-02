@@ -1,0 +1,14 @@
+section .text
+global main
+main:
+    push rbp
+    mov rbp, rsp
+    mov eax, 16
+    push rax
+    mov eax, 2
+    pop rcx
+    xchg rax, rcx
+    sar eax, cl
+    mov rsp, rbp
+    pop rbp
+    ret

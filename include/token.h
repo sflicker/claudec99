@@ -52,6 +52,8 @@ typedef enum {
     TOKEN_LE,
     TOKEN_GT,
     TOKEN_GE,
+    TOKEN_LEFT_SHIFT,
+    TOKEN_RIGHT_SHIFT,
     TOKEN_AND_AND,
     TOKEN_OR_OR,
     TOKEN_AMPERSAND,

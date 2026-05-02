@@ -458,6 +458,11 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             } else {
                 t = common_arith_kind(lt, rt);
             }
+        } else if (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0) {
+            /* Stage 16-03: shift result type follows the promoted
+             * type of the LEFT operand only. The right operand is a
+             * shift count and does not participate. */
+            t = promote_kind(expr_result_type(cg, node->children[0]));
         } else {
             t = TYPE_INT; /* comparisons, && , || stay 32-bit */
         }
@@ -956,6 +961,42 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    mov eax, 1\n");
             fprintf(cg->output, ".L_or_end_%d:\n", label_id);
             node->result_type = TYPE_INT;
+            return;
+        }
+        /* Stage 16-03: shift operators `<<` and `>>` are integer-only
+         * and the result type follows the promoted type of the LEFT
+         * operand alone. The right operand is evaluated, integer-
+         * promoted, and only its low byte (cl) is consumed as the
+         * shift count. Pointer or array operands on either side are
+         * rejected with the existing diagnostic shape. */
+        if (strcmp(node->value, "<<") == 0 || strcmp(node->value, ">>") == 0) {
+            const char *sop = node->value;
+            TypeKind lt = expr_result_type(cg, node->children[0]);
+            TypeKind rt = expr_result_type(cg, node->children[1]);
+            if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: operator '%s' not supported on pointer operands\n",
+                        sop);
+                exit(1);
+            }
+            codegen_expression(cg, node->children[0]);
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    pop rcx\n");
+            cg->push_depth--;
+            /* After the pop, rcx = left, rax = right (count). Swap so
+             * left is in rax and the count's low byte is addressable
+             * as cl. */
+            fprintf(cg->output, "    xchg rax, rcx\n");
+            TypeKind result = promote_kind(node->children[0]->result_type);
+            const char *insn = (strcmp(sop, "<<") == 0) ? "shl" : "sar";
+            if (result == TYPE_LONG) {
+                fprintf(cg->output, "    %s rax, cl\n", insn);
+            } else {
+                fprintf(cg->output, "    %s eax, cl\n", insn);
+            }
+            node->result_type = result;
             return;
         }
         const char *op = node->value;

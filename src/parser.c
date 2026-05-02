@@ -375,17 +375,39 @@ static ASTNode *parse_additive(Parser *parser) {
 }
 
 /*
- * <relational_expr> ::= <additive_expr> { ("<" | "<=" | ">" | ">=") <additive_expr> }*
+ * <shift_expr> ::= <additive_expr> { ("<<" | ">>") <additive_expr> }*
+ *
+ * Stage 16-03: shift expressions sit between additive and relational
+ * so `1 + 2 << 3` parses as `(1 + 2) << 3` and `1 << 3 > 4` parses as
+ * `(1 << 3) > 4`. Left-associative.
+ */
+static ASTNode *parse_shift(Parser *parser) {
+    ASTNode *left = parse_additive(parser);
+    while (parser->current.type == TOKEN_LEFT_SHIFT ||
+           parser->current.type == TOKEN_RIGHT_SHIFT) {
+        Token op = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_additive(parser);
+        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ast_add_child(binop, left);
+        ast_add_child(binop, right);
+        left = binop;
+    }
+    return left;
+}
+
+/*
+ * <relational_expr> ::= <shift_expr> { ("<" | "<=" | ">" | ">=") <shift_expr> }*
  */
 static ASTNode *parse_relational(Parser *parser) {
-    ASTNode *left = parse_additive(parser);
+    ASTNode *left = parse_shift(parser);
     while (parser->current.type == TOKEN_LT ||
            parser->current.type == TOKEN_LE ||
            parser->current.type == TOKEN_GT ||
            parser->current.type == TOKEN_GE) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *right = parse_additive(parser);
+        ASTNode *right = parse_shift(parser);
         ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
