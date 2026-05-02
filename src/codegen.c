@@ -443,7 +443,8 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_BINARY_OP: {
         const char *op = node->value;
         if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
-            strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
+            strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||
+            strcmp(op, "%") == 0) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             /* Stage 13-04: pointer arithmetic — `T* +/- int` and
@@ -939,7 +940,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         const char *op = node->value;
         int is_arith = (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
-                        strcmp(op, "*") == 0 || strcmp(op, "/") == 0);
+                        strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||
+                        strcmp(op, "%") == 0);
         int is_cmp = (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
                       strcmp(op, "<")  == 0 || strcmp(op, "<=") == 0 ||
                       strcmp(op, ">")  == 0 || strcmp(op, ">=") == 0);
@@ -1100,11 +1102,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(cg->output, "    mov rax, rcx\n");
             } else if (strcmp(op, "*") == 0) {
                 fprintf(cg->output, "    imul rax, rcx\n");
-            } else { /* "/" */
+            } else if (strcmp(op, "/") == 0) {
                 /* left / right: rcx / rax */
                 fprintf(cg->output, "    xchg rax, rcx\n");
                 fprintf(cg->output, "    cqo\n");
                 fprintf(cg->output, "    idiv rcx\n");
+            } else { /* "%" */
+                /* left % right: remainder of rcx / rax. Place dividend
+                 * in rax and divisor in rcx, sign-extend into rdx, then
+                 * read the remainder out of rdx. */
+                fprintf(cg->output, "    xchg rax, rcx\n");
+                fprintf(cg->output, "    cqo\n");
+                fprintf(cg->output, "    idiv rcx\n");
+                fprintf(cg->output, "    mov rax, rdx\n");
             }
             node->result_type = TYPE_LONG;
             return;
@@ -1125,6 +1135,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    xchg eax, ecx\n");
             fprintf(cg->output, "    cdq\n");
             fprintf(cg->output, "    idiv ecx\n");
+            node->result_type = TYPE_INT;
+        } else if (strcmp(op, "%") == 0) {
+            /* left % right: remainder of ecx / eax. After xchg the
+             * dividend is in eax and the divisor in ecx; cdq sign-
+             * extends eax into edx:eax and idiv leaves the remainder
+             * in edx. */
+            fprintf(cg->output, "    xchg eax, ecx\n");
+            fprintf(cg->output, "    cdq\n");
+            fprintf(cg->output, "    idiv ecx\n");
+            fprintf(cg->output, "    mov eax, edx\n");
             node->result_type = TYPE_INT;
         } else {
             /* Comparisons: compare left (rcx/ecx) with right (rax/eax),

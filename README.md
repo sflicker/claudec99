@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 15-04 (character literal escape and diagnostic completion):
+Through stage 16-01 (remainder operator):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -122,6 +122,10 @@ Through stage 15-04 (character literal escape and diagnostic completion):
   (empty `''`, multi-character `'ab'`, unknown escapes such as
   `'\q'`, unterminated literals, and raw newline inside a literal)
   are rejected with diagnostic messages.
+- **Arithmetic operators**: `+`, `-`, `*`, `/`, and `%` (remainder)
+  on integer operands, with the usual `*`/`/`/`%` over `+`/`-`
+  precedence and left-to-right associativity. `%` is integer-only:
+  pointer or array operands are rejected.
 
 ## Not yet supported
 
@@ -154,8 +158,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 15-04 all
-443 tests pass (274 valid, 63 invalid, 24 print-AST, 74 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 16-01 all
+458 tests pass (284 valid, 68 invalid, 24 print-AST, 74 print-tokens,
 8 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

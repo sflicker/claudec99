@@ -76,7 +76,7 @@
 
 <additive_expression> ::= <multiplicative_expression> { ("+" | "-") <multiplicative_expression> }
 
-<multiplicative_expression> ::= <cast_expression> { ("*" | "/") <cast_expression> }
+<multiplicative_expression> ::= <cast_expression> { ("*" | "/" | "%") <cast_expression> }
 
 <cast_expression> ::= <unary_expression>
                     | "(" <type> ")" <cast_expression>

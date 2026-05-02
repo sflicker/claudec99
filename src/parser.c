@@ -334,12 +334,13 @@ static ASTNode *parse_cast(Parser *parser) {
 }
 
 /*
- * <term> ::= <cast_expression> { ("*" | "/") <cast_expression> }*
+ * <term> ::= <cast_expression> { ("*" | "/" | "%") <cast_expression> }*
  */
 static ASTNode *parse_term(Parser *parser) {
     ASTNode *left = parse_cast(parser);
     while (parser->current.type == TOKEN_STAR ||
-           parser->current.type == TOKEN_SLASH) {
+           parser->current.type == TOKEN_SLASH ||
+           parser->current.type == TOKEN_PERCENT) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_cast(parser);
