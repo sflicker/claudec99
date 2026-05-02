@@ -108,6 +108,21 @@ Invalid (5 added in `test/invalid/`):
 - `test_invalid_70__not_supported_on_pointer_operands.c` —
   `A % b` with `int A[8]` (relies on array-to-pointer decay).
 
+Print-tokens (1 added in `test/print_tokens/`):
+
+- `test_token_percent.c` / `.expected` — a bare `%` lexes as
+  `TOKEN_PERCENT`, mirroring the existing
+  `test_token_star.c` / `test_token_slash.c` shape.
+
+Print-asm (2 added in `test/print_asm/`):
+
+- `test_stage_16_01_remainder_int.c` / `.expected` — `return
+  20 % 6;` locks in the 32-bit `xchg eax, ecx; cdq; idiv ecx;
+  mov eax, edx` sequence.
+- `test_stage_16_01_remainder_long.c` / `.expected` — `long a,
+  b; return a % b;` locks in the 64-bit `xchg rax, rcx; cqo;
+  idiv rcx; mov rax, rdx` sequence.
+
 ### Step 6: Documentation
 
 - `docs/grammar.md` — `<multiplicative_expression>` now lists
@@ -115,16 +130,17 @@ Invalid (5 added in `test/invalid/`):
 - `README.md` — header bumped to "Through stage 16-01"; new
   "Arithmetic operators" bullet describes the supported set
   including `%`; aggregate test totals refreshed
-  (458 = 284 + 68 + 24 + 74 + 8).
+  (461 = 284 + 68 + 24 + 75 + 10).
 - `docs/kickoffs/stage-16-01-kickoff.md`,
   `docs/milestones/stage-16-01-milestone.md`, and this
   transcript.
 
 ## Final Results
 
-All 458 tests pass (443 prior + 10 new valid + 5 new invalid =
-458). No regressions. Per-suite: 284 valid, 68 invalid, 24
-print-AST, 74 print-tokens, 8 print-asm.
+All 461 tests pass (443 prior + 10 new valid + 5 new invalid +
+1 new print-tokens + 2 new print-asm = 461). No regressions.
+Per-suite: 284 valid, 68 invalid, 24 print-AST, 75 print-tokens,
+10 print-asm.
 
 ## Session Flow
 

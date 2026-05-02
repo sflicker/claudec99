@@ -23,7 +23,7 @@
 - Char/short operands are promoted to `int` through the existing
   `common_arith_kind` path; mixed `int` / `long` is widened to
   `long` exactly as for `*` and `/`.
-- Tests added (10 valid, 5 invalid):
+- Tests added (10 valid, 5 invalid, 1 print-tokens, 2 print-asm):
   - valid: `test_remainder_basic_zero__0.c`,
     `test_remainder_basic_one__1.c`,
     `test_remainder_basic_two__2.c`,
@@ -41,6 +41,12 @@
     (`p % b`),
     `test_invalid_70__not_supported_on_pointer_operands.c`
     (`A % b`, via array decay).
+  - print-tokens: `test_token_percent.c` — single `%` lexes as
+    `TOKEN_PERCENT`.
+  - print-asm: `test_stage_16_01_remainder_int.c` (32-bit `cdq;
+    idiv ecx; mov eax, edx`) and
+    `test_stage_16_01_remainder_long.c` (64-bit `cqo; idiv rcx;
+    mov rax, rdx`) lock in the emitted instruction sequence.
 - Documentation: `docs/grammar.md`
   `<multiplicative_expression>` updated to list `%`; `README.md`
   bumped to "Through stage 16-01" with a new
@@ -49,6 +55,6 @@
   `return 2 % 4 % 2; // expect 2`, but the correct value under
   C's left-associative `%` is `(2 % 4) % 2 = 0`. The test source
   is preserved verbatim; the expected exit code is `0`.
-- Full suite: 458/458 pass (284 valid + 68 invalid + 24 print-AST
-  + 74 print-tokens + 8 print-asm). No regressions from prior
+- Full suite: 461/461 pass (284 valid + 68 invalid + 24 print-AST
+  + 75 print-tokens + 10 print-asm). No regressions from prior
   stages.
