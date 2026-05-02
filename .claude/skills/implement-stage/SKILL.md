@@ -7,25 +7,15 @@ disable-model-invocation: true
 
 Read this spec file first: $ARGUMENTS
 
-Derive STAGE_LABEL from the spec filename using these rules:
+Derived stage values:
 
-1. Ignore the directory path and file extension.
-2. Split the filename into hyphen-separated tokens.
-3. Locate the token `stage`.
-4. Starting immediately after `stage`, collect all consecutive tokens that match the regex `^[0-9]+$`.
-5. Stop collecting when a token does not match this pattern.
-6. Set `STAGE_LABEL` = `stage-` + the collected numeric tokens joined with `-`.
-7. Set `STAGE_DISPLAY` = `STAGE_LABEL` with the first letter capitalized.
+!`python3 "${CLAUDE_SKILL_DIR}/scripts/stage-label.py" "$ARGUMENTS"`
 
-Examples:
-
-* `ClaudeC99-spec-stage-01-minimal.md` → `stage-01`
-* `ClaudeC99-spec-stage-07-02-for-statement.md` → `stage-07-02`
-* `ClaudeC99-spec-stage-08-01-03-something.md` → `stage-08-01-03`
+Use the derived values above as authoritative.
 
 Validation:
 
-* If no numeric tokens are found after `stage`, stop and report an error.
+* If the stage-label script reports an error, stop and report the error.
 * Do not guess or infer missing stage values.
 
 Usage:
