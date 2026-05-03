@@ -60,9 +60,24 @@ Implementation Rules:
 Output Requirements:
 
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
-* After completing the stage, produce the  **Milestone Summary**.
-* After completing the stage, produce the **Transcript** artifact. 
+* After completing the implementation and tests, delegate generation of the Milestone Summary artifact and Transcript Artifact to 'haiku-stage-artifact-writer;'
+* The artifact write must use `STAGE_LABEL' in filenames and `STAGE_DISPLAY` in artifact titles
 * Use `STAGE_LABEL` in all generated artifact filenames.
+
+Multi-model routing:
+* Use the current/main model for implementation
+* use `haiku-stage-artifact-writer` for final generated artifacts
+* Do Not delegate compiler source changes to Haiku
+* Do Not use Opus unless the spec is ambiguous, architectural, or repeated implementation/debugging attempts
+
+When delegating to `haiku-stage-artifact-writer`, pass:
+  - spec path
+  - STAGE_LABEL
+  - STAGE_DISPLAY
+  - summary of completed changes
+  - tests run and final test result
+  - files changed
+  - artifact types to generate
 
 Grammar file in docs:
 * docs/grammar.md should be kept up to date with the current grammar of the
