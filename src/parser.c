@@ -250,33 +250,46 @@ static ASTNode *parse_unary(Parser *parser) {
     if (parser->current.type == TOKEN_SIZEOF) {
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type != TOKEN_LPAREN) {
-            fprintf(stderr, "error: expected '(' after sizeof\n");
-            exit(1);
+            /* sizeof <unary_expression> — no parentheses */
+            ASTNode *operand = parse_unary(parser);
+            ASTNode *node = ast_new(AST_SIZEOF_EXPR, NULL);
+            ast_add_child(node, operand);
+            return node;
         }
-        parser->current = lexer_next_token(parser->lexer);
-        if (parser->current.type != TOKEN_CHAR &&
-            parser->current.type != TOKEN_SHORT &&
-            parser->current.type != TOKEN_INT &&
-            parser->current.type != TOKEN_LONG) {
-            fprintf(stderr, "error: expected type name in sizeof\n");
-            exit(1);
-        }
-        TypeKind base_kind;
-        switch (parser->current.type) {
-        case TOKEN_CHAR:  base_kind = TYPE_CHAR;  break;
-        case TOKEN_SHORT: base_kind = TYPE_SHORT; break;
-        case TOKEN_LONG:  base_kind = TYPE_LONG;  break;
-        default:          base_kind = TYPE_INT;   break;
-        }
-        parser->current = lexer_next_token(parser->lexer);
-        TypeKind result_kind = base_kind;
-        while (parser->current.type == TOKEN_STAR) {
-            result_kind = TYPE_POINTER;
+        /* Peek past '(' to distinguish sizeof(type) from sizeof(expression) */
+        parser->current = lexer_next_token(parser->lexer); /* consume '(' */
+        if (parser->current.type == TOKEN_CHAR ||
+            parser->current.type == TOKEN_SHORT ||
+            parser->current.type == TOKEN_INT ||
+            parser->current.type == TOKEN_LONG) {
+            /* sizeof(<type>) — existing path */
+            TypeKind base_kind;
+            switch (parser->current.type) {
+            case TOKEN_CHAR:  base_kind = TYPE_CHAR;  break;
+            case TOKEN_SHORT: base_kind = TYPE_SHORT; break;
+            case TOKEN_LONG:  base_kind = TYPE_LONG;  break;
+            default:          base_kind = TYPE_INT;   break;
+            }
             parser->current = lexer_next_token(parser->lexer);
+            TypeKind result_kind = base_kind;
+            while (parser->current.type == TOKEN_STAR) {
+                result_kind = TYPE_POINTER;
+                parser->current = lexer_next_token(parser->lexer);
+            }
+            parser_expect(parser, TOKEN_RPAREN);
+            ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
+            node->decl_type = result_kind;
+            return node;
         }
+        if (parser->current.type == TOKEN_RPAREN) {
+            fprintf(stderr, "error: expected expression or type in sizeof\n");
+            exit(1);
+        }
+        /* sizeof(<expression>) */
+        ASTNode *operand = parse_expression(parser);
         parser_expect(parser, TOKEN_RPAREN);
-        ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
-        node->decl_type = result_kind;
+        ASTNode *node = ast_new(AST_SIZEOF_EXPR, NULL);
+        ast_add_child(node, operand);
         return node;
     }
     if (parser->current.type == TOKEN_INCREMENT ||

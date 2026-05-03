@@ -36,7 +36,8 @@ typedef enum {
     AST_ADDR_OF,
     AST_DEREF,
     AST_ARRAY_INDEX,
-    AST_SIZEOF_TYPE
+    AST_SIZEOF_TYPE,
+    AST_SIZEOF_EXPR
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64

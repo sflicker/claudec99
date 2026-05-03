@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 16-05 (remaining compound assignment operators):
+Through stage 17-02 (sizeof expressions):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -150,10 +150,16 @@ Through stage 16-05 (remaining compound assignment operators):
   `&` (address-of). `~` and `!` are integer-only: pointer and array
   operands are rejected. `~` follows the usual integer promotions
   (`char`/`short`/`int` → `int`; `long` → `long`).
-- **`sizeof` type name**: `sizeof(<type>)` returns the byte size of
-  the named type as a `long` constant. Supported types: `char` (1),
-  `short` (2), `int` (4), `long` (8), and any pointer type (8).
-  `sizeof` applied to expressions is not yet supported.
+- **`sizeof`**: `sizeof(<type>)` and `sizeof(<expression>)` return
+  the byte size of the operand's type as a `long` constant. The
+  non-parenthesized form `sizeof expr` is also supported. Supported
+  scalar types: `char` (1), `short` (2), `int` (4), `long` (8), and
+  any pointer type (8). For expression operands, integer promotions and
+  usual arithmetic conversions apply to determine the result type
+  (`sizeof(char_var + 1)` == 4 because char promotes to int). The
+  expression operand is never evaluated — side effects such as `x++`,
+  `x = 5`, or function calls inside `sizeof` are suppressed.
+  Whole-array `sizeof(A)` is not yet supported.
 
 ## Not yet supported
 

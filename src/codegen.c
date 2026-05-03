@@ -401,6 +401,109 @@ static TypeKind type_kind_from_size(int size) {
 }
 
 /*
+ * Resolve the C type of an expression for sizeof purposes — without
+ * emitting any code and without applying the integer promotions that
+ * `expr_result_type` applies to variable references.  The distinction
+ * matters: sizeof(char_var) == 1, but sizeof(char_var + 1) == 4
+ * because the addition promotes char to int.
+ *
+ * Rules:
+ *   VAR_REF         → declared kind (TYPE_CHAR, TYPE_SHORT, TYPE_INT,
+ *                      TYPE_LONG, TYPE_POINTER)
+ *   DEREF(*p)       → kind of the pointee type
+ *   ARRAY_INDEX     → kind of the element type
+ *   binary arith    → apply promote_kind to each operand, then
+ *                     common_arith_kind (matches the usual arithmetic
+ *                     conversion rule used in expression evaluation)
+ *   INT_LITERAL     → node->decl_type (TYPE_INT or TYPE_LONG)
+ *   CHAR_LITERAL    → TYPE_INT (C char literals have type int)
+ *   prefix/postfix  → kind of the operand variable
+ *   assignment      → kind of the LHS
+ *   cast            → node->decl_type
+ *   function call   → declared return type (node->decl_type)
+ */
+static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
+    if (!node) return TYPE_INT;
+    switch (node->type) {
+    case AST_INT_LITERAL:
+        return node->decl_type;
+    case AST_CHAR_LITERAL:
+        return TYPE_INT;
+    case AST_VAR_REF: {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        if (!lv) return TYPE_INT;
+        return lv->kind;
+    }
+    case AST_DEREF: {
+        ASTNode *operand = node->children[0];
+        if (operand->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, operand->value);
+            if (lv && lv->full_type && lv->kind == TYPE_POINTER &&
+                lv->full_type->base) {
+                return lv->full_type->base->kind;
+            }
+        }
+        return TYPE_INT;
+    }
+    case AST_ARRAY_INDEX: {
+        ASTNode *base = node->children[0];
+        if (base->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base->value);
+            if (lv && lv->full_type &&
+                (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER) &&
+                lv->full_type->base) {
+                return lv->full_type->base->kind;
+            }
+        }
+        return TYPE_INT;
+    }
+    case AST_BINARY_OP: {
+        const char *op = node->value;
+        if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+            strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||
+            strcmp(op, "%") == 0 || strcmp(op, "&") == 0 ||
+            strcmp(op, "^") == 0 || strcmp(op, "|") == 0) {
+            TypeKind lt = sizeof_type_of_expr(cg, node->children[0]);
+            TypeKind rt = sizeof_type_of_expr(cg, node->children[1]);
+            return common_arith_kind(promote_kind(lt), promote_kind(rt));
+        }
+        if (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0) {
+            return promote_kind(sizeof_type_of_expr(cg, node->children[0]));
+        }
+        return TYPE_INT; /* comparisons, &&, || */
+    }
+    case AST_UNARY_OP: {
+        const char *op = node->value;
+        if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+            strcmp(op, "~") == 0) {
+            return promote_kind(sizeof_type_of_expr(cg, node->children[0]));
+        }
+        return TYPE_INT; /* ! */
+    }
+    case AST_ADDR_OF:
+        return TYPE_POINTER;
+    case AST_CAST:
+        return node->decl_type;
+    case AST_FUNCTION_CALL:
+        return node->decl_type;
+    case AST_PREFIX_INC_DEC:
+    case AST_POSTFIX_INC_DEC:
+        return sizeof_type_of_expr(cg, node->children[0]);
+    case AST_ASSIGNMENT: {
+        if (node->value[0] != '\0') {
+            LocalVar *lv = codegen_find_var(cg, node->value);
+            if (lv) return lv->kind;
+        } else if (node->child_count > 0) {
+            return sizeof_type_of_expr(cg, node->children[0]);
+        }
+        return TYPE_INT;
+    }
+    default:
+        return TYPE_INT;
+    }
+}
+
+/*
  * Compute the result type of an expression and record it on the node.
  * Stage 11-03 tracks this for the operators brought into scope:
  * literals, identifiers, unary +/-, binary +/-/·//, and assignment.
@@ -509,6 +612,7 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         break;
     }
     case AST_SIZEOF_TYPE:
+    case AST_SIZEOF_EXPR:
         t = TYPE_LONG;
         break;
     default:
@@ -755,6 +859,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_SIZEOF_TYPE) {
         int sz;
         switch (node->decl_type) {
+        case TYPE_CHAR:    sz = 1; break;
+        case TYPE_SHORT:   sz = 2; break;
+        case TYPE_LONG:    sz = 8; break;
+        case TYPE_POINTER: sz = 8; break;
+        default:           sz = 4; break; /* TYPE_INT */
+        }
+        fprintf(cg->output, "    mov rax, %d\n", sz);
+        node->result_type = TYPE_LONG;
+        return;
+    }
+    if (node->type == AST_SIZEOF_EXPR) {
+        TypeKind kind = sizeof_type_of_expr(cg, node->children[0]);
+        int sz;
+        switch (kind) {
         case TYPE_CHAR:    sz = 1; break;
         case TYPE_SHORT:   sz = 2; break;
         case TYPE_LONG:    sz = 8; break;

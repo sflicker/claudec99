@@ -90,7 +90,8 @@
 <cast_expression> ::= <unary_expression>
                     | "(" <type> ")" <cast_expression>
 
-<unary_expression> ::= "sizeof" "(" <type> ")"
+<unary_expression> ::= "sizeof" <unary_expression>
+                    | "sizeof" "(" <type> ")"
                     | <unary_operator> <unary_expression>
                     | <postfix_expression>
 

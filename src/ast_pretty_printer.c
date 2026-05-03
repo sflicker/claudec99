@@ -230,6 +230,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_ARRAY_INDEX:
         printf("ArrayIndex:\n");
         break;
+    case AST_SIZEOF_TYPE:
+        printf("SizeofType: %s\n", type_kind_name(node->decl_type));
+        break;
+    case AST_SIZEOF_EXPR:
+        printf("SizeofExpr:\n");
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {
