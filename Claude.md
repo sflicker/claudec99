@@ -19,6 +19,8 @@ Important headers:
 When inspecting declarations, start in `include/`.
 When inspecting implementations, start in `src/`.
 
+When inspecting tests, start in `test/`.
+
 Useful discovery command:
 
 ```bash
