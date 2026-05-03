@@ -28,7 +28,7 @@ Usage:
    * `STAGE_DISPLAY: <value>`
 
 Before beginning, read these supporting files when relevant:
-  - `${CLAUDE_SKILL_DIR}/reference-artifacts.md`
+  - `${CLAUDE_SKILL_DIR}/reference/generated-artifacts.md`
   - `${CLAUDE_SKILL_DIR}/notes.md`
 
 Then do the following:
