@@ -508,6 +508,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         }
         break;
     }
+    case AST_SIZEOF_TYPE:
+        t = TYPE_LONG;
+        break;
     default:
         t = TYPE_INT;
         break;
@@ -747,6 +750,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (element->kind == TYPE_POINTER) {
             node->full_type = element;
         }
+        return;
+    }
+    if (node->type == AST_SIZEOF_TYPE) {
+        int sz;
+        switch (node->decl_type) {
+        case TYPE_CHAR:    sz = 1; break;
+        case TYPE_SHORT:   sz = 2; break;
+        case TYPE_LONG:    sz = 8; break;
+        case TYPE_POINTER: sz = 8; break;
+        default:           sz = 4; break; /* TYPE_INT */
+        }
+        fprintf(cg->output, "    mov rax, %d\n", sz);
+        node->result_type = TYPE_LONG;
         return;
     }
     if (node->type == AST_UNARY_OP) {

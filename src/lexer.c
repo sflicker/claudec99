@@ -358,6 +358,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_CASE;
         } else if (strcmp(token.value, "goto") == 0) {
             token.type = TOKEN_GOTO;
+        } else if (strcmp(token.value, "sizeof") == 0) {
+            token.type = TOKEN_SIZEOF;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }

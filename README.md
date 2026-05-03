@@ -150,6 +150,10 @@ Through stage 16-05 (remaining compound assignment operators):
   `&` (address-of). `~` and `!` are integer-only: pointer and array
   operands are rejected. `~` follows the usual integer promotions
   (`char`/`short`/`int` → `int`; `long` → `long`).
+- **`sizeof` type name**: `sizeof(<type>)` returns the byte size of
+  the named type as a `long` constant. Supported types: `char` (1),
+  `short` (2), `int` (4), `long` (8), and any pointer type (8).
+  `sizeof` applied to expressions is not yet supported.
 
 ## Not yet supported
 

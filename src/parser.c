@@ -247,6 +247,38 @@ static ASTNode *parse_postfix(Parser *parser) {
  * pointer/array operands are rejected at codegen.
  */
 static ASTNode *parse_unary(Parser *parser) {
+    if (parser->current.type == TOKEN_SIZEOF) {
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type != TOKEN_LPAREN) {
+            fprintf(stderr, "error: expected '(' after sizeof\n");
+            exit(1);
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type != TOKEN_CHAR &&
+            parser->current.type != TOKEN_SHORT &&
+            parser->current.type != TOKEN_INT &&
+            parser->current.type != TOKEN_LONG) {
+            fprintf(stderr, "error: expected type name in sizeof\n");
+            exit(1);
+        }
+        TypeKind base_kind;
+        switch (parser->current.type) {
+        case TOKEN_CHAR:  base_kind = TYPE_CHAR;  break;
+        case TOKEN_SHORT: base_kind = TYPE_SHORT; break;
+        case TOKEN_LONG:  base_kind = TYPE_LONG;  break;
+        default:          base_kind = TYPE_INT;   break;
+        }
+        parser->current = lexer_next_token(parser->lexer);
+        TypeKind result_kind = base_kind;
+        while (parser->current.type == TOKEN_STAR) {
+            result_kind = TYPE_POINTER;
+            parser->current = lexer_next_token(parser->lexer);
+        }
+        parser_expect(parser, TOKEN_RPAREN);
+        ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
+        node->decl_type = result_kind;
+        return node;
+    }
     if (parser->current.type == TOKEN_INCREMENT ||
         parser->current.type == TOKEN_DECREMENT) {
         Token op = parser->current;
