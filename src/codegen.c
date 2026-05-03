@@ -870,7 +870,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_SIZEOF_EXPR) {
-        TypeKind kind = sizeof_type_of_expr(cg, node->children[0]);
+        ASTNode *child = node->children[0];
+        if (child->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, child->value);
+            if (lv && lv->kind == TYPE_ARRAY && lv->full_type) {
+                fprintf(cg->output, "    mov rax, %d\n", lv->full_type->size);
+                node->result_type = TYPE_LONG;
+                return;
+            }
+        }
+        TypeKind kind = sizeof_type_of_expr(cg, child);
         int sz;
         switch (kind) {
         case TYPE_CHAR:    sz = 1; break;

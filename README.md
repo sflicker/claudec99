@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 17-02 (sizeof expressions):
+Through stage 17-03 (sizeof arrays):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -159,7 +159,10 @@ Through stage 17-02 (sizeof expressions):
   (`sizeof(char_var + 1)` == 4 because char promotes to int). The
   expression operand is never evaluated — side effects such as `x++`,
   `x = 5`, or function calls inside `sizeof` are suppressed.
-  Whole-array `sizeof(A)` is not yet supported.
+  `sizeof(A)` where `A` is a declared array returns the total byte size
+  (`element_size × element_count`) as a compile-time constant — no runtime
+  code is emitted for the array operand and the array is not decayed to a
+  pointer. `sizeof(int[10])` (array-type-name form) is not yet supported.
 
 ## Not yet supported
 
@@ -192,8 +195,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 16-05 all
-551 tests pass (329 valid, 91 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 17-03 all
+583 tests pass (357 valid, 95 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
