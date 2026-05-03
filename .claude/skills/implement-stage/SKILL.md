@@ -36,7 +36,7 @@ Then do the following:
 1. Read and summarize the stage spec.
 2. Identify exactly what must change from the previous stage.
 3. Call out any ambiguity, inconsistency, or grammar/spec issue before implementation.
-4. Produce the Kickoff artifact.
+4. Produce the Kickoff artifact. Delegate this artifact generation to 'haiku-stage-artifact-writer'
 4. Propose an implementation plan in this order:
 
    * tokenizer
