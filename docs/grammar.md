@@ -59,7 +59,7 @@
 
 <expression_statement> ::= <expression> ";"
 
-<expression> ::= <assignment_expression>
+<expression> ::= <assignment_expression> { "," <assignment_expression> }
 
 <assignment_expression> ::= <unary_expression> <assignment_operator> <assignment_expression>
                            | <conditional_expression>

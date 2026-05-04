@@ -90,6 +90,7 @@ static Token parser_expect(Parser *parser, TokenType type) {
  * <primary> ::= <int_literal> | "(" <expression> ")"
  */
 static ASTNode *parse_expression(Parser *parser);
+static ASTNode *parse_assignment_expression(Parser *parser);
 
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
@@ -144,10 +145,10 @@ static ASTNode *parse_primary(Parser *parser) {
             parser_expect(parser, TOKEN_LPAREN);
             ASTNode *call = ast_new(AST_FUNCTION_CALL, token.value);
             if (parser->current.type != TOKEN_RPAREN) {
-                ast_add_child(call, parse_expression(parser));
+                ast_add_child(call, parse_assignment_expression(parser));
                 while (parser->current.type == TOKEN_COMMA) {
                     parser->current = lexer_next_token(parser->lexer);
-                    ast_add_child(call, parse_expression(parser));
+                    ast_add_child(call, parse_assignment_expression(parser));
                 }
             }
             parser_expect(parser, TOKEN_RPAREN);
@@ -602,8 +603,6 @@ static ASTNode *parse_conditional(Parser *parser) {
 }
 
 /*
- * <expression> ::= <assignment_expression>
- *
  * <assignment_expression> ::= <identifier> <assignment_operator> <assignment_expression>
  *                            | <unary_expression> "=" <assignment_expression>
  *                            | <conditional_expression>
@@ -611,8 +610,10 @@ static ASTNode *parse_conditional(Parser *parser) {
  * Stage 12-03 adds the dereference-LHS form so `*p = value` parses.
  * Stage 18: non-assignment fallthrough calls parse_conditional instead
  * of parse_logical_or so `?:` expressions are recognized.
+ * Stage 19: renamed from parse_expression; the new parse_expression adds
+ * comma-operator handling above this level.
  */
-static ASTNode *parse_expression(Parser *parser) {
+static ASTNode *parse_assignment_expression(Parser *parser) {
     if (parser->current.type == TOKEN_IDENTIFIER) {
         int saved_pos = parser->lexer->pos;
         Token saved_token = parser->current;
@@ -630,7 +631,7 @@ static ASTNode *parse_expression(Parser *parser) {
             parser->current.type == TOKEN_PIPE_ASSIGN) {
             Token op = parser->current;
             parser->current = lexer_next_token(parser->lexer);
-            ASTNode *rhs = parse_expression(parser);
+            ASTNode *rhs = parse_assignment_expression(parser);
             ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
             if (op.type != TOKEN_ASSIGN) {
                 /* a op= b  =>  a = a op b */
@@ -669,13 +670,36 @@ static ASTNode *parse_expression(Parser *parser) {
             exit(1);
         }
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *rhs = parse_expression(parser);
+        ASTNode *rhs = parse_assignment_expression(parser);
         ASTNode *assign = ast_new(AST_ASSIGNMENT, NULL);
         ast_add_child(assign, lhs);
         ast_add_child(assign, rhs);
         return assign;
     }
     return lhs;
+}
+
+/*
+ * <expression> ::= <assignment_expression> { "," <assignment_expression> }
+ *
+ * Stage 19: the comma operator has the lowest precedence among expression
+ * operators. It is left-associative: `a, b, c` parses as `(a, b), c`.
+ * The left operand is evaluated and its value discarded; the result is the
+ * right operand's value and type. Commas in function-call argument lists
+ * are separators, not comma operators — those call parse_assignment_expression
+ * directly.
+ */
+static ASTNode *parse_expression(Parser *parser) {
+    ASTNode *left = parse_assignment_expression(parser);
+    while (parser->current.type == TOKEN_COMMA) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *right = parse_assignment_expression(parser);
+        ASTNode *comma = ast_new(AST_COMMA_EXPR, ",");
+        ast_add_child(comma, left);
+        ast_add_child(comma, right);
+        left = comma;
+    }
+    return left;
 }
 
 /*
@@ -978,7 +1002,7 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
-            ASTNode *init = parse_expression(parser);
+            ASTNode *init = parse_assignment_expression(parser);
             ast_add_child(decl, init);
         }
         parser_expect(parser, TOKEN_SEMICOLON);

@@ -498,6 +498,8 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         }
         return TYPE_INT;
     }
+    case AST_COMMA_EXPR:
+        return sizeof_type_of_expr(cg, node->children[1]);
     default:
         return TYPE_INT;
     }
@@ -614,6 +616,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_SIZEOF_TYPE:
     case AST_SIZEOF_EXPR:
         t = TYPE_LONG;
+        break;
+    case AST_COMMA_EXPR:
+        t = expr_result_type(cg, node->children[1]);
         break;
     default:
         t = TYPE_INT;
@@ -1466,6 +1471,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else {
             node->result_type = common_arith_kind(promote_kind(tk), promote_kind(fk));
         }
+        return;
+    }
+    if (node->type == AST_COMMA_EXPR) {
+        codegen_expression(cg, node->children[0]);
+        codegen_expression(cg, node->children[1]);
+        node->result_type = node->children[1]->result_type;
+        node->full_type   = node->children[1]->full_type;
         return;
     }
 }

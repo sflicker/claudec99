@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 18 (conditional operator):
+Through stage 19 (comma operator):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -164,6 +164,7 @@ Through stage 18 (conditional operator):
   code is emitted for the array operand and the array is not decayed to a
   pointer. `sizeof(int[10])` (array-type-name form) is not yet supported.
 - **Conditional operator**: `condition ? expr_true : expr_false`. The condition is evaluated first; only the selected branch (true or false) is then evaluated and its value returned. The condition may be any integer or pointer expression. Both branches may be integer expressions (result is common type) or compatible pointer types (result is that pointer type). One branch may be a pointer with the other being the null constant `0`. The conditional expression is right-associative with lower precedence than logical OR and higher precedence than assignment.
+- **Comma operator**: `expr1, expr2` evaluates both expressions left to right, discards the left result, and returns the right result. Comma is the lowest-precedence operator (below assignment), left-associative, and produces an rvalue. Comma-as-separator in function calls and initializers is preserved via parser-level precedence.
 
 ## Not yet supported
 
@@ -196,8 +197,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 18 all
-597 tests pass (367 valid, 101 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 19 all
+609 tests pass (376 valid, 104 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

@@ -239,6 +239,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_CONDITIONAL_EXPR:
         printf("Conditional:\n");
         break;
+    case AST_COMMA_EXPR:
+        printf("CommaExpr:\n");
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {
