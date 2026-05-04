@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 17-03 (sizeof arrays):
+Through stage 18 (conditional operator):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -163,6 +163,7 @@ Through stage 17-03 (sizeof arrays):
   (`element_size × element_count`) as a compile-time constant — no runtime
   code is emitted for the array operand and the array is not decayed to a
   pointer. `sizeof(int[10])` (array-type-name form) is not yet supported.
+- **Conditional operator**: `condition ? expr_true : expr_false`. The condition is evaluated first; only the selected branch (true or false) is then evaluated and its value returned. The condition may be any integer or pointer expression. Both branches may be integer expressions (result is common type) or compatible pointer types (result is that pointer type). One branch may be a pointer with the other being the null constant `0`. The conditional expression is right-associative with lower precedence than logical OR and higher precedence than assignment.
 
 ## Not yet supported
 
@@ -195,8 +196,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 17-03 all
-583 tests pass (357 valid, 95 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 18 all
+597 tests pass (367 valid, 101 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

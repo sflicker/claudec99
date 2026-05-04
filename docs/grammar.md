@@ -62,10 +62,13 @@
 <expression> ::= <assignment_expression>
 
 <assignment_expression> ::= <unary_expression> <assignment_operator> <assignment_expression>
-                           | <logical_or_expression>
+                           | <conditional_expression>
                            
 <assignment_operator> ::= "=" | "+=" | "-=" | "*=" | "/=" | "%=" |
                           "<<=" | ">>=" | "&=" | "^=" | "|="
+
+<conditional_expression> ::= <logical_or_expression>
+                           | <logical_or_expression> "?" <expression> ":" <conditional_expression>
  
 <logical_or_expression> ::= <logical_and_expression> { "||" <logical_and_expression> }
  

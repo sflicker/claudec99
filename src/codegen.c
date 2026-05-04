@@ -1423,6 +1423,51 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         return;
     }
+    if (node->type == AST_CONDITIONAL_EXPR) {
+        int label_id = cg->label_count++;
+        ASTNode *cond_node  = node->children[0];
+        ASTNode *true_node  = node->children[1];
+        ASTNode *false_node = node->children[2];
+
+        codegen_expression(cg, cond_node);
+        if (cond_node->result_type == TYPE_LONG || cond_node->result_type == TYPE_POINTER) {
+            fprintf(cg->output, "    cmp rax, 0\n");
+        } else {
+            fprintf(cg->output, "    cmp eax, 0\n");
+        }
+        fprintf(cg->output, "    je .L_cond_false_%d\n", label_id);
+
+        codegen_expression(cg, true_node);
+        fprintf(cg->output, "    jmp .L_cond_end_%d\n", label_id);
+
+        fprintf(cg->output, ".L_cond_false_%d:\n", label_id);
+        codegen_expression(cg, false_node);
+        fprintf(cg->output, ".L_cond_end_%d:\n", label_id);
+
+        TypeKind tk = true_node->result_type;
+        TypeKind fk = false_node->result_type;
+        int true_is_null  = is_null_pointer_constant(true_node);
+        int false_is_null = is_null_pointer_constant(false_node);
+
+        if (tk == TYPE_POINTER && fk == TYPE_POINTER) {
+            if (!pointer_types_equal(true_node->full_type, false_node->full_type)) {
+                fprintf(stderr,
+                        "error: conditional operator has incompatible pointer types\n");
+                exit(1);
+            }
+            node->result_type = TYPE_POINTER;
+            node->full_type   = true_node->full_type;
+        } else if (tk == TYPE_POINTER && false_is_null) {
+            node->result_type = TYPE_POINTER;
+            node->full_type   = true_node->full_type;
+        } else if (fk == TYPE_POINTER && true_is_null) {
+            node->result_type = TYPE_POINTER;
+            node->full_type   = false_node->full_type;
+        } else {
+            node->result_type = common_arith_kind(promote_kind(tk), promote_kind(fk));
+        }
+        return;
+    }
 }
 
 /*

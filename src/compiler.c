@@ -81,6 +81,7 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_AMPERSAND:     return "TOKEN_AMPERSAND";
         case TOKEN_CARET:         return "TOKEN_CARET";
         case TOKEN_PIPE:          return "TOKEN_PIPE";
+        case TOKEN_QUESTION:      return "TOKEN_QUESTION";
         case TOKEN_UNKNOWN:       return "TOKEN_UNKNOWN";
     }
     return "TOKEN_UNKNOWN";

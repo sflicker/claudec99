@@ -570,16 +570,47 @@ static ASTNode *parse_logical_or(Parser *parser) {
 }
 
 /*
+ * <conditional_expression> ::= <logical_or_expression>
+ *                            | <logical_or_expression> "?" <expression> ":" <conditional_expression>
+ *
+ * Stage 18: right-associative ternary. The true branch is a full
+ * <expression> (allowing assignment); the false branch recurses into
+ * <conditional_expression> for right-associativity.
+ */
+static ASTNode *parse_conditional(Parser *parser) {
+    ASTNode *cond = parse_logical_or(parser);
+    if (parser->current.type != TOKEN_QUESTION) {
+        return cond;
+    }
+    parser->current = lexer_next_token(parser->lexer); /* consume '?' */
+    if (parser->current.type == TOKEN_COLON) {
+        fprintf(stderr, "error: expected expression after '?'\n");
+        exit(1);
+    }
+    ASTNode *true_expr = parse_expression(parser);
+    if (parser->current.type != TOKEN_COLON) {
+        fprintf(stderr, "error: expected ':' in conditional expression\n");
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer); /* consume ':' */
+    ASTNode *false_expr = parse_conditional(parser);
+    ASTNode *node = ast_new(AST_CONDITIONAL_EXPR, NULL);
+    ast_add_child(node, cond);
+    ast_add_child(node, true_expr);
+    ast_add_child(node, false_expr);
+    return node;
+}
+
+/*
  * <expression> ::= <assignment_expression>
  *
  * <assignment_expression> ::= <identifier> <assignment_operator> <assignment_expression>
  *                            | <unary_expression> "=" <assignment_expression>
- *                            | <logical_or_expression>
+ *                            | <conditional_expression>
  *
  * Stage 12-03 adds the dereference-LHS form so `*p = value` parses.
- * The LHS is parsed as a logical-or expression and then validated to
- * be an lvalue (AST_DEREF or AST_VAR_REF). Non-lvalue LHS such as
- * `(x + 1) = 3` is rejected here.
+ * Stage 18: non-assignment fallthrough calls parse_conditional instead
+ * of parse_logical_or so `?:` expressions are recognized.
  */
 static ASTNode *parse_expression(Parser *parser) {
     if (parser->current.type == TOKEN_IDENTIFIER) {
@@ -630,7 +661,7 @@ static ASTNode *parse_expression(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    ASTNode *lhs = parse_logical_or(parser);
+    ASTNode *lhs = parse_conditional(parser);
     if (parser->current.type == TOKEN_ASSIGN) {
         if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF &&
             lhs->type != AST_ARRAY_INDEX) {
