@@ -82,6 +82,17 @@ When delegating to `haiku-stage-artifact-writer`, pass:
 Grammar file in docs:
 * docs/grammar.md should be kept up to date with the current grammar of the
    the compiler. If changes are made in the specification to the grammar
-   they should be reflected in docs/grammar.md   
+   they should be reflected in docs/grammar.md. Delegate this task to `haiku-stage-artifact-writer`
 
-README.md - update the project README.md based on the existing format in that file.
+README.md
+* Update `README.md` only where the completed stage changes the user-visible compiler capability, project status, or test totals.
+* Delegate this task to `haiku-stage-artifact-writer`
+* Preserve the existing README structure and writing style.
+* Usually update:
+   * the “Through stage ...” line,
+   * the relevant bullet under “What the compiler currently supports,”
+   * the “Not yet supported” section if the stage removes a limitation,
+   * the aggregate test totals and suite breakdown.
+* Do not rewrite unrelated sections.
+* Do not add implementation-level detail that belongs in the milestone or transcript.
+* If the stage does not change user-visible capabilities, say that no README update is needed.

@@ -15,13 +15,13 @@ You may create and edit files under:
 - docs/kickoffs/
 - docs/milestones/
 - docs/sessions/
+- README.md
+- docs/grammar.md
 
 You may read project source files, diffs, specs, templates, README.md, and docs/grammar.md for context.
 
 Do not modify compiler source files.
 Do not modify tests.
-Do not modify docs/grammar.md.
-Do not modify README.md.
 Do not commit changes.
 
 When invoked, use the supplied STAGE_LABEL and STAGE_DISPLAY exactly.
