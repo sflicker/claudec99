@@ -56,6 +56,8 @@ Implementation Rules:
 * Explain what is changing and why before showing code.
 * Pause after each major step and wait for confirmation before continuing.
 * If the spec is ambiguous, inconsistent, or contains grammar errors, stop and point them out before implementing.
+* Add tests listed in the spec if a similar test is not already present.
+* Additional tests may be added to fill test coverage gaps.
 
 Output Requirements:
 
