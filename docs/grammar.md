@@ -5,11 +5,15 @@
 
 <external-declaration> ::= <function>
 
-<function> ::= <type> <identifier> "(" [ <parameter_list> ] ")" ( <block_statement> | ";" )
+<function> ::= <type_specifier> <function_declarator> ( <block_statement> | ";" )
+
+<function_declarator> ::= { "*" } <identifier> "(" [ <parameter_list> ] ")"
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
-<parameter_declaration> ::= <type> <identifier>
+<parameter_declaration> ::= <type_specifier> <parameter_declarator>
+
+<parameter_declarator> ::= { "*" } <identifier>
 
 <block_statement> ::= "{" { <statement> } "}"
 
@@ -25,13 +29,24 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <type> <identifier> [ "[" [ <integer_literal> ] "]" ] [ "=" <expression> ] ";"
+<declaration> ::= <type_specifier> <init_declarator> ";"
 
 # Restriction: an omitted array size is only allowed when the
 # declaration has a string-literal initializer. The string-literal
 # initializer form is only allowed when the element type is `char`.
 
-<type> ::= <integer_type> { "*" }
+<init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
+
+<initializer_expression> ::= <assignment_expression>
+
+<declarator> ::= { "*" } <direct_declarator>
+
+<direct_declarator> ::= <identifier>
+                       | <identifier> "[" [ <integer_literal> ] "]"
+
+<type_specifier> ::= <integer_type>
+
+<type_name> ::= <type_specifier> { "*" }
 
 <integer_type> ::= "char" | "short" | "int" | "long"
 
@@ -90,13 +105,15 @@
 
 <multiplicative_expression> ::= <cast_expression> { ("*" | "/" | "%") <cast_expression> }
 
-<cast_expression> ::= <unary_expression>
-                    | "(" <type> ")" <cast_expression>
+<cast_expression> ::= "(" <type_name> ")" <cast_expression>
+                    | <unary_expression>
 
-<unary_expression> ::= "sizeof" <unary_expression>
-                    | "sizeof" "(" <type> ")"
+<unary_expression> ::= <sizeof_expression>
                     | <unary_operator> <unary_expression>
                     | <postfix_expression>
+
+<sizeof_expression> ::= "sizeof" <unary_expression>
+                      | "sizeof" "(" <type_name> ")"
 
 <unary_operator> ::= "+" | "-" | "!" | "~" | "++" | "--" | "*" | "&"
                     

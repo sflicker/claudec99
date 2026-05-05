@@ -3,6 +3,19 @@
 #include <string.h>
 #include "parser.h"
 
+/*
+ * Internal helper filled by parse_declarator. Carries the identifier
+ * name, pointer depth, and optional array-size information parsed out
+ * of one declarator before the caller assembles the semantic Type.
+ */
+typedef struct {
+    char name[256];
+    int  pointer_count;
+    int  is_array;
+    int  has_size;
+    int  array_length;
+} ParsedDeclarator;
+
 void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
@@ -84,6 +97,82 @@ static Token parser_expect(Parser *parser, TokenType type) {
     Token token = parser->current;
     parser->current = lexer_next_token(parser->lexer);
     return token;
+}
+
+/*
+ * <type_specifier> ::= "char" | "short" | "int" | "long"
+ *
+ * Parses one integer-type keyword, advances the token, and returns the
+ * corresponding Type*. Writes the TypeKind to *out_kind when non-NULL.
+ */
+static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
+    TypeKind kind;
+    Type *t;
+    switch (parser->current.type) {
+    case TOKEN_CHAR:  kind = TYPE_CHAR;  t = type_char();  break;
+    case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
+    case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
+    case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
+    default:
+        fprintf(stderr, "error: expected integer type, got '%s'\n",
+                parser->current.value);
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer);
+    if (out_kind) *out_kind = kind;
+    return t;
+}
+
+/*
+ * <type_name> ::= <type_specifier> { "*" }
+ *
+ * Nameless type context: cast expressions and sizeof(type).
+ * Returns the fully pointer-wrapped Type*.
+ */
+static Type *parse_type_name(Parser *parser) {
+    Type *t = parse_type_specifier(parser, NULL);
+    while (parser->current.type == TOKEN_STAR) {
+        t = type_pointer(t);
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    return t;
+}
+
+/*
+ * <declarator>        ::= { "*" } <direct_declarator>
+ * <direct_declarator> ::= <identifier>
+ *                       | <identifier> "[" [<integer_literal>] "]"
+ */
+static ParsedDeclarator parse_declarator(Parser *parser) {
+    ParsedDeclarator d;
+    memset(&d, 0, sizeof(d));
+    while (parser->current.type == TOKEN_STAR) {
+        d.pointer_count++;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    Token name = parser_expect(parser, TOKEN_IDENTIFIER);
+    strncpy(d.name, name.value, sizeof(d.name) - 1);
+    d.name[sizeof(d.name) - 1] = '\0';
+    if (parser->current.type == TOKEN_LBRACKET) {
+        d.is_array = 1;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_INT_LITERAL) {
+            Token size_tok = parser->current;
+            parser->current = lexer_next_token(parser->lexer);
+            int length = (int)size_tok.long_value;
+            if (length <= 0) {
+                fprintf(stderr, "error: array size must be greater than zero\n");
+                exit(1);
+            }
+            d.array_length = length;
+            d.has_size = 1;
+        } else if (parser->current.type != TOKEN_RBRACKET) {
+            fprintf(stderr, "error: array size must be an integer literal\n");
+            exit(1);
+        }
+        parser_expect(parser, TOKEN_RBRACKET);
+    }
+    return d;
 }
 
 /*
@@ -251,7 +340,7 @@ static ASTNode *parse_unary(Parser *parser) {
     if (parser->current.type == TOKEN_SIZEOF) {
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type != TOKEN_LPAREN) {
-            /* sizeof <unary_expression> — no parentheses */
+            /* <sizeof_expression> ::= "sizeof" <unary_expression> */
             ASTNode *operand = parse_unary(parser);
             ASTNode *node = ast_new(AST_SIZEOF_EXPR, NULL);
             ast_add_child(node, operand);
@@ -263,23 +352,11 @@ static ASTNode *parse_unary(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG) {
-            /* sizeof(<type>) — existing path */
-            TypeKind base_kind;
-            switch (parser->current.type) {
-            case TOKEN_CHAR:  base_kind = TYPE_CHAR;  break;
-            case TOKEN_SHORT: base_kind = TYPE_SHORT; break;
-            case TOKEN_LONG:  base_kind = TYPE_LONG;  break;
-            default:          base_kind = TYPE_INT;   break;
-            }
-            parser->current = lexer_next_token(parser->lexer);
-            TypeKind result_kind = base_kind;
-            while (parser->current.type == TOKEN_STAR) {
-                result_kind = TYPE_POINTER;
-                parser->current = lexer_next_token(parser->lexer);
-            }
+            /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
+            Type *t = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
-            node->decl_type = result_kind;
+            node->decl_type = t->kind;
             return node;
         }
         if (parser->current.type == TOKEN_RPAREN) {
@@ -342,12 +419,12 @@ static ASTNode *parse_unary(Parser *parser) {
 }
 
 /*
- * <cast_expression> ::= <unary_expression>
- *                     | "(" <integer_type> ")" <cast_expression>
+ * <cast_expression> ::= "(" <type_name> ")" <cast_expression>
+ *                     | <unary_expression>
  *
  * When the current token is '(', save lexer state and peek past it to
  * decide between a cast and a parenthesized expression. If the next
- * token is an integer-type keyword, consume "(", <type>, ")" and
+ * token is an integer-type keyword, consume "(", <type_name>, ")" and
  * recurse to parse the operand cast expression. Otherwise restore
  * the saved state and fall through to parse_unary — parenthesized
  * expressions are then handled by parse_primary as before.
@@ -361,18 +438,14 @@ static ASTNode *parse_cast(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG) {
-            TypeKind target_kind;
-            switch (parser->current.type) {
-            case TOKEN_CHAR:  target_kind = TYPE_CHAR;  break;
-            case TOKEN_SHORT: target_kind = TYPE_SHORT; break;
-            case TOKEN_LONG:  target_kind = TYPE_LONG;  break;
-            default:          target_kind = TYPE_INT;   break;
-            }
-            parser->current = lexer_next_token(parser->lexer);
+            Type *cast_type = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *operand = parse_cast(parser);
             ASTNode *cast = ast_new(AST_CAST, NULL);
-            cast->decl_type = target_kind;
+            cast->decl_type = cast_type->kind;
+            if (cast_type->kind == TYPE_POINTER) {
+                cast->full_type = cast_type;
+            }
             ast_add_child(cast, operand);
             return cast;
         }
@@ -882,66 +955,34 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    /* declaration: <type> <identifier> [ "=" <expression> ] ";"
-     * <type>     ::= <integer_type> { "*" }
+    /* <declaration> ::= <type_specifier> <init_declarator> ";"
+     * <init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
      *
-     * Stage 12-01: zero or more '*' tokens after the integer base type
-     * wrap the type in a pointer Type chain. When at least one '*' is
-     * consumed, decl_type becomes TYPE_POINTER and full_type carries
-     * the head of the chain. */
+     * parse_type_specifier reads the base keyword; parse_declarator
+     * reads the pointer stars, identifier, and optional array suffix.
+     * The caller assembles the semantic Type from those two pieces. */
     if (parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG) {
         TypeKind base_kind;
-        Type *base_type;
-        switch (parser->current.type) {
-        case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
-        case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
-        case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
-        default:          base_kind = TYPE_INT;   base_type = type_int();   break;
-        }
-        parser->current = lexer_next_token(parser->lexer);
+        Type *base_type = parse_type_specifier(parser, &base_kind);
+        ParsedDeclarator d = parse_declarator(parser);
+
+        /* Build the fully-wrapped element type: base + pointer levels. */
         Type *full_type = base_type;
-        int pointer_levels = 0;
-        while (parser->current.type == TOKEN_STAR) {
+        for (int i = 0; i < d.pointer_count; i++) {
             full_type = type_pointer(full_type);
-            pointer_levels++;
-            parser->current = lexer_next_token(parser->lexer);
         }
-        Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-        ASTNode *decl = ast_new(AST_DECLARATION, name.value);
-        /* Stage 13-01: optional "[" <integer_literal> "]" suffix
-         * makes this an array declaration. The element type is the
-         * (possibly pointer-wrapped) base type.
-         *
-         * Stage 14-06: the integer-literal size is now optional; an
-         * empty `[]` is allowed only when paired with a string-literal
-         * initializer, in which case the length is inferred as
-         * literal_byte_length + 1. An `=` initializer is also now
-         * allowed, but only when the initializer is a string literal
-         * and the element type is `char`. All other initializer
-         * shapes are rejected with the spec-specified error. */
-        if (parser->current.type == TOKEN_LBRACKET) {
-            parser->current = lexer_next_token(parser->lexer);
-            int has_size = 0;
-            int length = 0;
-            if (parser->current.type == TOKEN_INT_LITERAL) {
-                Token size_tok = parser->current;
-                parser->current = lexer_next_token(parser->lexer);
-                length = (int)size_tok.long_value;
-                if (length <= 0) {
-                    fprintf(stderr,
-                            "error: array size must be greater than zero\n");
-                    exit(1);
-                }
-                has_size = 1;
-            } else if (parser->current.type != TOKEN_RBRACKET) {
-                fprintf(stderr,
-                        "error: array size must be an integer literal\n");
-                exit(1);
-            }
-            parser_expect(parser, TOKEN_RBRACKET);
+
+        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+
+        /* Stage 13-01 / 14-06: optional array suffix on the declarator.
+         * An omitted size is only valid with a string-literal initializer;
+         * string initializers are only valid when the element type is char. */
+        if (d.is_array) {
+            int has_size = d.has_size;
+            int length = d.array_length;
 
             ASTNode *str_init = NULL;
             if (parser->current.type == TOKEN_ASSIGN) {
@@ -994,7 +1035,7 @@ static ASTNode *parse_statement(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
         }
-        if (pointer_levels > 0) {
+        if (d.pointer_count > 0) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
         } else {
@@ -1091,39 +1132,22 @@ static ASTNode *parse_statement(Parser *parser) {
 }
 
 /*
- * <parameter_declaration> ::= <type> <identifier>
- * <type>                  ::= <integer_type> { "*" }
- *
- * Stage 12-04: a parameter's type may be a pointer. Mirrors the
- * declaration parsing: the integer base type is followed by zero or
- * more '*' tokens. When at least one '*' is consumed the AST_PARAM
- * carries decl_type = TYPE_POINTER and full_type pointing at the
- * pointer chain head.
+ * <parameter_declaration> ::= <type_specifier> <parameter_declarator>
+ * <parameter_declarator>  ::= { "*" } <identifier>
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
     TypeKind base_kind;
-    Type *base_type;
-    switch (parser->current.type) {
-    case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
-    case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
-    case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
-    case TOKEN_INT:   base_kind = TYPE_INT;   base_type = type_int();   break;
-    default:
-        fprintf(stderr, "error: expected integer type, got '%s'\n",
-                parser->current.value);
-        exit(1);
-    }
-    parser->current = lexer_next_token(parser->lexer);
+    Type *base_type = parse_type_specifier(parser, &base_kind);
     Type *full_type = base_type;
-    int pointer_levels = 0;
+    int pointer_count = 0;
     while (parser->current.type == TOKEN_STAR) {
         full_type = type_pointer(full_type);
-        pointer_levels++;
+        pointer_count++;
         parser->current = lexer_next_token(parser->lexer);
     }
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     ASTNode *param = ast_new(AST_PARAM, name.value);
-    if (pointer_levels > 0) {
+    if (pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
     } else {
@@ -1158,45 +1182,29 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function> ::= <type> <identifier> "(" [ <parameter_list> ] ")"
- *                ( <block> | ";" )
- * <type>     ::= <integer_type> { "*" }
+ * <function>            ::= <type_specifier> <function_declarator>
+ *                           ( <block_statement> | ";" )
+ * <function_declarator> ::= { "*" } <identifier> "(" [<parameter_list>] ")"
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
  * (no AST_BLOCK).
- *
- * Stage 12-05: zero or more '*' tokens after the integer base type wrap
- * the return type in a pointer Type chain. When at least one '*' is
- * consumed, decl_type becomes TYPE_POINTER and full_type carries the
- * head of the chain.
  */
 static ASTNode *parse_function_decl(Parser *parser) {
     TypeKind base_kind;
-    Type *base_type;
-    switch (parser->current.type) {
-    case TOKEN_CHAR:  base_kind = TYPE_CHAR;  base_type = type_char();  break;
-    case TOKEN_SHORT: base_kind = TYPE_SHORT; base_type = type_short(); break;
-    case TOKEN_LONG:  base_kind = TYPE_LONG;  base_type = type_long();  break;
-    case TOKEN_INT:   base_kind = TYPE_INT;   base_type = type_int();   break;
-    default:
-        fprintf(stderr, "error: expected integer type, got '%s'\n",
-                parser->current.value);
-        exit(1);
-    }
-    parser->current = lexer_next_token(parser->lexer);
+    Type *base_type = parse_type_specifier(parser, &base_kind);
     Type *full_type = base_type;
-    int pointer_levels = 0;
+    int pointer_count = 0;
     while (parser->current.type == TOKEN_STAR) {
         full_type = type_pointer(full_type);
-        pointer_levels++;
+        pointer_count++;
         parser->current = lexer_next_token(parser->lexer);
     }
-    TypeKind return_kind = (pointer_levels > 0) ? TYPE_POINTER : base_kind;
+    TypeKind return_kind = (pointer_count > 0) ? TYPE_POINTER : base_kind;
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
     func->decl_type = return_kind;
-    if (pointer_levels > 0) {
+    if (pointer_count > 0) {
         func->full_type = full_type;
     }
 
