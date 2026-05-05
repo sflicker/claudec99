@@ -1579,6 +1579,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                                rhs_is_null_ptr);
             emit_store_local(cg, offset, size, rhs_is_long);
         }
+    } else if (node->type == AST_DECL_LIST) {
+        for (int i = 0; i < node->child_count; i++) {
+            codegen_statement(cg, node->children[i], is_main);
+        }
     } else if (node->type == AST_RETURN_STATEMENT) {
         /* Stage 12-06: a return of the literal `0` from a pointer
          * function is a null pointer constant; accept it before the

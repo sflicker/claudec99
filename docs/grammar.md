@@ -29,11 +29,14 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <type_specifier> <init_declarator> ";"
+<declaration> ::= <type_specifier> <init_declarator_list> ";"
+
+<init_declarator_list> ::= <init_declarator> { "," <init_declarator> }
 
 # Restriction: an omitted array size is only allowed when the
 # declaration has a string-literal initializer. The string-literal
 # initializer form is only allowed when the element type is `char`.
+# Restriction: array declarators are not supported in multi-declarator lists.
 
 <init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
 
@@ -153,7 +156,6 @@
 <character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
                               | "\\" | "\'" | "\"" | "\?" | "\0"
 
-# Current Restriction : Only one declarator per declaration
 # Current Restriction : no file-scope variable declarations
 # Current Restriction : for-loop initializers are expressions only, not declarations
 # Current Restriction : array declarations are limited to a single bracket suffix.

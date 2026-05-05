@@ -79,6 +79,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_BLOCK:
         printf("Block\n");
         break;
+    case AST_DECL_LIST:
+        printf("DeclList:\n");
+        break;
     case AST_DECLARATION:
         if (node->decl_type == TYPE_ARRAY && node->full_type) {
             /* Stage 13-01: render `<element-type> <name>[<length>]`.

@@ -1046,8 +1046,40 @@ static ASTNode *parse_statement(Parser *parser) {
             ASTNode *init = parse_assignment_expression(parser);
             ast_add_child(decl, init);
         }
+        if (parser->current.type != TOKEN_COMMA) {
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return decl;
+        }
+        /* <init_declarator_list>: one or more declarators sharing the same base type. */
+        ASTNode *list = ast_new(AST_DECL_LIST, NULL);
+        ast_add_child(list, decl);
+        while (parser->current.type == TOKEN_COMMA) {
+            parser->current = lexer_next_token(parser->lexer);
+            ParsedDeclarator d2 = parse_declarator(parser);
+            if (d2.is_array) {
+                fprintf(stderr, "error: array declarator in multi-declarator list not supported\n");
+                exit(1);
+            }
+            Type *full_type2 = base_type;
+            for (int i = 0; i < d2.pointer_count; i++) {
+                full_type2 = type_pointer(full_type2);
+            }
+            ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            if (d2.pointer_count > 0) {
+                next_decl->decl_type = TYPE_POINTER;
+                next_decl->full_type = full_type2;
+            } else {
+                next_decl->decl_type = base_kind;
+            }
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                ASTNode *init2 = parse_assignment_expression(parser);
+                ast_add_child(next_decl, init2);
+            }
+            ast_add_child(list, next_decl);
+        }
         parser_expect(parser, TOKEN_SEMICOLON);
-        return decl;
+        return list;
     }
     if (parser->current.type == TOKEN_RETURN) {
         parser->current = lexer_next_token(parser->lexer);

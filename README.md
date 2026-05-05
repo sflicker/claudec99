@@ -89,11 +89,13 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 20-01 (declarator refactor):
+Through stage 20-02 (comma-separated init-declarator lists):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
   `/* */` comments.
+- **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
+  `int a=3, b=4;`, `int *p, q;`).
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
@@ -197,8 +199,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 20-01 all
-tests pass (376 valid, 102 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 20-02 all
+tests pass (381 valid, 102 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
