@@ -13,12 +13,28 @@ Current
     <function> ::= <type_specifier> <function_declarator> ( <block_statement> | ";" )
 
     <function_declarator> ::= { "*" } <identifier> "(" [ <parameter_list> ] ")"
+    
+    <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
+
+    <parameter_declaration> ::= <type_specifier> <parameter_declarator>
+
+    <parameter_declarator> ::= { "*" } <identifier>
 ```
 
 Updated
 ```ebnf
 
     <function> ::= <type_specifier> <declarator> ( <block_statement> | ";" )
+    
+    <declarator> ::= { "*" } <direct_declarator>
+
+    <direct_declarator> ::= <identifier>
+                       | <identifier> "[" [ <integer_literal> ] "]"
+                       | <identifier> "(" [ <parameter_list> ] ")"
+                       
+    <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
+
+    <parameter_declaration> ::= <type_specifier> <declarator>                       
 
 ```
 The <declarator> used in <function> must declare a function. 
