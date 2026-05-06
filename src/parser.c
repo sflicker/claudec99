@@ -1223,47 +1223,69 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function> ::= <type_specifier> <declarator> ( <block_statement> | ";" )
+ * <external_declaration> ::= <function_definition>
+ *                           | <declaration>
  *
- * The declarator must be a function declarator (is_function == 1); an
- * object or array declarator is rejected here.
+ * <function_definition> ::= <type_specifier> <declarator> <block_statement>
+ * <declaration>          ::= <type_specifier> <init_declarator_list> ";"
+ *
+ * After parsing the common type_specifier + declarator prefix:
+ *   - function declarator + "{"  → function definition
+ *   - function declarator + "="  → error (no initializer on function declaration)
+ *   - function declarator + ";"  → function declaration (prototype)
+ *   - non-function declarator + "{" → error (must be function declarator)
+ *   - non-function declarator       → file-scope object declaration (codegen out of scope)
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
  * (no AST_BLOCK).
  */
-static ASTNode *parse_function_decl(Parser *parser) {
+static ASTNode *parse_external_declaration(Parser *parser) {
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
     ParsedDeclarator d = parse_declarator(parser);
 
     if (!d.is_function) {
-        fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
-        exit(1);
+        if (parser->current.type == TOKEN_LBRACE) {
+            fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
+            exit(1);
+        }
+        /* File-scope object declaration; code generation is out of scope. */
+        Type *full_type = base_type;
+        for (int i = 0; i < d.pointer_count; i++)
+            full_type = type_pointer(full_type);
+        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        decl->decl_type = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
+        if (d.pointer_count > 0)
+            decl->full_type = full_type;
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return decl;
     }
 
     Type *full_type = base_type;
-    for (int i = 0; i < d.pointer_count; i++) {
+    for (int i = 0; i < d.pointer_count; i++)
         full_type = type_pointer(full_type);
-    }
     TypeKind return_kind = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
     ASTNode *func = ast_new(AST_FUNCTION_DECL, d.name);
     func->decl_type = return_kind;
-    if (d.pointer_count > 0) {
+    if (d.pointer_count > 0)
         func->full_type = full_type;
-    }
 
     parser_expect(parser, TOKEN_LPAREN);
-    if (parser->current.type != TOKEN_RPAREN) {
+    if (parser->current.type != TOKEN_RPAREN)
         parse_parameter_list(parser, func);
-    }
     parser_expect(parser, TOKEN_RPAREN);
+
+    if (parser->current.type == TOKEN_ASSIGN) {
+        fprintf(stderr,
+                "error: function declaration cannot have an initializer\n");
+        exit(1);
+    }
 
     int param_count = func->child_count;
     int is_definition = (parser->current.type == TOKEN_LBRACE);
 
-    /* Collect the declared parameter types in order so the function
-     * signature can be stored on registration. */
+    /* Collect parameter types for registration. */
     TypeKind param_types[FUNC_MAX_PARAMS];
     if (param_count > FUNC_MAX_PARAMS) {
         fprintf(stderr,
@@ -1271,30 +1293,19 @@ static ASTNode *parse_function_decl(Parser *parser) {
                 d.name, param_count, FUNC_MAX_PARAMS);
         exit(1);
     }
-    for (int i = 0; i < param_count; i++) {
+    for (int i = 0; i < param_count; i++)
         param_types[i] = func->children[i]->decl_type;
-    }
 
-    /* Register before parsing the body so self-calls resolve. The helper
-     * also enforces param-count consistency and rejects duplicate
-     * definitions. */
+    /* Register before parsing the body so self-calls resolve. */
     parser_register_function(parser, d.name, param_count, is_definition,
                              return_kind, param_types);
 
     if (is_definition) {
-        ASTNode *body = parse_block(parser);
-        ast_add_child(func, body);
+        ast_add_child(func, parse_block(parser));
     } else {
         parser_expect(parser, TOKEN_SEMICOLON);
     }
     return func;
-}
-
-/*
- * <external_declaration> ::= <function>
- */
-static ASTNode *parse_external_declaration(Parser *parser) {
-    return parse_function_decl(parser);
 }
 
 /*

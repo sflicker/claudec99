@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 21-01 (function declarator refactor):
+Through stage 21-02 (separate function definitions from declarations):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -199,8 +199,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 21-01 all
-tests pass (393 valid, 107 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 21-02 all
+tests pass (394 valid, 108 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

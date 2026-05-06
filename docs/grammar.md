@@ -3,11 +3,13 @@
 
 <translation-unit> ::= <external-declaration> { <external-declaration> }
 
-<external-declaration> ::= <function>
+<external_declaration> ::= <function_definition>
+                          | <declaration>
 
-<function> ::= <type_specifier> <declarator> ( <block_statement> | ";" )
+<function_definition> ::= <type_specifier> <declarator> <block_statement>
 
-# Restriction: the declarator in <function> must be a function declarator.
+# Restriction: the declarator in <function_definition> must be a function declarator.
+# Restriction: function declarations at file scope may not have an initializer.
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
