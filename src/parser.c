@@ -5,8 +5,13 @@
 
 /*
  * Internal helper filled by parse_declarator. Carries the identifier
- * name, pointer depth, and optional array-size information parsed out
- * of one declarator before the caller assembles the semantic Type.
+ * name, pointer depth, and optional array-size or function-suffix
+ * information parsed out of one declarator before the caller assembles
+ * the semantic Type.
+ *
+ * is_function: set when the direct_declarator has the form
+ *   <identifier> "(" ... ")"
+ * The "(" is NOT consumed here; the caller handles it.
  */
 typedef struct {
     char name[256];
@@ -14,6 +19,7 @@ typedef struct {
     int  is_array;
     int  has_size;
     int  array_length;
+    int  is_function;
 } ParsedDeclarator;
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -142,6 +148,11 @@ static Type *parse_type_name(Parser *parser) {
  * <declarator>        ::= { "*" } <direct_declarator>
  * <direct_declarator> ::= <identifier>
  *                       | <identifier> "[" [<integer_literal>] "]"
+ *                       | <identifier> "(" [<parameter_list>] ")"
+ *
+ * For the function form, is_function is set to 1 but the "(" is NOT
+ * consumed; the caller (parse_function_decl) handles the parameter list
+ * and closing ")".
  */
 static ParsedDeclarator parse_declarator(Parser *parser) {
     ParsedDeclarator d;
@@ -171,6 +182,8 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
             exit(1);
         }
         parser_expect(parser, TOKEN_RBRACKET);
+    } else if (parser->current.type == TOKEN_LPAREN) {
+        d.is_function = 1;
     }
     return d;
 }
@@ -1164,22 +1177,18 @@ static ASTNode *parse_statement(Parser *parser) {
 }
 
 /*
- * <parameter_declaration> ::= <type_specifier> <parameter_declarator>
- * <parameter_declarator>  ::= { "*" } <identifier>
+ * <parameter_declaration> ::= <type_specifier> <declarator>
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
+    ParsedDeclarator d = parse_declarator(parser);
     Type *full_type = base_type;
-    int pointer_count = 0;
-    while (parser->current.type == TOKEN_STAR) {
+    for (int i = 0; i < d.pointer_count; i++) {
         full_type = type_pointer(full_type);
-        pointer_count++;
-        parser->current = lexer_next_token(parser->lexer);
     }
-    Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-    ASTNode *param = ast_new(AST_PARAM, name.value);
-    if (pointer_count > 0) {
+    ASTNode *param = ast_new(AST_PARAM, d.name);
+    if (d.pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
     } else {
@@ -1214,9 +1223,10 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
- * <function>            ::= <type_specifier> <function_declarator>
- *                           ( <block_statement> | ";" )
- * <function_declarator> ::= { "*" } <identifier> "(" [<parameter_list>] ")"
+ * <function> ::= <type_specifier> <declarator> ( <block_statement> | ";" )
+ *
+ * The declarator must be a function declarator (is_function == 1); an
+ * object or array declarator is rejected here.
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
@@ -1225,18 +1235,21 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 static ASTNode *parse_function_decl(Parser *parser) {
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
-    Type *full_type = base_type;
-    int pointer_count = 0;
-    while (parser->current.type == TOKEN_STAR) {
-        full_type = type_pointer(full_type);
-        pointer_count++;
-        parser->current = lexer_next_token(parser->lexer);
+    ParsedDeclarator d = parse_declarator(parser);
+
+    if (!d.is_function) {
+        fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
+        exit(1);
     }
-    TypeKind return_kind = (pointer_count > 0) ? TYPE_POINTER : base_kind;
-    Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-    ASTNode *func = ast_new(AST_FUNCTION_DECL, name.value);
+
+    Type *full_type = base_type;
+    for (int i = 0; i < d.pointer_count; i++) {
+        full_type = type_pointer(full_type);
+    }
+    TypeKind return_kind = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
+    ASTNode *func = ast_new(AST_FUNCTION_DECL, d.name);
     func->decl_type = return_kind;
-    if (pointer_count > 0) {
+    if (d.pointer_count > 0) {
         func->full_type = full_type;
     }
 
@@ -1255,7 +1268,7 @@ static ASTNode *parse_function_decl(Parser *parser) {
     if (param_count > FUNC_MAX_PARAMS) {
         fprintf(stderr,
                 "error: function '%s' has %d parameters; max supported is %d\n",
-                name.value, param_count, FUNC_MAX_PARAMS);
+                d.name, param_count, FUNC_MAX_PARAMS);
         exit(1);
     }
     for (int i = 0; i < param_count; i++) {
@@ -1265,7 +1278,7 @@ static ASTNode *parse_function_decl(Parser *parser) {
     /* Register before parsing the body so self-calls resolve. The helper
      * also enforces param-count consistency and rejects duplicate
      * definitions. */
-    parser_register_function(parser, name.value, param_count, is_definition,
+    parser_register_function(parser, d.name, param_count, is_definition,
                              return_kind, param_types);
 
     if (is_definition) {

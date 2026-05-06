@@ -5,15 +5,13 @@
 
 <external-declaration> ::= <function>
 
-<function> ::= <type_specifier> <function_declarator> ( <block_statement> | ";" )
+<function> ::= <type_specifier> <declarator> ( <block_statement> | ";" )
 
-<function_declarator> ::= { "*" } <identifier> "(" [ <parameter_list> ] ")"
+# Restriction: the declarator in <function> must be a function declarator.
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
-<parameter_declaration> ::= <type_specifier> <parameter_declarator>
-
-<parameter_declarator> ::= { "*" } <identifier>
+<parameter_declaration> ::= <type_specifier> <declarator>
 
 <block_statement> ::= "{" { <statement> } "}"
 
@@ -46,6 +44,7 @@
 
 <direct_declarator> ::= <identifier>
                        | <identifier> "[" [ <integer_literal> ] "]"
+                       | <identifier> "(" [ <parameter_list> ] ")"
 
 <type_specifier> ::= <integer_type>
 
