@@ -2046,7 +2046,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * requires at every internal call site (notably libc calls
          * such as `puts` that use SSE-aligned loads). The
          * `sub rsp, N` is still elided when there are no locals. */
-        fprintf(cg->output, "global %s\n", node->value);
+        /* Stage 23: static functions have internal linkage — omit `global`. */
+        if (node->storage_class != SC_STATIC)
+            fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);
         cg->has_frame = 1;
         fprintf(cg->output, "    push rbp\n");
@@ -2304,14 +2306,20 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_TRANSLATION_UNIT) {
         /* Stage 22-01/22-02: first pass — register all file-scope globals.
          * AST_DECL_LIST (from comma-separated declarations) is expanded
-         * so each individual AST_DECLARATION is registered in turn. */
+         * so each individual AST_DECLARATION is registered in turn.
+         * Stage 23: extern-only declarations (no definition in this TU)
+         * are skipped — they allocate no storage. */
         for (int i = 0; i < node->child_count; i++) {
             ASTNode *child = node->children[i];
             if (child->type == AST_DECLARATION) {
-                codegen_add_global(cg, child);
+                if (child->storage_class != SC_EXTERN)
+                    codegen_add_global(cg, child);
             } else if (child->type == AST_DECL_LIST) {
-                for (int j = 0; j < child->child_count; j++)
-                    codegen_add_global(cg, child->children[j]);
+                for (int j = 0; j < child->child_count; j++) {
+                    ASTNode *d = child->children[j];
+                    if (d->storage_class != SC_EXTERN)
+                        codegen_add_global(cg, d);
+                }
             }
         }
         codegen_emit_data(cg);

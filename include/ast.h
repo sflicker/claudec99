@@ -4,6 +4,12 @@
 #include "type.h"
 
 typedef enum {
+    SC_NONE   = 0,
+    SC_EXTERN = 1,
+    SC_STATIC = 2
+} StorageClass;
+
+typedef enum {
     AST_TRANSLATION_UNIT,
     AST_FUNCTION_DECL,
     AST_PARAM,
@@ -60,6 +66,9 @@ typedef struct ASTNode {
      * payload bytes live in `value` but may contain embedded NULs once
      * `\0` escapes are supported, so length must be carried alongside. */
     int byte_length;
+    /* Stage 23: storage class of file-scope declarations and function
+     * definitions. SC_NONE (0) is the default (external linkage). */
+    StorageClass storage_class;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);

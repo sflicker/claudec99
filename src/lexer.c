@@ -361,6 +361,10 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_GOTO;
         } else if (strcmp(token.value, "sizeof") == 0) {
             token.type = TOKEN_SIZEOF;
+        } else if (strcmp(token.value, "extern") == 0) {
+            token.type = TOKEN_EXTERN;
+        } else if (strcmp(token.value, "static") == 0) {
+            token.type = TOKEN_STATIC;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }

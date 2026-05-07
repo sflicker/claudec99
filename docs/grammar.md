@@ -6,10 +6,17 @@
 <external_declaration> ::= <function_definition>
                           | <declaration>
 
-<function_definition> ::= <type_specifier> <declarator> <block_statement>
+<function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
+
+<declaration_specifiers>    ::= [ <storage_class_specifier> ] <type_specifier>
+
+<storage_class_specifier>   ::= "extern" | "static"
 
 # Restriction: the declarator in <function_definition> must be a function declarator.
 # Restriction: function declarations at file scope may not have an initializer.
+# Restriction: storage class specifiers are not allowed at block scope.
+# Restriction: extern declarations may not have an initializer.
+# Restriction: only one storage class specifier is allowed per declaration.
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
@@ -29,7 +36,7 @@
                     | <jump_statement>
                     | <expression_statement>
 
-<declaration> ::= <type_specifier> <init_declarator_list> ";"
+<declaration> ::= <declaration_specifiers> <init_declarator_list> ";"
 
 <init_declarator_list> ::= <init_declarator> { "," <init_declarator> }
 

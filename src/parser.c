@@ -49,23 +49,50 @@ static GlobalObjSig *parser_find_global(Parser *parser, const char *name) {
     return NULL;
 }
 
-static void parser_register_global(Parser *parser, const char *name, TypeKind kind) {
-    if (parser->global_count >= PARSER_MAX_GLOBALS) {
-        fprintf(stderr, "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
-        exit(1);
-    }
+/* Stage 23: register a file-scope object with storage class.
+ * Repeated extern declarations are allowed; conflicting linkage
+ * (static vs non-static) and duplicate definitions (non-extern + non-extern)
+ * are rejected. */
+static void parser_register_global(Parser *parser, const char *name,
+                                   TypeKind kind, StorageClass sc) {
     GlobalObjSig *existing = parser_find_global(parser, name);
     if (existing) {
-        if (existing->kind != kind)
+        if (existing->kind != kind) {
             fprintf(stderr, "error: conflicting type for global '%s'\n", name);
-        else
+            exit(1);
+        }
+        int ex_is_static = (existing->storage_class == SC_STATIC);
+        int new_is_static = (sc == SC_STATIC);
+        if (ex_is_static != new_is_static) {
+            fprintf(stderr, "error: conflicting linkage for '%s'\n", name);
+            exit(1);
+        }
+        if (ex_is_static) {
+            /* static + static: duplicate definition */
             fprintf(stderr, "error: duplicate global declaration '%s'\n", name);
+            exit(1);
+        }
+        /* Both non-static: extern+extern and extern+none are OK;
+         * none+none is a duplicate definition. */
+        if (existing->storage_class != SC_EXTERN && sc != SC_EXTERN) {
+            fprintf(stderr, "error: duplicate global declaration '%s'\n", name);
+            exit(1);
+        }
+        /* If new declaration is a definition (SC_NONE), upgrade the entry. */
+        if (sc == SC_NONE) {
+            existing->storage_class = SC_NONE;
+        }
+        return;
+    }
+    if (parser->global_count >= PARSER_MAX_GLOBALS) {
+        fprintf(stderr, "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
         exit(1);
     }
     GlobalObjSig *g = &parser->globals[parser->global_count++];
     strncpy(g->name, name, 255);
     g->name[255] = '\0';
     g->kind = kind;
+    g->storage_class = sc;
 }
 
 /*
@@ -78,10 +105,15 @@ static void parser_register_global(Parser *parser, const char *name, TypeKind ki
  * spec, signature compatibility between declarations and definitions
  * beyond arity is not checked in this stage.
  */
+/* Stage 23: sc is the storage class of this declaration/definition.
+ * SC_STATIC means internal linkage; SC_NONE and SC_EXTERN both mean
+ * external linkage. Mixing static and non-static for the same name
+ * is a linkage conflict. */
 static void parser_register_function(Parser *parser, const char *name,
                                      int param_count, int is_definition,
                                      TypeKind return_type,
-                                     const TypeKind *param_types) {
+                                     const TypeKind *param_types,
+                                     StorageClass sc) {
     /* Stage 22-02: reject function if a global object with the same name exists. */
     if (parser_find_global(parser, name)) {
         fprintf(stderr,
@@ -90,6 +122,14 @@ static void parser_register_function(Parser *parser, const char *name,
     }
     FuncSig *existing = parser_find_function(parser, name);
     if (existing) {
+        /* Stage 23: check for static vs non-static linkage conflict. */
+        int ex_is_static = (existing->storage_class == SC_STATIC);
+        int new_is_static = (sc == SC_STATIC);
+        if (ex_is_static != new_is_static) {
+            fprintf(stderr,
+                    "error: conflicting linkage for '%s'\n", name);
+            exit(1);
+        }
         if (existing->param_count != param_count) {
             fprintf(stderr,
                     "error: function '%s' parameter count mismatch (%d vs %d)\n",
@@ -136,6 +176,7 @@ static void parser_register_function(Parser *parser, const char *name,
     sig->param_count = param_count;
     sig->has_definition = is_definition;
     sig->return_type = return_type;
+    sig->storage_class = sc;
     for (int i = 0; i < param_count; i++) {
         sig->param_types[i] = param_types[i];
     }
@@ -1001,6 +1042,13 @@ static ASTNode *parse_switch_statement(Parser *parser) {
  *               | <expression_stmt>
  */
 static ASTNode *parse_statement(Parser *parser) {
+    /* Stage 23: storage class specifiers are not supported at block scope. */
+    if (parser->current.type == TOKEN_EXTERN ||
+        parser->current.type == TOKEN_STATIC) {
+        fprintf(stderr,
+                "error: storage class specifier not allowed in block scope\n");
+        exit(1);
+    }
     /* labeled_statement: <identifier> ":" <statement> */
     if (parser->current.type == TOKEN_IDENTIFIER) {
         int saved_pos = parser->lexer->pos;
@@ -1274,21 +1322,40 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
  * <external_declaration> ::= <function_definition>
  *                           | <declaration>
  *
- * <function_definition> ::= <type_specifier> <declarator> <block_statement>
- * <declaration>          ::= <type_specifier> <init_declarator_list> ";"
+ * <function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
+ * <declaration>            ::= <declaration_specifiers> <init_declarator_list> ";"
+ * <declaration_specifiers> ::= [ <storage_class_specifier> ] <type_specifier>
+ * <storage_class_specifier>::= "extern" | "static"
  *
- * After parsing the common type_specifier + declarator prefix:
+ * After parsing the common declaration_specifiers + declarator prefix:
  *   - function declarator + "{"  → function definition
  *   - function declarator + "="  → error (no initializer on function declaration)
  *   - function declarator + ";"  → function declaration (prototype)
  *   - non-function declarator + "{" → error (must be function declarator)
- *   - non-function declarator       → file-scope object declaration (codegen out of scope)
+ *   - non-function declarator       → file-scope object declaration
  *
  * AST layout for a definition: zero or more AST_PARAM children followed by
  * the AST_BLOCK body. A pure declaration has only the AST_PARAM children
  * (no AST_BLOCK).
  */
 static ASTNode *parse_external_declaration(Parser *parser) {
+    /* Stage 23: optional storage class specifier. */
+    StorageClass sc = SC_NONE;
+    if (parser->current.type == TOKEN_EXTERN) {
+        sc = SC_EXTERN;
+        parser->current = lexer_next_token(parser->lexer);
+    } else if (parser->current.type == TOKEN_STATIC) {
+        sc = SC_STATIC;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    /* Reject combinations like "extern static" or "static extern". */
+    if (parser->current.type == TOKEN_EXTERN ||
+        parser->current.type == TOKEN_STATIC) {
+        fprintf(stderr,
+                "error: multiple storage class specifiers are not allowed\n");
+        exit(1);
+    }
+
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
     ParsedDeclarator d = parse_declarator(parser);
@@ -1302,7 +1369,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
 
-        /* Stage 22-02: detect function/object name conflicts and register. */
+        /* Stage 23: extern with initializer is invalid. */
+        if (sc == SC_EXTERN && parser->current.type == TOKEN_ASSIGN) {
+            fprintf(stderr,
+                    "error: extern declaration of '%s' cannot have an initializer\n",
+                    d.name);
+            exit(1);
+        }
+
+        /* Stage 22-02/23: detect function/object name conflicts and register. */
         if (parser_find_function(parser, d.name)) {
             fprintf(stderr,
                     "error: '%s' redeclared as a different kind of symbol\n", d.name);
@@ -1310,9 +1385,10 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
                             d.pointer_count > 0 ? TYPE_POINTER : base_kind;
-        parser_register_global(parser, d.name, obj_kind);
+        parser_register_global(parser, d.name, obj_kind, sc);
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        decl->storage_class = sc;
         if (d.is_array) {
             if (!d.has_size) {
                 fprintf(stderr,
@@ -1363,11 +1439,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 exit(1);
             }
             TypeKind k2 = d2.pointer_count > 0 ? TYPE_POINTER : base_kind;
-            parser_register_global(parser, d2.name, k2);
+            parser_register_global(parser, d2.name, k2, sc);
             Type *ft2 = base_type;
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            next_decl->storage_class = sc;
             if (d2.pointer_count > 0) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = ft2;
@@ -1396,6 +1473,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     TypeKind return_kind = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
     ASTNode *func = ast_new(AST_FUNCTION_DECL, d.name);
     func->decl_type = return_kind;
+    func->storage_class = sc;
     if (d.pointer_count > 0)
         func->full_type = full_type;
 
@@ -1426,7 +1504,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
     /* Register before parsing the body so self-calls resolve. */
     parser_register_function(parser, d.name, param_count, is_definition,
-                             return_kind, param_types);
+                             return_kind, param_types, sc);
 
     if (is_definition) {
         ast_add_child(func, parse_block(parser));

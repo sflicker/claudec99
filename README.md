@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 22-02 (global initializers and file-scope declaration validation):
+Through Stage 23 (storage class basics):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -103,7 +103,8 @@ Through stage 22-02 (global initializers and file-scope declaration validation):
   matching between declarations and definitions), SysV AMD64 calls with up to
   6 arguments, typed parameter and return-type conversions at the call boundary,
   calls into libc via `extern` emission for declared-but-not-defined functions
-  (e.g. `int puts(char *s);`).
+  (e.g. `int puts(char *s);`). `static` functions have internal linkage
+  (no `global` NASM directive emitted).
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -116,6 +117,8 @@ Through stage 22-02 (global initializers and file-scope declaration validation):
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
   `.bss`). Duplicate declarations and type mismatches are rejected. Function
   and object names do not collide in the ordinary identifier namespace.
+  `extern` and `static` storage class specifiers are supported: `extern` declares
+  without allocating storage; `static` declares with internal linkage.
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
@@ -176,8 +179,8 @@ Through stage 22-02 (global initializers and file-scope declaration validation):
 
 ## Not yet supported
 
-Structs, unions, enums; floating-point and unsigned types; `typedef`
-and storage-class specifiers; variadics; preprocessor; function
+Structs, unions, enums; floating-point and unsigned types; `typedef`;
+block-scope storage class specifiers; variadics; preprocessor; function
 pointers; calls with more than 6 arguments. Initializer lists for
 non-`char` arrays and global string-literal array initialization
 are not yet supported.
@@ -205,9 +208,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 22-02 all
-tests pass (408 valid, 116 invalid, 66 print-AST, 46 print-tokens,
-21 print-asm; 657 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 23 all
+tests pass (414 valid, 121 invalid, 66 print-AST, 46 print-tokens,
+21 print-asm; 668 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
