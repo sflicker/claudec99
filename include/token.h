@@ -82,4 +82,6 @@ typedef struct {
     TypeKind literal_type;
 } Token;
 
+const char *token_display_name(TokenType type);
+
 #endif

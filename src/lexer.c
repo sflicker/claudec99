@@ -377,3 +377,77 @@ Token lexer_next_token(Lexer *lexer) {
     lexer->pos++;
     return finalize(token);
 }
+
+const char *token_display_name(TokenType type) {
+    switch (type) {
+        case TOKEN_EOF:              return "<EOF>";
+        case TOKEN_INT:              return "'int'";
+        case TOKEN_CHAR:             return "'char'";
+        case TOKEN_SHORT:            return "'short'";
+        case TOKEN_LONG:             return "'long'";
+        case TOKEN_RETURN:           return "'return'";
+        case TOKEN_IF:               return "'if'";
+        case TOKEN_ELSE:             return "'else'";
+        case TOKEN_WHILE:            return "'while'";
+        case TOKEN_DO:               return "'do'";
+        case TOKEN_FOR:              return "'for'";
+        case TOKEN_BREAK:            return "'break'";
+        case TOKEN_CONTINUE:         return "'continue'";
+        case TOKEN_SWITCH:           return "'switch'";
+        case TOKEN_DEFAULT:          return "'default'";
+        case TOKEN_CASE:             return "'case'";
+        case TOKEN_GOTO:             return "'goto'";
+        case TOKEN_SIZEOF:           return "'sizeof'";
+        case TOKEN_EXTERN:           return "'extern'";
+        case TOKEN_STATIC:           return "'static'";
+        case TOKEN_IDENTIFIER:       return "identifier";
+        case TOKEN_INT_LITERAL:      return "integer literal";
+        case TOKEN_STRING_LITERAL:   return "string literal";
+        case TOKEN_CHAR_LITERAL:     return "character literal";
+        case TOKEN_LPAREN:           return "'('";
+        case TOKEN_RPAREN:           return "')'";
+        case TOKEN_LBRACE:           return "'{'";
+        case TOKEN_RBRACE:           return "'}'";
+        case TOKEN_LBRACKET:         return "'['";
+        case TOKEN_RBRACKET:         return "']'";
+        case TOKEN_SEMICOLON:        return "';'";
+        case TOKEN_COLON:            return "':'";
+        case TOKEN_COMMA:            return "','";
+        case TOKEN_PLUS:             return "'+'";
+        case TOKEN_MINUS:            return "'-'";
+        case TOKEN_STAR:             return "'*'";
+        case TOKEN_SLASH:            return "'/'";
+        case TOKEN_PERCENT:          return "'%'";
+        case TOKEN_BANG:             return "'!'";
+        case TOKEN_TILDE:            return "'~'";
+        case TOKEN_ASSIGN:           return "'='";
+        case TOKEN_PLUS_ASSIGN:      return "'+='";
+        case TOKEN_MINUS_ASSIGN:     return "'-='";
+        case TOKEN_STAR_ASSIGN:      return "'*='";
+        case TOKEN_SLASH_ASSIGN:     return "'/='";
+        case TOKEN_PERCENT_ASSIGN:   return "'%='";
+        case TOKEN_LEFT_SHIFT_ASSIGN:  return "'<<='";
+        case TOKEN_RIGHT_SHIFT_ASSIGN: return "'>>='";
+        case TOKEN_AMP_ASSIGN:       return "'&='";
+        case TOKEN_CARET_ASSIGN:     return "'^='";
+        case TOKEN_PIPE_ASSIGN:      return "'|='";
+        case TOKEN_INCREMENT:        return "'++'";
+        case TOKEN_DECREMENT:        return "'--'";
+        case TOKEN_EQ:               return "'=='";
+        case TOKEN_NE:               return "'!='";
+        case TOKEN_LT:               return "'<'";
+        case TOKEN_LE:               return "'<='";
+        case TOKEN_GT:               return "'>'";
+        case TOKEN_GE:               return "'>='";
+        case TOKEN_LEFT_SHIFT:       return "'<<'";
+        case TOKEN_RIGHT_SHIFT:      return "'>>'";
+        case TOKEN_AND_AND:          return "'&&'";
+        case TOKEN_OR_OR:            return "'||'";
+        case TOKEN_AMPERSAND:        return "'&'";
+        case TOKEN_CARET:            return "'^'";
+        case TOKEN_PIPE:             return "'|'";
+        case TOKEN_QUESTION:         return "'?'";
+        case TOKEN_UNKNOWN:          return "<unknown>";
+    }
+    return "<unknown>";
+}

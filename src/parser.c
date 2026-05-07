@@ -185,8 +185,10 @@ static void parser_register_function(Parser *parser, const char *name,
 
 static Token parser_expect(Parser *parser, TokenType type) {
     if (parser->current.type != type) {
-        fprintf(stderr, "error: expected token type %d, got %d ('%s')\n",
-                type, parser->current.type, parser->current.value);
+        fprintf(stderr, "error: expected %s, got %s ('%s')\n",
+                token_display_name(type),
+                token_display_name(parser->current.type),
+                parser->current.value);
         exit(1);
     }
     Token token = parser->current;
