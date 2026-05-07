@@ -2206,20 +2206,15 @@ static const char *bss_res_directive(TypeKind kind) {
 }
 
 /*
- * Stage 22-01: register a file-scope AST_DECLARATION in the global table
- * and emit its .bss storage line.
+ * Stage 22-01/22-02: register a file-scope AST_DECLARATION in the global table.
+ * Stage 22-02: if the declaration has a child node it carries a constant
+ * initializer; the value is extracted and the global is marked initialized
+ * (→ .data).  Uninitialized globals (→ .bss) have is_initialized == 0.
  */
 static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     if (cg->global_count >= MAX_GLOBALS) {
         fprintf(stderr, "error: too many global variables (max %d)\n", MAX_GLOBALS);
         exit(1);
-    }
-    /* Duplicate global check. */
-    for (int i = 0; i < cg->global_count; i++) {
-        if (strcmp(cg->globals[i].name, decl->value) == 0) {
-            fprintf(stderr, "error: duplicate global declaration '%s'\n", decl->value);
-            exit(1);
-        }
     }
     GlobalVar *gv = &cg->globals[cg->global_count];
     strncpy(gv->name, decl->value, 255);
@@ -2233,22 +2228,65 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     } else {
         gv->size = type_kind_bytes(decl->decl_type);
     }
+    gv->is_initialized = 0;
+    gv->init_value = 0;
+    if (decl->child_count > 0) {
+        ASTNode *init = decl->children[0];
+        if (init->type == AST_INT_LITERAL) {
+            gv->init_value = strtol(init->value, NULL, 10);
+        } else if (init->type == AST_CHAR_LITERAL) {
+            gv->init_value = (long)(unsigned char)init->value[0];
+        }
+        gv->is_initialized = 1;
+    }
     cg->global_count++;
 }
 
-static void codegen_emit_bss(CodeGen *cg, ASTNode *tu) {
-    int has_globals = 0;
-    for (int i = 0; i < tu->child_count; i++) {
-        if (tu->children[i]->type == AST_DECLARATION) {
-            has_globals = 1;
-            break;
+/*
+ * Stage 22-02: map a TypeKind to its NASM .data initialized directive.
+ */
+static const char *data_init_directive(TypeKind kind) {
+    switch (kind) {
+    case TYPE_CHAR:    return "db";
+    case TYPE_SHORT:   return "dw";
+    case TYPE_LONG:
+    case TYPE_POINTER: return "dq";
+    case TYPE_INT:
+    default:           return "dd";
+    }
+}
+
+/*
+ * Stage 22-02: emit section .data for all initialized globals.
+ * Emits nothing when no globals are initialized.
+ */
+static void codegen_emit_data(CodeGen *cg) {
+    int has_data = 0;
+    for (int i = 0; i < cg->global_count; i++) {
+        if (cg->globals[i].is_initialized) { has_data = 1; break; }
+    }
+    if (!has_data) return;
+    fprintf(cg->output, "section .data\n");
+    for (int i = 0; i < cg->global_count; i++) {
+        GlobalVar *gv = &cg->globals[i];
+        if (gv->is_initialized) {
+            fprintf(cg->output, "%s: %s %ld\n",
+                    gv->name, data_init_directive(gv->kind), gv->init_value);
         }
     }
-    if (!has_globals) return;
+}
+
+static void codegen_emit_bss(CodeGen *cg) {
+    int has_bss = 0;
+    for (int i = 0; i < cg->global_count; i++) {
+        if (!cg->globals[i].is_initialized) { has_bss = 1; break; }
+    }
+    if (!has_bss) return;
 
     fprintf(cg->output, "section .bss\n");
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
+        if (gv->is_initialized) continue;
         if (gv->kind == TYPE_ARRAY && gv->full_type) {
             fprintf(cg->output, "%s: %s %d\n",
                     gv->name,
@@ -2264,12 +2302,20 @@ static void codegen_emit_bss(CodeGen *cg, ASTNode *tu) {
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     cg->tu_root = node;
     if (node->type == AST_TRANSLATION_UNIT) {
-        /* Stage 22-01: first pass — register globals and emit .bss. */
+        /* Stage 22-01/22-02: first pass — register all file-scope globals.
+         * AST_DECL_LIST (from comma-separated declarations) is expanded
+         * so each individual AST_DECLARATION is registered in turn. */
         for (int i = 0; i < node->child_count; i++) {
-            if (node->children[i]->type == AST_DECLARATION)
-                codegen_add_global(cg, node->children[i]);
+            ASTNode *child = node->children[i];
+            if (child->type == AST_DECLARATION) {
+                codegen_add_global(cg, child);
+            } else if (child->type == AST_DECL_LIST) {
+                for (int j = 0; j < child->child_count; j++)
+                    codegen_add_global(cg, child->children[j]);
+            }
         }
-        codegen_emit_bss(cg, node);
+        codegen_emit_data(cg);
+        codegen_emit_bss(cg);
     }
     fprintf(cg->output, "section .text\n");
     if (node->type == AST_TRANSLATION_UNIT) {

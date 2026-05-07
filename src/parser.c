@@ -26,6 +26,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
     parser->func_count = 0;
+    parser->global_count = 0;
     parser->loop_depth = 0;
     parser->switch_depth = 0;
 }
@@ -37,6 +38,34 @@ static FuncSig *parser_find_function(Parser *parser, const char *name) {
         }
     }
     return NULL;
+}
+
+/* Stage 22-02: file-scope object tracking. */
+static GlobalObjSig *parser_find_global(Parser *parser, const char *name) {
+    for (int i = 0; i < parser->global_count; i++) {
+        if (strcmp(parser->globals[i].name, name) == 0)
+            return &parser->globals[i];
+    }
+    return NULL;
+}
+
+static void parser_register_global(Parser *parser, const char *name, TypeKind kind) {
+    if (parser->global_count >= PARSER_MAX_GLOBALS) {
+        fprintf(stderr, "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
+        exit(1);
+    }
+    GlobalObjSig *existing = parser_find_global(parser, name);
+    if (existing) {
+        if (existing->kind != kind)
+            fprintf(stderr, "error: conflicting type for global '%s'\n", name);
+        else
+            fprintf(stderr, "error: duplicate global declaration '%s'\n", name);
+        exit(1);
+    }
+    GlobalObjSig *g = &parser->globals[parser->global_count++];
+    strncpy(g->name, name, 255);
+    g->name[255] = '\0';
+    g->kind = kind;
 }
 
 /*
@@ -53,6 +82,12 @@ static void parser_register_function(Parser *parser, const char *name,
                                      int param_count, int is_definition,
                                      TypeKind return_type,
                                      const TypeKind *param_types) {
+    /* Stage 22-02: reject function if a global object with the same name exists. */
+    if (parser_find_global(parser, name)) {
+        fprintf(stderr,
+                "error: '%s' redeclared as a different kind of symbol\n", name);
+        exit(1);
+    }
     FuncSig *existing = parser_find_function(parser, name);
     if (existing) {
         if (existing->param_count != param_count) {
@@ -1266,6 +1301,17 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
+
+        /* Stage 22-02: detect function/object name conflicts and register. */
+        if (parser_find_function(parser, d.name)) {
+            fprintf(stderr,
+                    "error: '%s' redeclared as a different kind of symbol\n", d.name);
+            exit(1);
+        }
+        TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
+                            d.pointer_count > 0 ? TYPE_POINTER : base_kind;
+        parser_register_global(parser, d.name, obj_kind);
+
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
         if (d.is_array) {
             if (!d.has_size) {
@@ -1276,14 +1322,72 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             }
             decl->decl_type = TYPE_ARRAY;
             decl->full_type = type_array(full_type, d.array_length);
-        } else if (d.pointer_count > 0) {
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return decl;
+        }
+        if (d.pointer_count > 0) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
         }
+        /* Stage 22-02: optional constant initializer. */
+        if (parser->current.type == TOKEN_ASSIGN) {
+            parser->current = lexer_next_token(parser->lexer);
+            ASTNode *init = parse_primary(parser);
+            if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL) {
+                fprintf(stderr,
+                        "error: non-constant initializer for global '%s'\n", d.name);
+                exit(1);
+            }
+            ast_add_child(decl, init);
+        }
+        if (parser->current.type != TOKEN_COMMA) {
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return decl;
+        }
+        /* Stage 22-02: comma-separated declarator list at file scope. */
+        ASTNode *list = ast_new(AST_DECL_LIST, NULL);
+        ast_add_child(list, decl);
+        while (parser->current.type == TOKEN_COMMA) {
+            parser->current = lexer_next_token(parser->lexer);
+            ParsedDeclarator d2 = parse_declarator(parser);
+            if (d2.is_array || d2.is_function) {
+                fprintf(stderr,
+                        "error: invalid declarator in file-scope list\n");
+                exit(1);
+            }
+            if (parser_find_function(parser, d2.name)) {
+                fprintf(stderr,
+                        "error: '%s' redeclared as a different kind of symbol\n", d2.name);
+                exit(1);
+            }
+            TypeKind k2 = d2.pointer_count > 0 ? TYPE_POINTER : base_kind;
+            parser_register_global(parser, d2.name, k2);
+            Type *ft2 = base_type;
+            for (int i = 0; i < d2.pointer_count; i++)
+                ft2 = type_pointer(ft2);
+            ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            if (d2.pointer_count > 0) {
+                next_decl->decl_type = TYPE_POINTER;
+                next_decl->full_type = ft2;
+            } else {
+                next_decl->decl_type = base_kind;
+            }
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                ASTNode *init2 = parse_primary(parser);
+                if (init2->type != AST_INT_LITERAL && init2->type != AST_CHAR_LITERAL) {
+                    fprintf(stderr,
+                            "error: non-constant initializer for global '%s'\n", d2.name);
+                    exit(1);
+                }
+                ast_add_child(next_decl, init2);
+            }
+            ast_add_child(list, next_decl);
+        }
         parser_expect(parser, TOKEN_SEMICOLON);
-        return decl;
+        return list;
     }
 
     Type *full_type = base_type;

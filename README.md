@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 22-01 (file-scope uninitialized object declarations):
+Through stage 22-02 (global initializers and file-scope declaration validation):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -111,8 +111,11 @@ Through stage 22-01 (file-scope uninitialized object declarations):
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
   inferred size), file-scope (global) uninitialized array declarations.
-- **File-scope objects**: file-scope (global) uninitialized object
-  declarations (scalars, pointers, arrays) with zero-initialization.
+- **File-scope objects**: file-scope (global) object declarations (scalars,
+  pointers, arrays), both initialized (with constant integer expressions,
+  emitted to `.data`) and uninitialized (with zero-initialization, emitted to
+  `.bss`). Duplicate declarations and type mismatches are rejected. Function
+  and object names do not collide in the ordinary identifier namespace.
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
@@ -176,8 +179,8 @@ Through stage 22-01 (file-scope uninitialized object declarations):
 Structs, unions, enums; floating-point and unsigned types; `typedef`
 and storage-class specifiers; variadics; preprocessor; function
 pointers; calls with more than 6 arguments. Initializer lists for
-non-`char` arrays and global string-literal array initialization,
-and initialized file-scope object declarations are not yet supported.
+non-`char` arrays and global string-literal array initialization
+are not yet supported.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -202,9 +205,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 22-01 all
-tests pass (401 valid, 111 invalid, 66 print-AST, 46 print-tokens,
-21 print-asm; 645 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 22-02 all
+tests pass (408 valid, 116 invalid, 66 print-AST, 46 print-tokens,
+21 print-asm; 657 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

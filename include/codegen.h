@@ -29,12 +29,16 @@ typedef struct {
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
  * addressing ([rel name]) instead of [rbp - offset]. size is the byte
  * width for load/store; full_type is non-NULL for pointer and array
- * kinds and carries the complete type chain. */
+ * kinds and carries the complete type chain.
+ * Stage 22-02: is_initialized set for globals with a constant initializer;
+ * init_value holds that value. Initialized globals go to .data; others to .bss. */
 typedef struct {
     char name[256];
     int size;
     TypeKind kind;
     Type *full_type;
+    int is_initialized;
+    long init_value;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set
