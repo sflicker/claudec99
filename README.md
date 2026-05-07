@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 21-02 (separate function definitions from declarations):
+Through stage 21-03 (function declaration compatibility checks):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -99,9 +99,10 @@ Through stage 21-02 (separate function definitions from declarations):
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
-  declarations, SysV AMD64 calls with up to 6 arguments, typed parameter
-  and return-type conversions at the call boundary, calls into libc
-  via `extern` emission for declared-but-not-defined functions
+  declarations with compatibility checking (return type and parameter type
+  matching between declarations and definitions), SysV AMD64 calls with up to
+  6 arguments, typed parameter and return-type conversions at the call boundary,
+  calls into libc via `extern` emission for declared-but-not-defined functions
   (e.g. `int puts(char *s);`).
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
@@ -199,8 +200,8 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 21-02 all
-tests pass (394 valid, 108 invalid, 24 print-AST, 88 print-tokens,
+`Aggregate: P passed, F failed, T total` line. As of stage 21-03 all
+tests pass (394 valid, 110 invalid, 24 print-AST, 88 print-tokens,
 19 print-asm).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.

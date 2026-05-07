@@ -61,6 +61,19 @@ static void parser_register_function(Parser *parser, const char *name,
                     name, existing->param_count, param_count);
             exit(1);
         }
+        if (existing->return_type != return_type) {
+            fprintf(stderr,
+                    "error: function '%s' return type mismatch\n", name);
+            exit(1);
+        }
+        for (int i = 0; i < param_count; i++) {
+            if (existing->param_types[i] != param_types[i]) {
+                fprintf(stderr,
+                        "error: function '%s' parameter type mismatch at position %d\n",
+                        name, i + 1);
+                exit(1);
+            }
+        }
         if (is_definition) {
             if (existing->has_definition) {
                 fprintf(stderr,
