@@ -157,7 +157,7 @@
 <character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
                               | "\\" | "\'" | "\"" | "\?" | "\0"
 
-# Current Restriction : no file-scope variable declarations
+# Current Restriction : file-scope object declarations must be uninitialized
 # Current Restriction : for-loop initializers are expressions only, not declarations
 # Current Restriction : array declarations are limited to a single bracket suffix.
 # Semantic Restriction : assignment left-hand sides must be valid lvalues.

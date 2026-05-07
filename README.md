@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 21-03 (function declaration compatibility checks):
+Through stage 22-01 (file-scope uninitialized object declarations):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -110,7 +110,9 @@ Through stage 21-03 (function declaration compatibility checks):
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
-  inferred size).
+  inferred size), file-scope (global) uninitialized array declarations.
+- **File-scope objects**: file-scope (global) uninitialized object
+  declarations (scalars, pointers, arrays) with zero-initialization.
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`).
@@ -174,8 +176,8 @@ Through stage 21-03 (function declaration compatibility checks):
 Structs, unions, enums; floating-point and unsigned types; `typedef`
 and storage-class specifiers; variadics; preprocessor; function
 pointers; calls with more than 6 arguments. Initializer lists for
-non-`char` arrays and global string-literal array initialization are
-not yet supported.
+non-`char` arrays and global string-literal array initialization,
+and initialized file-scope object declarations are not yet supported.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -200,9 +202,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 21-03 all
-tests pass (394 valid, 110 invalid, 24 print-AST, 88 print-tokens,
-19 print-asm).
+`Aggregate: P passed, F failed, T total` line. As of stage 22-01 all
+tests pass (401 valid, 111 invalid, 66 print-AST, 46 print-tokens,
+21 print-asm; 645 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

@@ -130,6 +130,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->output = output;
     cg->label_count = 0;
     cg->local_count = 0;
+    cg->global_count = 0;
     cg->stack_offset = 0;
     cg->scope_start = 0;
     cg->push_depth = 0;
@@ -289,6 +290,55 @@ static Type *local_var_type(LocalVar *lv) {
     }
 }
 
+/* Stage 22-01: global variable helpers. */
+static GlobalVar *codegen_find_global(CodeGen *cg, const char *name) {
+    for (int i = 0; i < cg->global_count; i++) {
+        if (strcmp(cg->globals[i].name, name) == 0)
+            return &cg->globals[i];
+    }
+    return NULL;
+}
+
+static Type *global_var_type(GlobalVar *gv) {
+    if (gv->full_type) return gv->full_type;
+    switch (gv->kind) {
+    case TYPE_CHAR:  return type_char();
+    case TYPE_SHORT: return type_short();
+    case TYPE_LONG:  return type_long();
+    case TYPE_INT:
+    default:         return type_int();
+    }
+}
+
+static void emit_load_global(CodeGen *cg, const char *name, int size) {
+    switch (size) {
+    case 1: fprintf(cg->output, "    movsx eax, byte [rel %s]\n", name); break;
+    case 2: fprintf(cg->output, "    movsx eax, word [rel %s]\n", name); break;
+    case 8: fprintf(cg->output, "    mov rax, [rel %s]\n", name); break;
+    case 4:
+    default:
+        fprintf(cg->output, "    mov eax, [rel %s]\n", name);
+        break;
+    }
+}
+
+static void emit_store_global(CodeGen *cg, const char *name, int size,
+                              int src_is_long) {
+    switch (size) {
+    case 1: fprintf(cg->output, "    mov [rel %s], al\n", name); break;
+    case 2: fprintf(cg->output, "    mov [rel %s], ax\n", name); break;
+    case 8:
+        if (!src_is_long)
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        fprintf(cg->output, "    mov [rel %s], rax\n", name);
+        break;
+    case 4:
+    default:
+        fprintf(cg->output, "    mov [rel %s], eax\n", name);
+        break;
+    }
+}
+
 static void codegen_expression(CodeGen *cg, ASTNode *node);
 
 /*
@@ -311,22 +361,38 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         exit(1);
     }
     LocalVar *lv = codegen_find_var(cg, base_node->value);
-    if (!lv) {
+    GlobalVar *gv = lv ? NULL : codegen_find_global(cg, base_node->value);
+    if (!lv && !gv) {
         fprintf(stderr, "error: undeclared variable '%s'\n", base_node->value);
         exit(1);
     }
     Type *element;
-    if (lv->kind == TYPE_ARRAY) {
-        element = lv->full_type->base;
-        fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
-    } else if (lv->kind == TYPE_POINTER) {
-        element = lv->full_type->base;
-        fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+    if (lv) {
+        if (lv->kind == TYPE_ARRAY) {
+            element = lv->full_type->base;
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+        } else if (lv->kind == TYPE_POINTER) {
+            element = lv->full_type->base;
+            fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+        } else {
+            fprintf(stderr,
+                    "error: subscript base '%s' is not an array or pointer\n",
+                    base_node->value);
+            exit(1);
+        }
     } else {
-        fprintf(stderr,
-                "error: subscript base '%s' is not an array or pointer\n",
-                base_node->value);
-        exit(1);
+        if (gv->kind == TYPE_ARRAY) {
+            element = gv->full_type->base;
+            fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
+        } else if (gv->kind == TYPE_POINTER) {
+            element = gv->full_type->base;
+            fprintf(cg->output, "    mov rax, [rel %s]\n", gv->name);
+        } else {
+            fprintf(stderr,
+                    "error: subscript base '%s' is not an array or pointer\n",
+                    base_node->value);
+            exit(1);
+        }
     }
     int elem_size = type_size(element);
 
@@ -431,8 +497,10 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         return TYPE_INT;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
-        if (!lv) return TYPE_INT;
-        return lv->kind;
+        if (lv) return lv->kind;
+        GlobalVar *gv = codegen_find_global(cg, node->value);
+        if (gv) return gv->kind;
+        return TYPE_INT;
     }
     case AST_DEREF: {
         ASTNode *operand = node->children[0];
@@ -441,6 +509,11 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
             if (lv && lv->full_type && lv->kind == TYPE_POINTER &&
                 lv->full_type->base) {
                 return lv->full_type->base->kind;
+            }
+            GlobalVar *gv = codegen_find_global(cg, operand->value);
+            if (gv && gv->full_type && gv->kind == TYPE_POINTER &&
+                gv->full_type->base) {
+                return gv->full_type->base->kind;
             }
         }
         return TYPE_INT;
@@ -453,6 +526,12 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
                 (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER) &&
                 lv->full_type->base) {
                 return lv->full_type->base->kind;
+            }
+            GlobalVar *gv = codegen_find_global(cg, base->value);
+            if (gv && gv->full_type &&
+                (gv->kind == TYPE_ARRAY || gv->kind == TYPE_POINTER) &&
+                gv->full_type->base) {
+                return gv->full_type->base->kind;
             }
         }
         return TYPE_INT;
@@ -493,6 +572,8 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         if (node->value[0] != '\0') {
             LocalVar *lv = codegen_find_var(cg, node->value);
             if (lv) return lv->kind;
+            GlobalVar *gv = codegen_find_global(cg, node->value);
+            if (gv) return gv->kind;
         } else if (node->child_count > 0) {
             return sizeof_type_of_expr(cg, node->children[0]);
         }
@@ -526,12 +607,21 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
-        if (lv && (lv->kind == TYPE_POINTER || lv->kind == TYPE_ARRAY)) {
-            /* Stage 13-03: an array name in a value context decays to
-             * a pointer to its element type. */
-            t = TYPE_POINTER;
+        if (lv) {
+            if (lv->kind == TYPE_POINTER || lv->kind == TYPE_ARRAY) {
+                /* Stage 13-03: an array name in a value context decays to
+                 * a pointer to its element type. */
+                t = TYPE_POINTER;
+            } else {
+                t = promote_kind(type_kind_from_size(lv->size));
+            }
         } else {
-            t = lv ? promote_kind(type_kind_from_size(lv->size)) : TYPE_INT;
+            GlobalVar *gv = codegen_find_global(cg, node->value);
+            if (gv && (gv->kind == TYPE_POINTER || gv->kind == TYPE_ARRAY)) {
+                t = TYPE_POINTER;
+            } else {
+                t = gv ? promote_kind(type_kind_from_size(gv->size)) : TYPE_INT;
+            }
         }
         break;
     }
@@ -680,28 +770,46 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_VAR_REF) {
         LocalVar *lv = codegen_find_var(cg, node->value);
-        if (!lv) {
+        if (lv) {
+            /* Stage 13-03: array name in a value context decays to a
+             * pointer to its element type. The value is the array's base
+             * address (lea), not a load from the slot. Whole-array
+             * assignment is still rejected by the AST_ASSIGNMENT path,
+             * which checks the LHS name before reaching this code. */
+            if (lv->kind == TYPE_ARRAY) {
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+                node->result_type = TYPE_POINTER;
+                node->full_type = type_pointer(lv->full_type->base);
+                return;
+            }
+            if (lv->kind == TYPE_POINTER) {
+                node->result_type = TYPE_POINTER;
+                node->full_type = lv->full_type;
+            } else {
+                node->result_type = promote_kind(type_kind_from_size(lv->size));
+            }
+            emit_load_local(cg, lv->offset, lv->size);
+            return;
+        }
+        /* Stage 22-01: fall back to global table. */
+        GlobalVar *gv = codegen_find_global(cg, node->value);
+        if (!gv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
-        /* Stage 13-03: array name in a value context decays to a
-         * pointer to its element type. The value is the array's base
-         * address (lea), not a load from the slot. Whole-array
-         * assignment is still rejected by the AST_ASSIGNMENT path,
-         * which checks the LHS name before reaching this code. */
-        if (lv->kind == TYPE_ARRAY) {
-            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+        if (gv->kind == TYPE_ARRAY) {
+            fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
             node->result_type = TYPE_POINTER;
-            node->full_type = type_pointer(lv->full_type->base);
+            node->full_type = type_pointer(gv->full_type->base);
             return;
         }
-        if (lv->kind == TYPE_POINTER) {
+        if (gv->kind == TYPE_POINTER) {
             node->result_type = TYPE_POINTER;
-            node->full_type = lv->full_type;
+            node->full_type = gv->full_type;
         } else {
-            node->result_type = promote_kind(type_kind_from_size(lv->size));
+            node->result_type = promote_kind(type_kind_from_size(gv->size));
         }
-        emit_load_local(cg, lv->offset, lv->size);
+        emit_load_global(cg, gv->name, gv->size);
         return;
     }
     if (node->type == AST_ASSIGNMENT) {
@@ -769,26 +877,45 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             return;
         }
         LocalVar *lv = codegen_find_var(cg, node->value);
-        if (!lv) {
+        if (lv) {
+            /* Stage 13-01: arrays are not assignable. */
+            if (lv->kind == TYPE_ARRAY) {
+                fprintf(stderr, "error: arrays are not assignable\n");
+                exit(1);
+            }
+            codegen_expression(cg, node->children[0]);
+            /* Pointer RHS values are already in full rax — skip the
+             * 32-to-64 sign-extend that integer values would need. */
+            int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
+                               node->children[0]->result_type == TYPE_POINTER);
+            emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
+            if (lv->kind == TYPE_POINTER) {
+                node->result_type = TYPE_POINTER;
+                node->full_type = lv->full_type;
+            } else {
+                node->result_type = type_kind_from_size(lv->size);
+            }
+            return;
+        }
+        /* Stage 22-01: fall back to global table. */
+        GlobalVar *gv = codegen_find_global(cg, node->value);
+        if (!gv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
-        /* Stage 13-01: arrays are not assignable. */
-        if (lv->kind == TYPE_ARRAY) {
+        if (gv->kind == TYPE_ARRAY) {
             fprintf(stderr, "error: arrays are not assignable\n");
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
-        /* Pointer RHS values are already in full rax — skip the
-         * 32-to-64 sign-extend that integer values would need. */
-        int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
-                           node->children[0]->result_type == TYPE_POINTER);
-        emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
-        if (lv->kind == TYPE_POINTER) {
+        int rhs_is_long_g = (node->children[0]->result_type == TYPE_LONG ||
+                             node->children[0]->result_type == TYPE_POINTER);
+        emit_store_global(cg, gv->name, gv->size, rhs_is_long_g);
+        if (gv->kind == TYPE_POINTER) {
             node->result_type = TYPE_POINTER;
-            node->full_type = lv->full_type;
+            node->full_type = gv->full_type;
         } else {
-            node->result_type = type_kind_from_size(lv->size);
+            node->result_type = type_kind_from_size(gv->size);
         }
         return;
     }
@@ -807,13 +934,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             return;
         }
         LocalVar *lv = codegen_find_var(cg, operand->value);
-        if (!lv) {
+        if (lv) {
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(local_var_type(lv));
+            return;
+        }
+        GlobalVar *gv = codegen_find_global(cg, operand->value);
+        if (!gv) {
             fprintf(stderr, "error: undeclared variable '%s'\n", operand->value);
             exit(1);
         }
-        fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+        fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
         node->result_type = TYPE_POINTER;
-        node->full_type = type_pointer(local_var_type(lv));
+        node->full_type = type_pointer(global_var_type(gv));
         return;
     }
     if (node->type == AST_DEREF) {
@@ -883,6 +1017,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->result_type = TYPE_LONG;
                 return;
             }
+            if (!lv) {
+                GlobalVar *gv = codegen_find_global(cg, child->value);
+                if (gv && gv->kind == TYPE_ARRAY && gv->full_type) {
+                    fprintf(cg->output, "    mov rax, %d\n", gv->full_type->size);
+                    node->result_type = TYPE_LONG;
+                    return;
+                }
+            }
         }
         TypeKind kind = sizeof_type_of_expr(cg, child);
         int sz;
@@ -947,17 +1089,28 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * declared width. */
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
-        if (!lv) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
-            exit(1);
-        }
-        emit_load_local(cg, lv->offset, lv->size);
-        if (strcmp(node->value, "++") == 0) {
-            fprintf(cg->output, "    add eax, 1\n");
+        if (lv) {
+            emit_load_local(cg, lv->offset, lv->size);
+            if (strcmp(node->value, "++") == 0) {
+                fprintf(cg->output, "    add eax, 1\n");
+            } else {
+                fprintf(cg->output, "    sub eax, 1\n");
+            }
+            emit_store_local(cg, lv->offset, lv->size, 0);
         } else {
-            fprintf(cg->output, "    sub eax, 1\n");
+            GlobalVar *gv = codegen_find_global(cg, var_name);
+            if (!gv) {
+                fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
+                exit(1);
+            }
+            emit_load_global(cg, gv->name, gv->size);
+            if (strcmp(node->value, "++") == 0) {
+                fprintf(cg->output, "    add eax, 1\n");
+            } else {
+                fprintf(cg->output, "    sub eax, 1\n");
+            }
+            emit_store_global(cg, gv->name, gv->size, 0);
         }
-        emit_store_local(cg, lv->offset, lv->size, 0);
         node->result_type = TYPE_INT;
         return;
     }
@@ -965,18 +1118,30 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* x++ or x--: result is old value, then update variable */
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
-        if (!lv) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
-            exit(1);
-        }
-        emit_load_local(cg, lv->offset, lv->size);
-        fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
-        if (strcmp(node->value, "++") == 0) {
-            fprintf(cg->output, "    add eax, 1\n");
+        if (lv) {
+            emit_load_local(cg, lv->offset, lv->size);
+            fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
+            if (strcmp(node->value, "++") == 0) {
+                fprintf(cg->output, "    add eax, 1\n");
+            } else {
+                fprintf(cg->output, "    sub eax, 1\n");
+            }
+            emit_store_local(cg, lv->offset, lv->size, 0);
         } else {
-            fprintf(cg->output, "    sub eax, 1\n");
+            GlobalVar *gv = codegen_find_global(cg, var_name);
+            if (!gv) {
+                fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
+                exit(1);
+            }
+            emit_load_global(cg, gv->name, gv->size);
+            fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
+            if (strcmp(node->value, "++") == 0) {
+                fprintf(cg->output, "    add eax, 1\n");
+            } else {
+                fprintf(cg->output, "    sub eax, 1\n");
+            }
+            emit_store_global(cg, gv->name, gv->size, 0);
         }
-        emit_store_local(cg, lv->offset, lv->size, 0);
         fprintf(cg->output, "    mov eax, ecx\n");  /* restore old value as result */
         node->result_type = TYPE_INT;
         return;
@@ -2024,8 +2189,88 @@ static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
     }
 }
 
+/*
+ * Stage 22-01: map a TypeKind to its NASM .bss reserve directive mnemonic.
+ * Pointer and long use resq (8 bytes); int uses resd (4 bytes); short uses
+ * resw (2 bytes); char uses resb (1 byte).
+ */
+static const char *bss_res_directive(TypeKind kind) {
+    switch (kind) {
+    case TYPE_CHAR:    return "resb";
+    case TYPE_SHORT:   return "resw";
+    case TYPE_LONG:
+    case TYPE_POINTER: return "resq";
+    case TYPE_INT:
+    default:           return "resd";
+    }
+}
+
+/*
+ * Stage 22-01: register a file-scope AST_DECLARATION in the global table
+ * and emit its .bss storage line.
+ */
+static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
+    if (cg->global_count >= MAX_GLOBALS) {
+        fprintf(stderr, "error: too many global variables (max %d)\n", MAX_GLOBALS);
+        exit(1);
+    }
+    /* Duplicate global check. */
+    for (int i = 0; i < cg->global_count; i++) {
+        if (strcmp(cg->globals[i].name, decl->value) == 0) {
+            fprintf(stderr, "error: duplicate global declaration '%s'\n", decl->value);
+            exit(1);
+        }
+    }
+    GlobalVar *gv = &cg->globals[cg->global_count];
+    strncpy(gv->name, decl->value, 255);
+    gv->name[255] = '\0';
+    gv->kind = decl->decl_type;
+    gv->full_type = decl->full_type;
+    if (decl->decl_type == TYPE_ARRAY && decl->full_type) {
+        gv->size = decl->full_type->base
+                   ? type_kind_bytes(decl->full_type->base->kind)
+                   : 4;
+    } else {
+        gv->size = type_kind_bytes(decl->decl_type);
+    }
+    cg->global_count++;
+}
+
+static void codegen_emit_bss(CodeGen *cg, ASTNode *tu) {
+    int has_globals = 0;
+    for (int i = 0; i < tu->child_count; i++) {
+        if (tu->children[i]->type == AST_DECLARATION) {
+            has_globals = 1;
+            break;
+        }
+    }
+    if (!has_globals) return;
+
+    fprintf(cg->output, "section .bss\n");
+    for (int i = 0; i < cg->global_count; i++) {
+        GlobalVar *gv = &cg->globals[i];
+        if (gv->kind == TYPE_ARRAY && gv->full_type) {
+            fprintf(cg->output, "%s: %s %d\n",
+                    gv->name,
+                    bss_res_directive(gv->full_type->base->kind),
+                    gv->full_type->length);
+        } else {
+            fprintf(cg->output, "%s: %s 1\n",
+                    gv->name, bss_res_directive(gv->kind));
+        }
+    }
+}
+
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     cg->tu_root = node;
+    if (node->type == AST_TRANSLATION_UNIT) {
+        /* Stage 22-01: first pass — register globals and emit .bss. */
+        for (int i = 0; i < node->child_count; i++) {
+            if (node->children[i]->type == AST_DECLARATION)
+                codegen_add_global(cg, node->children[i]);
+        }
+        codegen_emit_bss(cg, node);
+    }
     fprintf(cg->output, "section .text\n");
     if (node->type == AST_TRANSLATION_UNIT) {
         codegen_emit_externs(cg, node);

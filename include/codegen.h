@@ -6,6 +6,7 @@
 #include "type.h"
 
 #define MAX_LOCALS 64
+#define MAX_GLOBALS 64
 #define MAX_BREAK_DEPTH 32
 #define MAX_SWITCH_DEPTH 16
 #define MAX_SWITCH_LABELS 64
@@ -24,6 +25,17 @@ typedef struct {
     TypeKind kind;
     Type *full_type;
 } LocalVar;
+
+/* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
+ * addressing ([rel name]) instead of [rbp - offset]. size is the byte
+ * width for load/store; full_type is non-NULL for pointer and array
+ * kinds and carries the complete type chain. */
+typedef struct {
+    char name[256];
+    int size;
+    TypeKind kind;
+    Type *full_type;
+} GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set
  * continue_label to -1 since `continue` is not valid inside a switch
@@ -51,6 +63,9 @@ typedef struct {
     int label_count;
     LocalVar locals[MAX_LOCALS];
     int local_count;
+    /* Stage 22-01: file-scope globals, registered before function codegen. */
+    GlobalVar globals[MAX_GLOBALS];
+    int global_count;
     int stack_offset;
     int scope_start;
     int push_depth;

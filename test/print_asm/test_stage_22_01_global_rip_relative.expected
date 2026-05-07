@@ -1,0 +1,13 @@
+section .bss
+g: resd 1
+section .text
+global main
+main:
+    push rbp
+    mov rbp, rsp
+    mov eax, 42
+    mov [rel g], eax
+    mov eax, [rel g]
+    mov rsp, rbp
+    pop rbp
+    ret

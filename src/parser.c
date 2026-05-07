@@ -1263,14 +1263,25 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
             exit(1);
         }
-        /* File-scope object declaration; code generation is out of scope. */
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
-        decl->decl_type = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
-        if (d.pointer_count > 0)
+        if (d.is_array) {
+            if (!d.has_size) {
+                fprintf(stderr,
+                        "error: array size required for file-scope declaration '%s'\n",
+                        d.name);
+                exit(1);
+            }
+            decl->decl_type = TYPE_ARRAY;
+            decl->full_type = type_array(full_type, d.array_length);
+        } else if (d.pointer_count > 0) {
+            decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
+        } else {
+            decl->decl_type = base_kind;
+        }
         parser_expect(parser, TOKEN_SEMICOLON);
         return decl;
     }
