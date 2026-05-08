@@ -21,6 +21,13 @@
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
 <parameter_declaration> ::= <type_specifier> <declarator>
+                        | <type_specifier> <func_ptr_declarator>
+
+<func_ptr_declarator> ::= { "*" } "(" "*" <identifier> ")" "(" [ <func_ptr_param_list> ] ")"
+
+<func_ptr_param_list> ::= <func_ptr_param> { "," <func_ptr_param> }
+
+<func_ptr_param> ::= <type_specifier> { "*" } [ <identifier> ]
 
 <block_statement> ::= "{" { <statement> } "}"
 
@@ -171,5 +178,11 @@
 # Current Restriction : for-loop initializers are expressions only, not declarations
 # Current Restriction : array declarations are limited to a single bracket suffix.
 # Semantic Restriction : assignment left-hand sides must be valid lvalues.
+
+# Restriction: <func_ptr_declarator> allows pointer-to-function declarations only.
+#   Pointer-to-pointer-to-function (e.g., int (**fp)(int)) and function-returning-pointer-to-function
+#   (e.g., int (*(*factory())(int))(int)) are not supported.
+# Restriction: assignment to function pointer variables and calls through function pointers
+#   are not supported in this stage.
 
 ```

@@ -12,6 +12,14 @@
  * is_function: set when the direct_declarator has the form
  *   <identifier> "(" ... ")"
  * The "(" is NOT consumed here; the caller handles it.
+ *
+ * Stage 25-01: is_func_pointer is set when the declarator has the form
+ *   [outer-stars] "(" inner-stars <identifier> ")" "(" ... ")"
+ * e.g. int (*fp)(int).  fp_outer_stars counts the stars before the
+ * opening "("; those become part of the function's return type.
+ * fp_inner_stars counts the stars inside "(*)"; those become the
+ * pointer-to-function depth (normally 1). The trailing "(" for the
+ * parameter list is NOT consumed; the caller handles it.
  */
 typedef struct {
     char name[256];
@@ -20,6 +28,9 @@ typedef struct {
     int  has_size;
     int  array_length;
     int  is_function;
+    int  is_func_pointer;
+    int  fp_outer_stars;
+    int  fp_inner_stars;
 } ParsedDeclarator;
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -49,17 +60,54 @@ static GlobalObjSig *parser_find_global(Parser *parser, const char *name) {
     return NULL;
 }
 
+/*
+ * Stage 25-01: deep equality check for function-pointer types.
+ * Both a and b are expected to be TYPE_POINTER → TYPE_FUNCTION chains.
+ * Compares return type kind, parameter count, and each parameter's kind.
+ * Returns 1 if compatible, 0 if not.
+ */
+static int func_ptr_types_equal(Type *a, Type *b) {
+    if (!a || !b) return a == b;
+    if (a->kind != TYPE_POINTER || b->kind != TYPE_POINTER) return 0;
+    Type *fa = a->base, *fb = b->base;
+    if (!fa || !fb || fa->kind != TYPE_FUNCTION || fb->kind != TYPE_FUNCTION)
+        return 0;
+    if (!fa->base || !fb->base || fa->base->kind != fb->base->kind) return 0;
+    if (fa->param_count != fb->param_count) return 0;
+    for (int i = 0; i < fa->param_count; i++) {
+        if (!fa->params[i] || !fb->params[i]) return 0;
+        if (fa->params[i]->kind != fb->params[i]->kind) return 0;
+    }
+    return 1;
+}
+
 /* Stage 23: register a file-scope object with storage class.
  * Repeated extern declarations are allowed; conflicting linkage
  * (static vs non-static) and duplicate definitions (non-extern + non-extern)
- * are rejected. */
+ * are rejected.
+ * Stage 25-01: full_type carries the complete type for function-pointer
+ * globals so that successive declarations are checked for compatibility. */
 static void parser_register_global(Parser *parser, const char *name,
-                                   TypeKind kind, StorageClass sc) {
+                                   TypeKind kind, StorageClass sc,
+                                   Type *full_type) {
     GlobalObjSig *existing = parser_find_global(parser, name);
     if (existing) {
         if (existing->kind != kind) {
             fprintf(stderr, "error: conflicting type for global '%s'\n", name);
             exit(1);
+        }
+        /* Stage 25-01: for function-pointer globals, verify the full type. */
+        if (kind == TYPE_POINTER && existing->full_type && full_type) {
+            Type *ef = existing->full_type, *nf = full_type;
+            if (ef->base && nf->base &&
+                ef->base->kind == TYPE_FUNCTION &&
+                nf->base->kind == TYPE_FUNCTION) {
+                if (!func_ptr_types_equal(ef, nf)) {
+                    fprintf(stderr,
+                            "error: conflicting type for global '%s'\n", name);
+                    exit(1);
+                }
+            }
         }
         int ex_is_static = (existing->storage_class == SC_STATIC);
         int new_is_static = (sc == SC_STATIC);
@@ -93,6 +141,7 @@ static void parser_register_global(Parser *parser, const char *name,
     g->name[255] = '\0';
     g->kind = kind;
     g->storage_class = sc;
+    g->full_type = full_type;
 }
 
 /*
@@ -246,28 +295,43 @@ static Type *parse_type_name(Parser *parser) {
  * consumed; the caller (parse_function_decl) handles the parameter list
  * and closing ")".
  *
- * The parenthesized form "(" <declarator> ")" is grouping-only and
- * accumulates inner pointer stars into pointer_count. Function-pointer
- * and pointer-to-array forms are rejected.
+ * Stage 25-01: the parenthesized form is split into two cases:
+ *   - "(" { "*" } identifier ")" "(" ... ")" with at least one inner star
+ *     → function-pointer declarator: is_func_pointer=1.  The trailing
+ *     "(" for the parameter list is left for the caller.
+ *   - "(" identifier ")" "(" ... ")" with zero inner stars
+ *     → redundant-paren function declarator: is_function=1 (valid C99).
+ *   - "(" { "*" } identifier ")" [ "[" ... "]" ]
+ *     → parenthesized pointer/array declarator: pointer_count carries
+ *     outer+inner stars combined.
+ *
+ * fp_outer_stars: stars before the opening "(" — become part of the
+ *   function's return type when is_func_pointer is set.
+ * fp_inner_stars: stars inside "(*)".
  */
 static ParsedDeclarator parse_declarator(Parser *parser) {
     ParsedDeclarator d;
     memset(&d, 0, sizeof(d));
+
+    int outer_stars = 0;
     while (parser->current.type == TOKEN_STAR) {
-        d.pointer_count++;
+        outer_stars++;
         parser->current = lexer_next_token(parser->lexer);
     }
+
     if (parser->current.type == TOKEN_LPAREN) {
-        /* Parenthesized declarator: "(" { "*" } identifier [ "[" size "]" ] ")" */
+        /* Parenthesized declarator: "(" { "*" } identifier [ suffix ] ")" */
         parser->current = lexer_next_token(parser->lexer); /* consume "(" */
+        int inner_stars = 0;
         while (parser->current.type == TOKEN_STAR) {
-            d.pointer_count++;
+            inner_stars++;
             parser->current = lexer_next_token(parser->lexer);
         }
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         strncpy(d.name, name.value, sizeof(d.name) - 1);
         d.name[sizeof(d.name) - 1] = '\0';
-        /* Function suffix inside parens: (*fp()) — out of scope */
+        /* Function suffix inside parens (*fp()): "function returning pointer
+         * to function" — out of scope for this stage. */
         if (parser->current.type == TOKEN_LPAREN) {
             fprintf(stderr, "error: function pointers are not supported\n");
             exit(1);
@@ -293,17 +357,33 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
             parser_expect(parser, TOKEN_RBRACKET);
         }
         parser_expect(parser, TOKEN_RPAREN);
-        /* Reject unsupported suffixes after the closing ")" */
-        if (parser->current.type == TOKEN_LPAREN) {
-            fprintf(stderr, "error: function pointers are not supported\n");
-            exit(1);
-        }
+        /* Check suffix after the closing ")" */
         if (parser->current.type == TOKEN_LBRACKET) {
             fprintf(stderr, "error: pointer to array types are not supported\n");
             exit(1);
         }
+        if (parser->current.type == TOKEN_LPAREN) {
+            if (inner_stars > 0) {
+                /* Stage 25-01: function-pointer declarator int (*fp)(...) */
+                d.is_func_pointer = 1;
+                d.fp_outer_stars  = outer_stars;
+                d.fp_inner_stars  = inner_stars;
+                /* Leave "(" for the caller to consume via parse_func_ptr_param_types */
+                return d;
+            } else {
+                /* int (name)(...) — redundant-paren function declaration */
+                d.is_function   = 1;
+                d.pointer_count = outer_stars;
+                return d;
+            }
+        }
+        /* Plain parenthesized declarator: outer+inner stars are the pointer depth. */
+        d.pointer_count = outer_stars + inner_stars;
         return d;
     }
+
+    /* Non-parenthesized declarator: stars before the identifier. */
+    d.pointer_count = outer_stars;
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     strncpy(d.name, name.value, sizeof(d.name) - 1);
     d.name[sizeof(d.name) - 1] = '\0';
@@ -329,6 +409,79 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         d.is_function = 1;
     }
     return d;
+}
+
+/*
+ * Stage 25-01: parse the parameter-type list that follows a function-pointer
+ * declarator: "(" [ type_spec { "*" } [ identifier ] { "," ... } ] ")"
+ *
+ * Parameter names are optional and ignored for type purposes.
+ * Fills param_types[0..count-1] with the corresponding Type* values.
+ * Returns the parameter count (0 for an empty list).
+ *
+ * Only simple types (scalars + pointer chains) are supported here; nested
+ * function-pointer parameters in this position are not yet supported.
+ */
+static int parse_func_ptr_param_types(Parser *parser,
+                                      Type **param_types, int max_params) {
+    parser_expect(parser, TOKEN_LPAREN);
+    int count = 0;
+    if (parser->current.type == TOKEN_RPAREN) {
+        parser_expect(parser, TOKEN_RPAREN);
+        return 0;
+    }
+    while (1) {
+        if (count >= max_params) {
+            fprintf(stderr,
+                    "error: too many parameters in function pointer type (max %d)\n",
+                    max_params);
+            exit(1);
+        }
+        Type *base = parse_type_specifier(parser, NULL);
+        int stars = 0;
+        while (parser->current.type == TOKEN_STAR) {
+            stars++;
+            parser->current = lexer_next_token(parser->lexer);
+        }
+        /* Optional parameter name — consume and discard. */
+        if (parser->current.type == TOKEN_IDENTIFIER) {
+            parser->current = lexer_next_token(parser->lexer);
+        }
+        Type *pt = base;
+        for (int i = 0; i < stars; i++)
+            pt = type_pointer(pt);
+        param_types[count++] = pt;
+        if (parser->current.type != TOKEN_COMMA) break;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    parser_expect(parser, TOKEN_RPAREN);
+    return count;
+}
+
+/*
+ * Stage 25-01: given a parsed declarator with is_func_pointer set, build
+ * and return the complete function-pointer Type*.  The caller must have
+ * already obtained base_type from parse_type_specifier; this helper
+ * consumes the trailing "(" param-list ")" from the token stream.
+ *
+ *   base_type + fp_outer_stars  →  return type
+ *   type_function(return_type, params)  →  function type
+ *   wrap fp_inner_stars times in type_pointer  →  final type
+ */
+static Type *build_func_ptr_type(Parser *parser,
+                                 Type *base_type,
+                                 const ParsedDeclarator *d) {
+    Type *return_type = base_type;
+    for (int i = 0; i < d->fp_outer_stars; i++)
+        return_type = type_pointer(return_type);
+    Type *fp_params[FUNC_TYPE_MAX_PARAMS];
+    int fp_param_count = parse_func_ptr_param_types(
+            parser, fp_params, FUNC_TYPE_MAX_PARAMS);
+    Type *func_type = type_function(return_type, fp_param_count, fp_params);
+    Type *ptr_type = func_type;
+    for (int i = 0; i < d->fp_inner_stars; i++)
+        ptr_type = type_pointer(ptr_type);
+    return ptr_type;
 }
 
 /*
@@ -1123,7 +1276,10 @@ static ASTNode *parse_statement(Parser *parser) {
      *
      * parse_type_specifier reads the base keyword; parse_declarator
      * reads the pointer stars, identifier, and optional array suffix.
-     * The caller assembles the semantic Type from those two pieces. */
+     * The caller assembles the semantic Type from those two pieces.
+     *
+     * Stage 25-01: a function-pointer declarator (*fp)(params) allocates an
+     * 8-byte local with decl_type=TYPE_POINTER. No initializer allowed. */
     if (parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
@@ -1131,6 +1287,15 @@ static ASTNode *parse_statement(Parser *parser) {
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
+
+        if (d.is_func_pointer) {
+            Type *fp_type = build_func_ptr_type(parser, base_type, &d);
+            ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+            decl->decl_type = TYPE_POINTER;
+            decl->full_type = fp_type;
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return decl;
+        }
 
         /* Build the fully-wrapped element type: base + pointer levels. */
         Type *full_type = base_type;
@@ -1328,16 +1493,26 @@ static ASTNode *parse_statement(Parser *parser) {
 
 /*
  * <parameter_declaration> ::= <type_specifier> <declarator>
+ *
+ * Stage 25-01: function-pointer parameters are handled here.  When the
+ * declarator has is_func_pointer set, build_func_ptr_type consumes the
+ * trailing "(" param-list ")" and returns the complete TYPE_POINTER type.
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
     ParsedDeclarator d = parse_declarator(parser);
+    ASTNode *param = ast_new(AST_PARAM, d.name);
+    if (d.is_func_pointer) {
+        Type *fp_type = build_func_ptr_type(parser, base_type, &d);
+        param->decl_type = TYPE_POINTER;
+        param->full_type = fp_type;
+        return param;
+    }
     Type *full_type = base_type;
     for (int i = 0; i < d.pointer_count; i++) {
         full_type = type_pointer(full_type);
     }
-    ASTNode *param = ast_new(AST_PARAM, d.name);
     if (d.pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
@@ -1414,6 +1589,29 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     Type *base_type = parse_type_specifier(parser, &base_kind);
     ParsedDeclarator d = parse_declarator(parser);
 
+    /* Stage 25-01: function-pointer file-scope declaration. */
+    if (d.is_func_pointer) {
+        Type *fp_type = build_func_ptr_type(parser, base_type, &d);
+        if (sc == SC_EXTERN && parser->current.type == TOKEN_ASSIGN) {
+            fprintf(stderr,
+                    "error: extern declaration of '%s' cannot have an initializer\n",
+                    d.name);
+            exit(1);
+        }
+        if (parser_find_function(parser, d.name)) {
+            fprintf(stderr,
+                    "error: '%s' redeclared as a different kind of symbol\n", d.name);
+            exit(1);
+        }
+        parser_register_global(parser, d.name, TYPE_POINTER, sc, fp_type);
+        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        decl->storage_class = sc;
+        decl->decl_type = TYPE_POINTER;
+        decl->full_type = fp_type;
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return decl;
+    }
+
     if (!d.is_function) {
         if (parser->current.type == TOKEN_LBRACE) {
             fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
@@ -1439,7 +1637,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
                             d.pointer_count > 0 ? TYPE_POINTER : base_kind;
-        parser_register_global(parser, d.name, obj_kind, sc);
+        Type *reg_full_type = (d.pointer_count > 0) ? full_type : NULL;
+        parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
         decl->storage_class = sc;
@@ -1493,10 +1692,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 exit(1);
             }
             TypeKind k2 = d2.pointer_count > 0 ? TYPE_POINTER : base_kind;
-            parser_register_global(parser, d2.name, k2, sc);
             Type *ft2 = base_type;
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);
+            Type *reg_ft2 = (d2.pointer_count > 0) ? ft2 : NULL;
+            parser_register_global(parser, d2.name, k2, sc, reg_ft2);
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
             if (d2.pointer_count > 0) {

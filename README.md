@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 24 (parenthesized declarators):
+Through Stage 25-01 (function pointer declarations):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -110,6 +110,10 @@ Through Stage 24 (parenthesized declarators):
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
+- **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
+  static, extern) and parameters with full type compatibility checking across redeclarations.
+  Function-pointer types are distinguished by return type, parameter count, and parameter types.
+  Assignment to and calls through function pointers remain out of scope for this stage.
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
@@ -182,8 +186,8 @@ Through Stage 24 (parenthesized declarators):
 ## Not yet supported
 
 Structs, unions, enums; floating-point and unsigned types; `typedef`;
-block-scope storage class specifiers; variadics; preprocessor; function
-pointers (declarations like `int (*fp)(int)` and calls through function pointers);
+block-scope storage class specifiers; variadics; preprocessor; assignment to
+and calls through function pointers; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
 global string-literal array initialization are not yet supported.
 

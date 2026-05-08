@@ -58,14 +58,38 @@ Type *type_array(Type *element_type, int length) {
     return t;
 }
 
+/*
+ * Stage 25-01: heap-allocate a TYPE_FUNCTION node. `base` = return type;
+ * `param_count` and `params[]` carry the parameter types. Size and
+ * alignment are 0 because a function type is never directly allocated;
+ * it always appears as the base of a TYPE_POINTER (the function pointer).
+ */
+Type *type_function(Type *return_type, int param_count, Type **param_types) {
+    Type *t = calloc(1, sizeof(Type));
+    if (!t) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    t->kind = TYPE_FUNCTION;
+    t->size = 0;
+    t->alignment = 0;
+    t->is_signed = 0;
+    t->base = return_type;
+    t->param_count = param_count;
+    for (int i = 0; i < param_count && i < FUNC_TYPE_MAX_PARAMS; i++)
+        t->params[i] = param_types[i];
+    return t;
+}
+
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
-    case TYPE_CHAR:    return "char";
-    case TYPE_SHORT:   return "short";
-    case TYPE_INT:     return "int";
-    case TYPE_LONG:    return "long";
-    case TYPE_POINTER: return "pointer";
-    case TYPE_ARRAY:   return "array";
+    case TYPE_CHAR:     return "char";
+    case TYPE_SHORT:    return "short";
+    case TYPE_INT:      return "int";
+    case TYPE_LONG:     return "long";
+    case TYPE_POINTER:  return "pointer";
+    case TYPE_ARRAY:    return "array";
+    case TYPE_FUNCTION: return "function";
     }
     return "unknown";
 }
@@ -88,6 +112,7 @@ int type_is_integer(Type *t) {
         return 1;
     case TYPE_POINTER:
     case TYPE_ARRAY:
+    case TYPE_FUNCTION:
         return 0;
     }
     return 0;

@@ -24,11 +24,14 @@ typedef struct {
 
 /* Stage 22-02: tracks each file-scope object declaration so the parser
  * can detect duplicates and function/object name conflicts.
- * Stage 23: storage_class tracks extern/static/none linkage. */
+ * Stage 23: storage_class tracks extern/static/none linkage.
+ * Stage 25-01: full_type carries the complete type chain for function-pointer
+ * globals so compatibility between successive declarations can be verified. */
 typedef struct {
     char name[256];
     TypeKind kind;
     StorageClass storage_class;
+    struct Type *full_type;
 } GlobalObjSig;
 
 typedef struct {

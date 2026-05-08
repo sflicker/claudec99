@@ -10,13 +10,21 @@
  * later stages will flesh out.
  */
 
+/* Stage 25-01: maximum number of parameters tracked on a TYPE_FUNCTION node. */
+#define FUNC_TYPE_MAX_PARAMS 16
+
 typedef enum {
     TYPE_CHAR,
     TYPE_SHORT,
     TYPE_INT,
     TYPE_LONG,
     TYPE_POINTER,
-    TYPE_ARRAY
+    TYPE_ARRAY,
+    /* Stage 25-01: function type — used only as the base of a function-pointer
+     * TYPE_POINTER node. `base` = return type, `param_count` = number of
+     * parameters, `params[]` = parameter types. Never allocated directly as a
+     * variable; always wrapped in at least one TYPE_POINTER. */
+    TYPE_FUNCTION
 } TypeKind;
 
 typedef struct Type {
@@ -29,6 +37,9 @@ typedef struct Type {
      * total byte count lives in `size`; `base` carries the element
      * type. Unused for non-array kinds. */
     int length;
+    /* Stage 25-01: parameter count and types for TYPE_FUNCTION nodes. */
+    int param_count;
+    struct Type *params[FUNC_TYPE_MAX_PARAMS];
 } Type;
 
 Type *type_char(void);
@@ -37,6 +48,7 @@ Type *type_int(void);
 Type *type_long(void);
 Type *type_pointer(Type *base);
 Type *type_array(Type *element_type, int length);
+Type *type_function(Type *return_type, int param_count, Type **param_types);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

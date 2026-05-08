@@ -6,12 +6,13 @@
 
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
-    case TYPE_CHAR:    return 1;
-    case TYPE_SHORT:   return 2;
-    case TYPE_INT:     return 4;
-    case TYPE_LONG:    return 8;
-    case TYPE_POINTER: return 8;
-    case TYPE_ARRAY:   return 0; /* size lives on full_type; caller uses that */
+    case TYPE_CHAR:     return 1;
+    case TYPE_SHORT:    return 2;
+    case TYPE_INT:      return 4;
+    case TYPE_LONG:     return 8;
+    case TYPE_POINTER:  return 8;
+    case TYPE_ARRAY:    return 0; /* size lives on full_type; caller uses that */
+    case TYPE_FUNCTION: return 0; /* never directly allocated; base of FP pointer */
     }
     return 4;
 }
