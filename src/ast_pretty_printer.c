@@ -221,6 +221,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_FUNCTION_CALL:
         printf("FunctionCall: %s\n", node->value);
         break;
+    case AST_INDIRECT_CALL:
+        printf("IndirectCall:\n");
+        break;
     case AST_CAST:
         printf("Cast: %s\n", type_kind_name(node->decl_type));
         break;

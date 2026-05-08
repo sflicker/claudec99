@@ -620,6 +620,8 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         return node->decl_type;
     case AST_FUNCTION_CALL:
         return node->decl_type;
+    case AST_INDIRECT_CALL:
+        return node->decl_type ? node->decl_type : TYPE_INT;
     case AST_PREFIX_INC_DEC:
     case AST_POSTFIX_INC_DEC:
         return sizeof_type_of_expr(cg, node->children[0]);
@@ -734,6 +736,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     }
     case AST_FUNCTION_CALL:
         t = node->decl_type;
+        break;
+    case AST_INDIRECT_CALL:
+        t = node->decl_type ? node->decl_type : TYPE_INT;
         break;
     case AST_CAST:
         t = node->decl_type;
@@ -1053,6 +1058,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             exit(1);
         }
         Type *base = operand_type->base;
+        /* Stage 25-03: dereferencing a function pointer is an identity —
+         * the address already in rax is the callable value; no memory
+         * load.  The result type is TYPE_POINTER so the indirect-call
+         * handler can validate it as a function pointer. */
+        if (base->kind == TYPE_FUNCTION) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = operand_type;
+            return;
+        }
         int sz = type_size(base);
         switch (sz) {
         case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
@@ -1323,6 +1337,100 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->result_type = node->decl_type;
         if (callee && callee->decl_type == TYPE_POINTER) {
             node->full_type = callee->full_type;
+        }
+        return;
+    }
+    if (node->type == AST_INDIRECT_CALL) {
+        /* Stage 25-03: indirect call through a function pointer.
+         * children[0] = callee expression (VAR_REF or DEREF of a fp);
+         * children[1..n] = arguments. */
+        static const char *arg_regs[6] = {
+            "rdi", "rsi", "rdx", "rcx", "r8", "r9"
+        };
+        int nargs = node->child_count - 1;
+        /* Pre-validate VAR_REF callee: if the name is not a known variable
+         * (local or global), it was not declared as a function pointer before
+         * this call site — reject with the same message as a direct call to
+         * an undeclared function. */
+        if (node->children[0]->type == AST_VAR_REF) {
+            const char *callee_name = node->children[0]->value;
+            LocalVar *clv = codegen_find_var(cg, callee_name);
+            GlobalVar *cgv = clv ? NULL : codegen_find_global(cg, callee_name);
+            if (!clv && !cgv) {
+                fprintf(stderr, "error: call to undefined function '%s'\n",
+                        callee_name);
+                exit(1);
+            }
+        }
+        /* Evaluate callee first so we can validate its type, then save
+         * the function address before clobbering rax with arguments. */
+        codegen_expression(cg, node->children[0]);
+        if (node->children[0]->result_type != TYPE_POINTER ||
+            !node->children[0]->full_type ||
+            !node->children[0]->full_type->base ||
+            node->children[0]->full_type->base->kind != TYPE_FUNCTION) {
+            fprintf(stderr, "error: expression is not callable\n");
+            exit(1);
+        }
+        Type *fn = node->children[0]->full_type->base; /* TYPE_FUNCTION node */
+        if (fn->param_count != nargs) {
+            fprintf(stderr,
+                    "error: indirect call expects %d arguments, got %d\n",
+                    fn->param_count, nargs);
+            exit(1);
+        }
+        if (nargs > 6) {
+            fprintf(stderr,
+                    "error: indirect call has %d arguments; max supported is 6\n",
+                    nargs);
+            exit(1);
+        }
+        /* Save callee address below the arguments. */
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        /* Evaluate each argument with type checking. */
+        for (int i = 0; i < nargs; i++) {
+            codegen_expression(cg, node->children[i + 1]);
+            TypeKind src = node->children[i + 1]->result_type;
+            TypeKind dst = fn->params[i]->kind;
+            if (dst == TYPE_POINTER || src == TYPE_POINTER) {
+                if (dst != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: indirect call argument %d: expected integer, got pointer\n",
+                            i + 1);
+                    exit(1);
+                }
+                if (src != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: indirect call argument %d: expected pointer, got integer\n",
+                            i + 1);
+                    exit(1);
+                }
+            } else {
+                emit_convert(cg, src, dst);
+            }
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+        }
+        /* Pop arguments into registers in reverse order. */
+        for (int i = nargs - 1; i >= 0; i--) {
+            fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+            cg->push_depth--;
+        }
+        /* Pop callee address into r10 (caller-saved scratch register). */
+        fprintf(cg->output, "    pop r10\n");
+        cg->push_depth--;
+        /* SysV AMD64 requires rsp 16-aligned at the call. */
+        int needs_pad = (cg->push_depth % 2) != 0;
+        if (needs_pad) fprintf(cg->output, "    sub rsp, 8\n");
+        fprintf(cg->output, "    call r10\n");
+        if (needs_pad) fprintf(cg->output, "    add rsp, 8\n");
+        /* Result type from the function's declared return type. */
+        Type *ret = fn->base;
+        node->result_type = ret->kind;
+        node->decl_type = ret->kind;
+        if (ret->kind == TYPE_POINTER) {
+            node->full_type = ret;
         }
         return;
     }

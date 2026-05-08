@@ -139,7 +139,8 @@
 <postfix_expression> ::= <primary_expression> 
                     { "[" <expression> "]"                     
                       | "++" 
-                      | "--" }                    
+                      | "--"
+                      | "(" [ <argument-expression-list> ] ")" }                    
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
@@ -182,7 +183,8 @@
 # Restriction: <func_ptr_declarator> allows pointer-to-function declarations only.
 #   Pointer-to-pointer-to-function (e.g., int (**fp)(int)) and function-returning-pointer-to-function
 #   (e.g., int (*(*factory())(int))(int)) are not supported.
-# Restriction: calls through function pointers are not supported in this stage.
-#   Assignment to function pointer variables from function designators (stage 25-02) is supported.
+# Restriction: function pointer calls support only direct-variable and explicit-dereference
+#   callee forms (fp(args) and (*fp)(args)). Calling through the result of
+#   an arbitrary expression (e.g. get_fp()(args)) is not yet supported.
 
 ```

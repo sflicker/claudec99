@@ -1,6 +1,6 @@
 # ClaudeC99 stage 25-03 Indirect function calls
 
-## goal allow calling through fucntion pointers
+## goal allow calling through function pointers
 ```C
    int inc(int x) {
        return x + 1;
@@ -76,7 +76,7 @@ Function pointer parameter
     }
     
     int main() {
-       return apply(int, 6);   // expect 7 
+       return apply(inc, 6);   // expect 7 
     }
 ```
 
@@ -126,7 +126,7 @@ Wrong argument count
     
     int main() {
         int (*fp)(int, int) = add;
-        add(1);   // INVALID
+        fp(1);   // INVALID
     }
 ```
 
@@ -138,6 +138,6 @@ Wrong argument type
     
     int main() {
         int (*fp)(int*) = read;
-        return read(3);    // INVALID
+        return fp(3);    // INVALID
     }
 ```

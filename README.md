@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 25-02 (function pointer assignment and initialization):
+Through Stage 25-03 (indirect function calls through function pointers):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -115,7 +115,10 @@ Through Stage 25-02 (function pointer assignment and initialization):
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
   Assignment and initialization of function pointers from function designators (function names),
   with strict type compatibility validation (return type and parameter types must match).
-  Calls through function pointers remain out of scope.
+  Indirect calls through function pointer variables—both `fp(args)` and `(*fp)(args)`
+  (explicit dereference) forms—with full argument-count and argument-type validation.
+  Function pointer parameters work correctly, and function pointers can be passed as arguments
+  to other functions.
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
@@ -188,8 +191,8 @@ Through Stage 25-02 (function pointer assignment and initialization):
 ## Not yet supported
 
 Structs, unions, enums; floating-point and unsigned types; `typedef`;
-block-scope storage class specifiers; variadics; preprocessor; assignment to
-and calls through function pointers; pointer-to-function-pointer and function-returning-function-pointer;
+block-scope storage class specifiers; variadics; preprocessor;
+pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
 global string-literal array initialization are not yet supported.
 
@@ -216,9 +219,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 25-02 all
-tests pass (422 valid, 127 invalid, 66 print-AST, 46 print-tokens,
-21 print-asm; 691 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 25-03 all
+tests pass (434 valid, 132 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 699 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

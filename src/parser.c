@@ -541,38 +541,52 @@ static ASTNode *parse_primary(Parser *parser) {
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
         if (parser->current.type == TOKEN_LPAREN) {
             parser_expect(parser, TOKEN_LPAREN);
-            ASTNode *call = ast_new(AST_FUNCTION_CALL, token.value);
-            if (parser->current.type != TOKEN_RPAREN) {
-                ast_add_child(call, parse_assignment_expression(parser));
-                while (parser->current.type == TOKEN_COMMA) {
-                    parser->current = lexer_next_token(parser->lexer);
-                    ast_add_child(call, parse_assignment_expression(parser));
-                }
-            }
-            parser_expect(parser, TOKEN_RPAREN);
             FuncSig *sig = parser_find_function(parser, token.value);
-            if (!sig) {
-                fprintf(stderr, "error: call to undefined function '%s'\n",
-                        token.value);
-                exit(1);
+            if (sig) {
+                /* Direct named function call */
+                ASTNode *call = ast_new(AST_FUNCTION_CALL, token.value);
+                if (parser->current.type != TOKEN_RPAREN) {
+                    ast_add_child(call, parse_assignment_expression(parser));
+                    while (parser->current.type == TOKEN_COMMA) {
+                        parser->current = lexer_next_token(parser->lexer);
+                        ast_add_child(call, parse_assignment_expression(parser));
+                    }
+                }
+                parser_expect(parser, TOKEN_RPAREN);
+                if (sig->param_count != call->child_count) {
+                    fprintf(stderr,
+                            "error: function '%s' expects %d arguments, got %d\n",
+                            token.value, sig->param_count, call->child_count);
+                    exit(1);
+                }
+                if (call->child_count > 6) {
+                    fprintf(stderr,
+                            "error: function '%s' call has %d arguments; max supported is 6\n",
+                            token.value, call->child_count);
+                    exit(1);
+                }
+                /* The call expression is typed with the callee's declared
+                 * return type so downstream type rules see it. */
+                call->decl_type = sig->return_type;
+                return call;
+            } else {
+                /* Stage 25-03: not a known function — treat as an indirect
+                 * call through a function-pointer variable.  Semantic
+                 * validation (callee type, argument count/types) is deferred
+                 * to codegen. */
+                ASTNode *callee = ast_new(AST_VAR_REF, token.value);
+                ASTNode *call = ast_new(AST_INDIRECT_CALL, NULL);
+                ast_add_child(call, callee);
+                if (parser->current.type != TOKEN_RPAREN) {
+                    ast_add_child(call, parse_assignment_expression(parser));
+                    while (parser->current.type == TOKEN_COMMA) {
+                        parser->current = lexer_next_token(parser->lexer);
+                        ast_add_child(call, parse_assignment_expression(parser));
+                    }
+                }
+                parser_expect(parser, TOKEN_RPAREN);
+                return call;
             }
-            if (sig->param_count != call->child_count) {
-                fprintf(stderr,
-                        "error: function '%s' expects %d arguments, got %d\n",
-                        token.value, sig->param_count, call->child_count);
-                exit(1);
-            }
-            if (call->child_count > 6) {
-                fprintf(stderr,
-                        "error: function '%s' call has %d arguments; max supported is 6\n",
-                        token.value, call->child_count);
-                exit(1);
-            }
-            /* The call expression is typed with the callee's declared
-             * return type so downstream type rules (promotion, common
-             * arithmetic type, etc.) see it. */
-            call->decl_type = sig->return_type;
-            return call;
         }
         return ast_new(AST_VAR_REF, token.value);
     }
@@ -602,7 +616,25 @@ static ASTNode *parse_postfix(Parser *parser) {
     ASTNode *expr = parse_primary(parser);
     while (parser->current.type == TOKEN_INCREMENT ||
            parser->current.type == TOKEN_DECREMENT ||
-           parser->current.type == TOKEN_LBRACKET) {
+           parser->current.type == TOKEN_LBRACKET ||
+           parser->current.type == TOKEN_LPAREN) {
+        /* Stage 25-03: call suffix — handles (*fp)(args) where the callee
+         * expression is already parsed (e.g. as a grouped dereference). */
+        if (parser->current.type == TOKEN_LPAREN) {
+            parser->current = lexer_next_token(parser->lexer); /* consume "(" */
+            ASTNode *call = ast_new(AST_INDIRECT_CALL, NULL);
+            ast_add_child(call, expr);
+            if (parser->current.type != TOKEN_RPAREN) {
+                ast_add_child(call, parse_assignment_expression(parser));
+                while (parser->current.type == TOKEN_COMMA) {
+                    parser->current = lexer_next_token(parser->lexer);
+                    ast_add_child(call, parse_assignment_expression(parser));
+                }
+            }
+            parser_expect(parser, TOKEN_RPAREN);
+            expr = call;
+            continue;
+        }
         if (parser->current.type == TOKEN_LBRACKET) {
             if (expr->type != AST_VAR_REF) {
                 fprintf(stderr, "error: subscript base must be an identifier\n");
@@ -1279,7 +1311,8 @@ static ASTNode *parse_statement(Parser *parser) {
      * The caller assembles the semantic Type from those two pieces.
      *
      * Stage 25-01: a function-pointer declarator (*fp)(params) allocates an
-     * 8-byte local with decl_type=TYPE_POINTER. No initializer allowed. */
+     * 8-byte local with decl_type=TYPE_POINTER.
+     * Stage 25-03: optional initializer supported. */
     if (parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
@@ -1293,6 +1326,12 @@ static ASTNode *parse_statement(Parser *parser) {
             ASTNode *decl = ast_new(AST_DECLARATION, d.name);
             decl->decl_type = TYPE_POINTER;
             decl->full_type = fp_type;
+            /* Stage 25-03: optional initializer — accepts any assignment
+             * expression; codegen validates the type. */
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                ast_add_child(decl, parse_assignment_expression(parser));
+            }
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
         }
