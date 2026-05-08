@@ -1,7 +1,7 @@
 ```ebnf
 # Claude C99 Grammar (Current)
 
-<translation-unit> ::= <external-declaration> { <external-declaration> }
+<translation_unit> ::= <external_declaration> { <external_declaration> }
 
 <external_declaration> ::= <function_definition>
                           | <declaration>
@@ -11,12 +11,6 @@
 <declaration_specifiers>    ::= [ <storage_class_specifier> ] <type_specifier>
 
 <storage_class_specifier>   ::= "extern" | "static"
-
-# Restriction: the declarator in <function_definition> must be a function declarator.
-# Restriction: function declarations at file scope may not have an initializer.
-# Restriction: storage class specifiers are not allowed at block scope.
-# Restriction: extern declarations may not have an initializer.
-# Restriction: only one storage class specifier is allowed per declaration.
 
 <parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
 
@@ -47,16 +41,13 @@
 
 <init_declarator_list> ::= <init_declarator> { "," <init_declarator> }
 
-# Restriction: an omitted array size is only allowed when the
-# declaration has a string-literal initializer. The string-literal
-# initializer form is only allowed when the element type is `char`.
-# Restriction: array declarators are not supported in multi-declarator lists.
-
 <init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
 
 <initializer_expression> ::= <assignment_expression>
 
 <declarator> ::= { "*" } <direct_declarator>
+
+# Current restriction: array declarators are limited to a single bracket suffix.
 
 <direct_declarator> ::= <identifier>
                        | "(" <declarator> ")"
@@ -140,18 +131,15 @@
                     { "[" <expression> "]"                     
                       | "++" 
                       | "--"
-                      | "(" [ <argument-expression-list> ] ")" }                    
+                      | "(" [ <argument_expression_list> ] ")" }                    
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
                          | <character_literal>
-                         | <function_call>
                          | <identifier>
                          | "(" <expression> ")"
 
-<function_call> ::= <identifier> "(" [ <argument-expression-list> ] ")"
-
-<argument-expression-list> ::= <assignment_expression> { "," <assignment_expression> }
+<argument_expression_list> ::= <assignment_expression> { "," <assignment_expression> }
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
@@ -173,18 +161,35 @@
 <character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
                               | "\\" | "\'" | "\"" | "\?" | "\0"
 
-# Restriction : file-scope object initializers must be a constant primary expression
-#   (integer literal or character literal). Full assignment expressions are not allowed.
-# Restriction : file-scope array declarations may not have an initializer.
-# Current Restriction : for-loop initializers are expressions only, not declarations
-# Current Restriction : array declarations are limited to a single bracket suffix.
-# Semantic Restriction : assignment left-hand sides must be valid lvalues.
-
-# Restriction: <func_ptr_declarator> allows pointer-to-function declarations only.
-#   Pointer-to-pointer-to-function (e.g., int (**fp)(int)) and function-returning-pointer-to-function
-#   (e.g., int (*(*factory())(int))(int)) are not supported.
-# Restriction: function pointer calls support only direct-variable and explicit-dereference
-#   callee forms (fp(args) and (*fp)(args)). Calling through the result of
-#   an arbitrary expression (e.g. get_fp()(args)) is not yet supported.
+# Current Restrictions:
+#
+# Declarations:
+#   - In a function definition, the declarator must be a function declarator.
+#   - Function declarations may not have initializers.
+#   - extern/static storage-class specifiers are currently supported only
+#     for file-scope declarations.
+#   - extern declarations with initializers are currently rejected.
+#
+# Arrays:
+#   - Array declarations are currently limited to a single bracket suffix.
+#   - Omitted array size is only supported for block-scope char arrays 
+#      initialized from string literal.
+#   - File-scope array initializers are not currently supported.
+#   - Array declarators in multi-declarator lists are not currently supported.
+#
+# Initializers:
+#   - File-scope object initializers must currently be integer or character
+#     literals. Full constant expressions are not yet supported.
+#
+# Statements:
+#   - for-loop initializers are expressions only, not declarations.
+#
+# Function pointers:
+#   - Function pointer declarations are still handled by a special
+#     <func_ptr_declarator> path.
+#   - Fully general recursive function declarators are not yet supported.
+#
+# Semantics:
+#   - Assignment left-hand sides must be valid lvalues.
 
 ```
