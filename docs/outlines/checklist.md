@@ -378,6 +378,101 @@
 	- [x] Array declarators rejected in multi-declarator lists
 - [x] Regression test suite for declaration forms
 
+## Stage 21 - Declarator Unification and Declaration Compatibility
+
+- [x] parse_declarator extended to detect function form (identifier followed by `(`)
+	- [x] is_function field added to ParsedDeclarator
+	- [x] Non-function declarator at top level produces clear error
+- [x] parse_parameter_declaration uses parse_declarator (removes hand-coded pointer-star loop)
+- [x] parse_function_decl uses parse_declarator
+- [x] Function definitions and declarations separated as distinct grammar paths
+	- [x] `<function_definition>` ::= type + function_declarator + block_statement
+	- [x] `<declaration>` at file scope ::= type + init_declarator_list + ";"
+- [x] Function declaration compatibility checks
+	- [x] Return type mismatch detected between a declaration and later definition/re-declaration
+	- [x] Parameter type mismatch detected between declarations
+
+## Stage 22 - File-Scope Variable Declarations
+
+- [x] File-scope (global) variable declarations
+	- [x] Scalar types: int, char, short, long
+	- [x] Pointer types: int *p;
+	- [x] Array types: int arr[N]; (size required)
+	- [x] Uninitialized globals zero-initialized to `.bss` section
+	- [x] RIP-relative addressing via `[rel name]`
+	- [x] GlobalVar table in CodeGen; load/store helpers separate from locals
+- [x] File-scope variable initialization
+	- [x] Constant integer expressions as initializers emitted to `.data` section
+	- [x] Multi-declarator lists at file scope (int a = 1, b, c = 3;)
+	- [x] Duplicate declaration detection
+	- [x] Type conflict detection between successive declarations
+	- [x] Function/object name conflict detection (ordinary identifier namespace)
+
+## Stage 23 - Storage Class Specifiers (File Scope)
+
+- [x] Tokenizer
+	- [x] extern keyword
+	- [x] static keyword
+- [x] AST: StorageClass enum (SC_NONE, SC_EXTERN, SC_STATIC) + storage_class field on ASTNode
+- [x] Parser: optional storage class specifier before type in external declarations
+	- [x] extern: declares without allocating storage; no `.bss`/`.data` entry emitted
+	- [x] static: internal linkage; no `global` NASM directive emitted for functions
+	- [x] Repeated extern declarations allowed; extern then definition allowed
+	- [x] Conflicting linkage (static vs non-static mixing) rejected
+	- [x] Duplicate static definitions rejected
+	- [x] extern declarations may not have an initializer
+	- [x] Multiple storage class specifiers in one declaration rejected
+	- [x] Storage class specifiers rejected at block scope
+
+## Stage 24 - Parenthesized Declarators
+
+- [x] Parser: "(" { "*" } identifier [ "[" size "]" ] ")" grouping form in parse_declarator
+	- [x] int (*p) parsed identically to int *p
+	- [x] int (**pp) for double-pointer grouping
+	- [x] Parenthesized pointer parameters: int read(int (*p))
+	- [x] Parenthesized file-scope and static declarations
+	- [x] extern with parenthesized pointer: extern int (*p);
+- [x] Rejection of unsupported suffixes (deferred until stage 25)
+	- [x] Function pointer form (*fp)(int) rejected (no inner-star function suffix)
+	- [x] Pointer-to-array form (*p)[10] rejected
+
+## Stage 25 - Function Pointers
+
+- [x] Type system: TYPE_FUNCTION kind
+	- [x] type_function() constructor: return type, param_count, params[]
+	- [x] type_kind_name() and type_is_integer() updated for TYPE_FUNCTION
+- [x] Function pointer declarations
+	- [x] Local: int (*fp)(int);
+	- [x] File-scope: int (*fp)(int);
+	- [x] static: static int (*fp)(int);
+	- [x] extern: extern int (*fp)(int); followed by definition
+	- [x] Parameter: int apply(int (*fp)(int), int x)
+	- [x] Pointer-to-function-returning-pointer: int *(*fp)(int *)
+	- [x] Full type compatibility checking on redeclarations (return type, param count, param types)
+- [x] Function designators as values (assignment and initialization)
+	- [x] Function name used as rvalue: fp = f; (emits lea rax, [rel name])
+	- [x] Local function pointer initialization from function name
+	- [x] File-scope function pointer initialization from function name (`.data` section, dq label)
+	- [x] Type checking: return type and parameter types must match exactly
+- [x] Indirect function calls
+	- [x] AST_INDIRECT_CALL node type
+	- [x] fp(args) form: function-pointer variable called directly
+	- [x] (*fp)(args) explicit dereference form
+	- [x] Argument count validation against function pointer type
+	- [x] Argument type validation (integer promotions and pointer checks)
+	- [x] Return type flows from function pointer type to call expression
+
+## Stage 26 - General Declarator Cleanup
+
+- [x] Param-list consumption moved into parse_declarator (inline)
+	- [x] parse_func_ptr_param_types and build_func_ptr_type helpers removed
+	- [x] fp_param_types[] and fp_param_count added to ParsedDeclarator
+- [x] Unnamed parameters in function prototypes and function pointer signatures
+	- [x] parse_parameter_declaration: declarator (and name) made optional
+	- [x] Function definitions still require named parameters
+- [x] Grammar: `<direct_declarator>` suffixes ([...] and (...)) apply recursively to any direct_declarator
+- [x] Error message updated: "functions returning function pointers are not supported" for int (*fp())(int)
+
 ---
 
 ## TODO
@@ -422,10 +517,7 @@
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [ ] File-scope (global) variable declarations
-- [ ] File-scope variable initialization
-- [ ] static storage class (file scope and block scope)
-- [ ] extern storage class
+- [ ] static storage class (block scope — local static variables)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables
@@ -469,9 +561,8 @@
 - [ ] Old-style (K&R) function definitions
 - [ ] Implicit return in void functions
 - [ ] Recursive structs through pointers
-- [ ] Function pointers: type (*fp)(params)
-- [ ] Function pointer calls: (*fp)(args) and fp(args)
-- [ ] Inline functions (_Bool inline keyword)
+- [ ] Functions returning function pointers: int (*f())(int)
+- [ ] Inline functions (inline keyword)
 
 ### Standard Library Headers (minimal implementations or pass-through)
 - [ ] <stdio.h>: printf, scanf, fprintf, fopen, fclose, fread, fwrite, fgets, fputs, perror, sscanf, snprintf
