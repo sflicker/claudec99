@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 25-01 (function pointer declarations):
+Through Stage 25-02 (function pointer assignment and initialization):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -113,7 +113,9 @@ Through Stage 25-01 (function pointer declarations):
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
-  Assignment to and calls through function pointers remain out of scope for this stage.
+  Assignment and initialization of function pointers from function designators (function names),
+  with strict type compatibility validation (return type and parameter types must match).
+  Calls through function pointers remain out of scope.
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
@@ -214,9 +216,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 24 all
-tests pass (420 valid, 125 invalid, 66 print-AST, 46 print-tokens,
-21 print-asm; 678 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 25-02 all
+tests pass (422 valid, 127 invalid, 66 print-AST, 46 print-tokens,
+21 print-asm; 691 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

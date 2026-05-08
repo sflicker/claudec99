@@ -1589,7 +1589,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     Type *base_type = parse_type_specifier(parser, &base_kind);
     ParsedDeclarator d = parse_declarator(parser);
 
-    /* Stage 25-01: function-pointer file-scope declaration. */
+    /* Stage 25-01/25-02: function-pointer file-scope declaration. */
     if (d.is_func_pointer) {
         Type *fp_type = build_func_ptr_type(parser, base_type, &d);
         if (sc == SC_EXTERN && parser->current.type == TOKEN_ASSIGN) {
@@ -1608,6 +1608,43 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         decl->storage_class = sc;
         decl->decl_type = TYPE_POINTER;
         decl->full_type = fp_type;
+        /* Stage 25-02: optional function-designator initializer. */
+        if (parser->current.type == TOKEN_ASSIGN) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type != TOKEN_IDENTIFIER) {
+                fprintf(stderr,
+                        "error: function pointer initializer must be a function name\n");
+                exit(1);
+            }
+            Token init_tok = parser->current;
+            parser->current = lexer_next_token(parser->lexer);
+            FuncSig *sig = parser_find_function(parser, init_tok.value);
+            if (!sig) {
+                fprintf(stderr,
+                        "error: '%s' is not a declared function\n", init_tok.value);
+                exit(1);
+            }
+            /* Verify compatibility against the declared function pointer type. */
+            Type *fp_fn = fp_type->base; /* TYPE_FUNCTION node */
+            if (fp_fn->base->kind != sig->return_type ||
+                fp_fn->param_count != sig->param_count) {
+                fprintf(stderr,
+                        "error: incompatible function pointer type in initializer of '%s'\n",
+                        d.name);
+                exit(1);
+            }
+            for (int i = 0; i < sig->param_count; i++) {
+                if (!fp_fn->params[i] ||
+                    fp_fn->params[i]->kind != sig->param_types[i]) {
+                    fprintf(stderr,
+                            "error: incompatible function pointer type in initializer of '%s'\n",
+                            d.name);
+                    exit(1);
+                }
+            }
+            ASTNode *init_node = ast_new(AST_VAR_REF, init_tok.value);
+            ast_add_child(decl, init_node);
+        }
         parser_expect(parser, TOKEN_SEMICOLON);
         return decl;
     }

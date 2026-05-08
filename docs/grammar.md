@@ -182,7 +182,7 @@
 # Restriction: <func_ptr_declarator> allows pointer-to-function declarations only.
 #   Pointer-to-pointer-to-function (e.g., int (**fp)(int)) and function-returning-pointer-to-function
 #   (e.g., int (*(*factory())(int))(int)) are not supported.
-# Restriction: assignment to function pointer variables and calls through function pointers
-#   are not supported in this stage.
+# Restriction: calls through function pointers are not supported in this stage.
+#   Assignment to function pointer variables from function designators (stage 25-02) is supported.
 
 ```

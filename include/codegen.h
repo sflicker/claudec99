@@ -39,6 +39,11 @@ typedef struct {
     Type *full_type;
     int is_initialized;
     long init_value;
+    /* Stage 25-02: when is_label_init is set, the global is initialized to
+     * the address of a named symbol (e.g. a function pointer initialized
+     * from a function designator). init_label holds the symbol name. */
+    int is_label_init;
+    char init_label[256];
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

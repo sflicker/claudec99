@@ -67,6 +67,60 @@ static int pointer_types_equal(Type *a, Type *b) {
 }
 
 /*
+ * Stage 25-02: deep equality check for two function-pointer types.
+ * Both a and b must be TYPE_POINTER → TYPE_FUNCTION chains.
+ * Compares return type kind, parameter count, and each parameter kind.
+ */
+static int func_ptr_types_equal_cg(Type *a, Type *b) {
+    if (!a || !b) return a == b;
+    if (a->kind != TYPE_POINTER || b->kind != TYPE_POINTER) return 0;
+    Type *fa = a->base, *fb = b->base;
+    if (!fa || !fb || fa->kind != TYPE_FUNCTION || fb->kind != TYPE_FUNCTION)
+        return 0;
+    if (!fa->base || !fb->base || fa->base->kind != fb->base->kind) return 0;
+    if (fa->param_count != fb->param_count) return 0;
+    for (int i = 0; i < fa->param_count; i++) {
+        if (!fa->params[i] || !fb->params[i]) return 0;
+        if (fa->params[i]->kind != fb->params[i]->kind) return 0;
+    }
+    return 1;
+}
+
+/* Stage 25-02: map a TypeKind to its singleton Type*. */
+static Type *type_from_kind(TypeKind kind) {
+    switch (kind) {
+    case TYPE_CHAR:  return type_char();
+    case TYPE_SHORT: return type_short();
+    case TYPE_LONG:  return type_long();
+    case TYPE_INT:
+    default:         return type_int();
+    }
+}
+
+/*
+ * Stage 25-02: build a TYPE_POINTER → TYPE_FUNCTION type chain from an
+ * AST_FUNCTION_DECL node. The result represents the function's type as a
+ * function pointer so it can be compared against the LHS of an assignment.
+ */
+static Type *build_func_designator_type(ASTNode *func_decl) {
+    Type *return_type = (func_decl->decl_type == TYPE_POINTER && func_decl->full_type)
+                        ? func_decl->full_type
+                        : type_from_kind(func_decl->decl_type);
+    Type *param_types[FUNC_TYPE_MAX_PARAMS];
+    int param_count = 0;
+    for (int i = 0; i < func_decl->child_count && param_count < FUNC_TYPE_MAX_PARAMS; i++) {
+        ASTNode *child = func_decl->children[i];
+        if (child->type == AST_PARAM) {
+            param_types[param_count++] =
+                (child->decl_type == TYPE_POINTER && child->full_type)
+                ? child->full_type
+                : type_from_kind(child->decl_type);
+        }
+    }
+    return type_pointer(type_function(return_type, param_count, param_types));
+}
+
+/*
  * Look up a function's AST_FUNCTION_DECL node by name in the current
  * translation unit so call sites can see the callee's declared
  * parameter types for argument conversion. If multiple declarations
@@ -795,6 +849,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Stage 22-01: fall back to global table. */
         GlobalVar *gv = codegen_find_global(cg, node->value);
         if (!gv) {
+            /* Stage 25-02: check if the name is a function designator. A
+             * function name used as a value decays to a pointer to that
+             * function type; emit its address with lea. */
+            ASTNode *func_decl = codegen_find_function_decl(cg, node->value);
+            if (func_decl) {
+                fprintf(cg->output, "    lea rax, [rel %s]\n", node->value);
+                node->result_type = TYPE_POINTER;
+                node->full_type = build_func_designator_type(func_decl);
+                return;
+            }
             fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
             exit(1);
         }
@@ -885,6 +949,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 exit(1);
             }
             codegen_expression(cg, node->children[0]);
+            /* Stage 25-02: when the LHS is a function pointer, verify
+             * the RHS carries a compatible function pointer type. */
+            if (lv->kind == TYPE_POINTER && lv->full_type && lv->full_type->base &&
+                lv->full_type->base->kind == TYPE_FUNCTION) {
+                Type *rhs_type = node->children[0]->full_type;
+                if (!rhs_type || rhs_type->kind != TYPE_POINTER || !rhs_type->base ||
+                    rhs_type->base->kind != TYPE_FUNCTION ||
+                    !func_ptr_types_equal_cg(lv->full_type, rhs_type)) {
+                    fprintf(stderr,
+                            "error: incompatible function pointer type in assignment to '%s'\n",
+                            lv->name);
+                    exit(1);
+                }
+            }
             /* Pointer RHS values are already in full rax — skip the
              * 32-to-64 sign-extend that integer values would need. */
             int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
@@ -909,6 +987,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
+        /* Stage 25-02: same function pointer type check for global LHS. */
+        if (gv->kind == TYPE_POINTER && gv->full_type && gv->full_type->base &&
+            gv->full_type->base->kind == TYPE_FUNCTION) {
+            Type *rhs_type = node->children[0]->full_type;
+            if (!rhs_type || rhs_type->kind != TYPE_POINTER || !rhs_type->base ||
+                rhs_type->base->kind != TYPE_FUNCTION ||
+                !func_ptr_types_equal_cg(gv->full_type, rhs_type)) {
+                fprintf(stderr,
+                        "error: incompatible function pointer type in assignment to '%s'\n",
+                        gv->name);
+                exit(1);
+            }
+        }
         int rhs_is_long_g = (node->children[0]->result_type == TYPE_LONG ||
                              node->children[0]->result_type == TYPE_POINTER);
         emit_store_global(cg, gv->name, gv->size, rhs_is_long_g);
@@ -2233,14 +2324,24 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     }
     gv->is_initialized = 0;
     gv->init_value = 0;
+    gv->is_label_init = 0;
+    gv->init_label[0] = '\0';
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {
             gv->init_value = strtol(init->value, NULL, 10);
+            gv->is_initialized = 1;
         } else if (init->type == AST_CHAR_LITERAL) {
             gv->init_value = (long)(unsigned char)init->value[0];
+            gv->is_initialized = 1;
+        } else if (init->type == AST_VAR_REF) {
+            /* Stage 25-02: function-pointer global initialized from a
+             * function designator — store the symbol name for .data emit. */
+            strncpy(gv->init_label, init->value, 255);
+            gv->init_label[255] = '\0';
+            gv->is_label_init = 1;
+            gv->is_initialized = 1;
         }
-        gv->is_initialized = 1;
     }
     cg->global_count++;
 }
@@ -2273,8 +2374,14 @@ static void codegen_emit_data(CodeGen *cg) {
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
         if (gv->is_initialized) {
-            fprintf(cg->output, "%s: %s %ld\n",
-                    gv->name, data_init_directive(gv->kind), gv->init_value);
+            if (gv->is_label_init) {
+                /* Stage 25-02: emit a label-reference initializer (e.g. dq inc). */
+                fprintf(cg->output, "%s: %s %s\n",
+                        gv->name, data_init_directive(gv->kind), gv->init_label);
+            } else {
+                fprintf(cg->output, "%s: %s %ld\n",
+                        gv->name, data_init_directive(gv->kind), gv->init_value);
+            }
         }
     }
 }
