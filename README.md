@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 25-03 (indirect function calls through function pointers):
+Through Stage 26 (general declarator cleanup):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -113,6 +113,7 @@ Through Stage 25-03 (indirect function calls through function pointers):
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
+  Unnamed parameters are supported in function prototypes and function pointer signatures.
   Assignment and initialization of function pointers from function designators (function names),
   with strict type compatibility validation (return type and parameter types must match).
   Indirect calls through function pointer variables—both `fp(args)` and `(*fp)(args)`
@@ -219,9 +220,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 25-03 all
+`Aggregate: P passed, F failed, T total` line. As of stage 26 all
 tests pass (434 valid, 132 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 699 total).
+21 print-asm; 702 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
