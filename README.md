@@ -89,13 +89,15 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 23 (storage class basics):
+Through Stage 24 (parenthesized declarators):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
   `/* */` comments.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
-  `int a=3, b=4;`, `int *p, q;`).
+  `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
+  for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
+  unparenthesized forms.
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
@@ -181,9 +183,9 @@ Through Stage 23 (storage class basics):
 
 Structs, unions, enums; floating-point and unsigned types; `typedef`;
 block-scope storage class specifiers; variadics; preprocessor; function
-pointers; calls with more than 6 arguments. Initializer lists for
-non-`char` arrays and global string-literal array initialization
-are not yet supported.
+pointers (declarations like `int (*fp)(int)` and calls through function pointers);
+calls with more than 6 arguments. Initializer lists for non-`char` arrays and
+global string-literal array initialization are not yet supported.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -208,9 +210,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 23 all
-tests pass (414 valid, 121 invalid, 66 print-AST, 46 print-tokens,
-21 print-asm; 668 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 24 all
+tests pass (420 valid, 125 invalid, 66 print-AST, 46 print-tokens,
+21 print-asm; 678 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

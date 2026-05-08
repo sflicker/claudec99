@@ -238,12 +238,17 @@ static Type *parse_type_name(Parser *parser) {
 /*
  * <declarator>        ::= { "*" } <direct_declarator>
  * <direct_declarator> ::= <identifier>
+ *                       | "(" <declarator> ")"
  *                       | <identifier> "[" [<integer_literal>] "]"
  *                       | <identifier> "(" [<parameter_list>] ")"
  *
  * For the function form, is_function is set to 1 but the "(" is NOT
  * consumed; the caller (parse_function_decl) handles the parameter list
  * and closing ")".
+ *
+ * The parenthesized form "(" <declarator> ")" is grouping-only and
+ * accumulates inner pointer stars into pointer_count. Function-pointer
+ * and pointer-to-array forms are rejected.
  */
 static ParsedDeclarator parse_declarator(Parser *parser) {
     ParsedDeclarator d;
@@ -251,6 +256,53 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
     while (parser->current.type == TOKEN_STAR) {
         d.pointer_count++;
         parser->current = lexer_next_token(parser->lexer);
+    }
+    if (parser->current.type == TOKEN_LPAREN) {
+        /* Parenthesized declarator: "(" { "*" } identifier [ "[" size "]" ] ")" */
+        parser->current = lexer_next_token(parser->lexer); /* consume "(" */
+        while (parser->current.type == TOKEN_STAR) {
+            d.pointer_count++;
+            parser->current = lexer_next_token(parser->lexer);
+        }
+        Token name = parser_expect(parser, TOKEN_IDENTIFIER);
+        strncpy(d.name, name.value, sizeof(d.name) - 1);
+        d.name[sizeof(d.name) - 1] = '\0';
+        /* Function suffix inside parens: (*fp()) — out of scope */
+        if (parser->current.type == TOKEN_LPAREN) {
+            fprintf(stderr, "error: function pointers are not supported\n");
+            exit(1);
+        }
+        /* Optional array suffix inside parens: (*a[10]) */
+        if (parser->current.type == TOKEN_LBRACKET) {
+            d.is_array = 1;
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_INT_LITERAL) {
+                Token size_tok = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                int length = (int)size_tok.long_value;
+                if (length <= 0) {
+                    fprintf(stderr, "error: array size must be greater than zero\n");
+                    exit(1);
+                }
+                d.array_length = length;
+                d.has_size = 1;
+            } else if (parser->current.type != TOKEN_RBRACKET) {
+                fprintf(stderr, "error: array size must be an integer literal\n");
+                exit(1);
+            }
+            parser_expect(parser, TOKEN_RBRACKET);
+        }
+        parser_expect(parser, TOKEN_RPAREN);
+        /* Reject unsupported suffixes after the closing ")" */
+        if (parser->current.type == TOKEN_LPAREN) {
+            fprintf(stderr, "error: function pointers are not supported\n");
+            exit(1);
+        }
+        if (parser->current.type == TOKEN_LBRACKET) {
+            fprintf(stderr, "error: pointer to array types are not supported\n");
+            exit(1);
+        }
+        return d;
     }
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
     strncpy(d.name, name.value, sizeof(d.name) - 1);

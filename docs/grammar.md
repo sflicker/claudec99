@@ -52,6 +52,7 @@
 <declarator> ::= { "*" } <direct_declarator>
 
 <direct_declarator> ::= <identifier>
+                       | "(" <declarator> ")"
                        | <identifier> "[" [ <integer_literal> ] "]"
                        | <identifier> "(" [ <parameter_list> ] ")"
 
