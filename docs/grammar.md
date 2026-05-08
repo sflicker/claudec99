@@ -12,16 +12,9 @@
 
 <storage_class_specifier>   ::= "extern" | "static"
 
-<parameter_list> ::= <parameter_declaration> { "," <parameter_declaration> }
+<parameter_list> ::= <parameter_declarator> { "," <parameter_declarator> }
 
-<parameter_declaration> ::= <type_specifier> <declarator>
-                        | <type_specifier> <func_ptr_declarator>
-
-<func_ptr_declarator> ::= { "*" } "(" "*" <identifier> ")" "(" [ <func_ptr_param_list> ] ")"
-
-<func_ptr_param_list> ::= <func_ptr_param> { "," <func_ptr_param> }
-
-<func_ptr_param> ::= <type_specifier> { "*" } [ <identifier> ]
+<parameter_declarator> ::= <type_specifier> [ <declarator> ]
 
 <block_statement> ::= "{" { <statement> } "}"
 
@@ -47,12 +40,10 @@
 
 <declarator> ::= { "*" } <direct_declarator>
 
-# Current restriction: array declarators are limited to a single bracket suffix.
-
 <direct_declarator> ::= <identifier>
                        | "(" <declarator> ")"
-                       | <identifier> "[" [ <integer_literal> ] "]"
-                       | <identifier> "(" [ <parameter_list> ] ")"
+                       | <direct_declarator> "[" [ <integer_literal> ] "]"
+                       | <direct_declarator> "(" [ <parameter_list> ] ")"
 
 <type_specifier> ::= <integer_type>
 
@@ -169,11 +160,12 @@
 #   - extern/static storage-class specifiers are currently supported only
 #     for file-scope declarations.
 #   - extern declarations with initializers are currently rejected.
+#   - Function definition parameters must be named; unnamed parameters are
+#     only allowed in function prototypes and function pointer signatures.
 #
 # Arrays:
-#   - Array declarations are currently limited to a single bracket suffix.
-#   - Omitted array size is only supported for block-scope char arrays 
-#      initialized from string literal.
+#   - Omitted array size is only supported for block-scope char arrays
+#     initialized from string literal.
 #   - File-scope array initializers are not currently supported.
 #   - Array declarators in multi-declarator lists are not currently supported.
 #
@@ -185,9 +177,11 @@
 #   - for-loop initializers are expressions only, not declarations.
 #
 # Function pointers:
-#   - Function pointer declarations are still handled by a special
-#     <func_ptr_declarator> path.
-#   - Fully general recursive function declarators are not yet supported.
+#   - Nested function-pointer parameters (function pointer taking function
+#     pointer) are not yet supported.
+#   - Functions returning function pointers are not yet supported.
+#   - Pointer-to-pointer-to-function is not yet supported.
+#   - Arrays of function pointers are not yet supported.
 #
 # Semantics:
 #   - Assignment left-hand sides must be valid lvalues.
