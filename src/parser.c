@@ -46,6 +46,49 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->global_count = 0;
     parser->loop_depth = 0;
     parser->switch_depth = 0;
+    parser->typedef_count = 0;
+    parser->scope_depth = 0;
+}
+
+/* Stage 28-01: typedef name table helpers. */
+static TypedefEntry *parser_find_typedef(Parser *parser, const char *name) {
+    for (int i = parser->typedef_count - 1; i >= 0; i--) {
+        if (strcmp(parser->typedefs[i].name, name) == 0)
+            return &parser->typedefs[i];
+    }
+    return NULL;
+}
+
+static void parser_register_typedef(Parser *parser, const char *name,
+                                    TypeKind kind) {
+    for (int i = 0; i < parser->typedef_count; i++) {
+        if (parser->typedefs[i].scope_depth == parser->scope_depth &&
+            strcmp(parser->typedefs[i].name, name) == 0) {
+            fprintf(stderr, "error: duplicate typedef '%s' in this scope\n",
+                    name);
+            exit(1);
+        }
+    }
+    if (parser->typedef_count >= PARSER_MAX_TYPEDEFS) {
+        fprintf(stderr, "error: too many typedefs (max %d)\n",
+                PARSER_MAX_TYPEDEFS);
+        exit(1);
+    }
+    TypedefEntry *e = &parser->typedefs[parser->typedef_count++];
+    strncpy(e->name, name, sizeof(e->name) - 1);
+    e->name[sizeof(e->name) - 1] = '\0';
+    e->kind = kind;
+    e->scope_depth = parser->scope_depth;
+}
+
+static void parser_leave_scope(Parser *parser) {
+    int new_count = 0;
+    for (int i = 0; i < parser->typedef_count; i++) {
+        if (parser->typedefs[i].scope_depth < parser->scope_depth)
+            parser->typedefs[new_count++] = parser->typedefs[i];
+    }
+    parser->typedef_count = new_count;
+    parser->scope_depth--;
 }
 
 static FuncSig *parser_find_function(Parser *parser, const char *name) {
@@ -265,6 +308,23 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
     case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
+    case TOKEN_IDENTIFIER: {
+        /* Stage 28-01: typedef name used as a type specifier. */
+        TypedefEntry *entry = parser_find_typedef(parser, parser->current.value);
+        if (!entry) {
+            fprintf(stderr, "error: unknown type name '%s'\n",
+                    parser->current.value);
+            exit(1);
+        }
+        kind = entry->kind;
+        switch (kind) {
+        case TYPE_CHAR:  t = type_char();  break;
+        case TYPE_SHORT: t = type_short(); break;
+        case TYPE_LONG:  t = type_long();  break;
+        default:         t = type_int();   break;
+        }
+        break;
+    }
     default:
         fprintf(stderr, "error: expected integer type, got '%s'\n",
                 parser->current.value);
@@ -674,7 +734,9 @@ static ASTNode *parse_unary(Parser *parser) {
         if (parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
-            parser->current.type == TOKEN_LONG) {
+            parser->current.type == TOKEN_LONG ||
+            (parser->current.type == TOKEN_IDENTIFIER &&
+             parser_find_typedef(parser, parser->current.value))) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
             Type *t = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
@@ -760,7 +822,9 @@ static ASTNode *parse_cast(Parser *parser) {
         if (parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
-            parser->current.type == TOKEN_LONG) {
+            parser->current.type == TOKEN_LONG ||
+            (parser->current.type == TOKEN_IDENTIFIER &&
+             parser_find_typedef(parser, parser->current.value))) {
             Type *cast_type = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *operand = parse_cast(parser);
@@ -1106,9 +1170,11 @@ static ASTNode *parse_statement(Parser *parser);
 static ASTNode *parse_block(Parser *parser) {
     parser_expect(parser, TOKEN_LBRACE);
     ASTNode *block = ast_new(AST_BLOCK, NULL);
+    parser->scope_depth++;
     while (parser->current.type != TOKEN_RBRACE) {
         ast_add_child(block, parse_statement(parser));
     }
+    parser_leave_scope(parser);
     parser_expect(parser, TOKEN_RBRACE);
     return block;
 }
@@ -1270,6 +1336,26 @@ static ASTNode *parse_statement(Parser *parser) {
                 "error: storage class specifier not allowed in block scope\n");
         exit(1);
     }
+    /* Stage 28-01: typedef declaration at block scope. */
+    if (parser->current.type == TOKEN_TYPEDEF) {
+        parser->current = lexer_next_token(parser->lexer);
+        TypeKind base_kind;
+        parse_type_specifier(parser, &base_kind);
+        ParsedDeclarator d = parse_declarator(parser);
+        if (d.is_func_pointer || d.is_function || d.pointer_count > 0 || d.is_array) {
+            fprintf(stderr,
+                    "error: only simple scalar typedefs are supported\n");
+            exit(1);
+        }
+        if (parser->current.type == TOKEN_ASSIGN) {
+            fprintf(stderr,
+                    "error: typedef declaration cannot have an initializer\n");
+            exit(1);
+        }
+        parser_expect(parser, TOKEN_SEMICOLON);
+        parser_register_typedef(parser, d.name, base_kind);
+        return ast_new(AST_TYPEDEF_DECL, d.name);
+    }
     /* labeled_statement: <identifier> ":" <statement> */
     if (parser->current.type == TOKEN_IDENTIFIER) {
         int saved_pos = parser->lexer->pos;
@@ -1298,7 +1384,9 @@ static ASTNode *parse_statement(Parser *parser) {
     if (parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
-        parser->current.type == TOKEN_LONG) {
+        parser->current.type == TOKEN_LONG ||
+        (parser->current.type == TOKEN_IDENTIFIER &&
+         parser_find_typedef(parser, parser->current.value))) {
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
@@ -1608,19 +1696,25 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
 
     while (1) {
         if (parser->current.type == TOKEN_EXTERN ||
-            parser->current.type == TOKEN_STATIC) {
+            parser->current.type == TOKEN_STATIC ||
+            parser->current.type == TOKEN_TYPEDEF) {
             if (has_sc) {
                 fprintf(stderr,
                         "error: multiple storage class specifiers are not allowed\n");
                 exit(1);
             }
             has_sc = 1;
-            r.sc = (parser->current.type == TOKEN_EXTERN) ? SC_EXTERN : SC_STATIC;
+            if (parser->current.type == TOKEN_EXTERN) r.sc = SC_EXTERN;
+            else if (parser->current.type == TOKEN_STATIC) r.sc = SC_STATIC;
+            else r.sc = SC_TYPEDEF;
             parser->current = lexer_next_token(parser->lexer);
         } else if (parser->current.type == TOKEN_CHAR ||
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
-                   parser->current.type == TOKEN_LONG) {
+                   parser->current.type == TOKEN_LONG ||
+                   (!has_type &&
+                    parser->current.type == TOKEN_IDENTIFIER &&
+                    parser_find_typedef(parser, parser->current.value))) {
             if (has_type) {
                 fprintf(stderr,
                         "error: multiple type specifiers are not allowed\n");
@@ -1668,6 +1762,23 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     TypeKind base_kind = ds.base_kind;
     Type *base_type = ds.base_type;
     ParsedDeclarator d = parse_declarator(parser);
+
+    /* Stage 28-01: typedef declaration at file scope. */
+    if (sc == SC_TYPEDEF) {
+        if (d.is_func_pointer || d.is_function || d.pointer_count > 0 || d.is_array) {
+            fprintf(stderr,
+                    "error: only simple scalar typedefs are supported\n");
+            exit(1);
+        }
+        if (parser->current.type == TOKEN_ASSIGN) {
+            fprintf(stderr,
+                    "error: typedef declaration cannot have an initializer\n");
+            exit(1);
+        }
+        parser_expect(parser, TOKEN_SEMICOLON);
+        parser_register_typedef(parser, d.name, base_kind);
+        return ast_new(AST_TYPEDEF_DECL, d.name);
+    }
 
     /* Stage 25-01/25-02: function-pointer file-scope declaration. */
     if (d.is_func_pointer) {

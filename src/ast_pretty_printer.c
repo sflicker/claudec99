@@ -248,6 +248,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_COMMA_EXPR:
         printf("CommaExpr:\n");
         break;
+    case AST_TYPEDEF_DECL:
+        printf("TypedefDecl: %s\n", node->value);
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {

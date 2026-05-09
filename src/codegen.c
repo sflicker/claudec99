@@ -2189,6 +2189,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         cg->scope_start = saved_scope_start;
     } else if (node->type == AST_EXPRESSION_STMT) {
         codegen_expression(cg, node->children[0]);
+    } else if (node->type == AST_TYPEDEF_DECL) {
+        /* Stage 28-01: typedef declarations generate no code. */
     }
 }
 

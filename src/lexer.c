@@ -365,6 +365,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_EXTERN;
         } else if (strcmp(token.value, "static") == 0) {
             token.type = TOKEN_STATIC;
+        } else if (strcmp(token.value, "typedef") == 0) {
+            token.type = TOKEN_TYPEDEF;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -400,6 +402,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_SIZEOF:           return "'sizeof'";
         case TOKEN_EXTERN:           return "'extern'";
         case TOKEN_STATIC:           return "'static'";
+        case TOKEN_TYPEDEF:          return "'typedef'";
         case TOKEN_IDENTIFIER:       return "identifier";
         case TOKEN_INT_LITERAL:      return "integer literal";
         case TOKEN_STRING_LITERAL:   return "string literal";

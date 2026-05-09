@@ -9,7 +9,15 @@
 
 #define PARSER_MAX_FUNCTIONS 64
 #define PARSER_MAX_GLOBALS 64
+#define PARSER_MAX_TYPEDEFS 64
 #define FUNC_MAX_PARAMS 16
+
+/* Stage 28-01: entry in the parser-level typedef table. */
+typedef struct {
+    char    name[256];
+    TypeKind kind;
+    int     scope_depth; /* 0 = file scope, 1+ = block scope */
+} TypedefEntry;
 
 typedef struct {
     char name[256];
@@ -44,6 +52,10 @@ typedef struct {
     int global_count;
     int loop_depth;
     int switch_depth;
+    /* Stage 28-01: typedef name table with scope tracking. */
+    TypedefEntry typedefs[PARSER_MAX_TYPEDEFS];
+    int typedef_count;
+    int scope_depth; /* 0 = file scope, incremented by each parse_block */
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);

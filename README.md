@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 27 (declaration specifier refactor):
+Through Stage 28-01 (simple typedef names):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -97,7 +97,8 @@ Through Stage 27 (declaration specifier refactor):
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
   `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
-  unparenthesized forms.
+  unparenthesized forms. Simple typedef aliases for existing integer scalar types
+  (char, short, int, long) with block-scope tracking and shadowing support.
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
@@ -191,7 +192,8 @@ Through Stage 27 (declaration specifier refactor):
 
 ## Not yet supported
 
-Structs, unions, enums; floating-point and unsigned types; `typedef`;
+Structs, unions, enums; floating-point and unsigned types; pointer/array/struct
+typedefs (only simple scalar typedefs are currently supported);
 block-scope storage class specifiers; variadics; preprocessor;
 pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
@@ -220,9 +222,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 27 all
-tests pass (436 valid, 137 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 706 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 28-01 all
+tests pass (442 valid, 141 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 716 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

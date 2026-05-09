@@ -12,7 +12,7 @@
 <declaration_specifier>  ::= <storage_class_specifier>
                             | <type_specifier>
 
-<storage_class_specifier>   ::= "extern" | "static"
+<storage_class_specifier>   ::= "extern" | "static" | "typedef"
 
 <parameter_list> ::= <parameter_declarator> { "," <parameter_declarator> }
 
@@ -47,7 +47,9 @@
                        | <direct_declarator> "[" [ <integer_literal> ] "]"
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
-<type_specifier> ::= <integer_type>
+<type_specifier> ::= <integer_type> | <typedef_name>
+
+<typedef_name> ::= <identifier>
 
 <type_name> ::= <type_specifier> { "*" }
 
@@ -164,6 +166,14 @@
 #   - extern declarations with initializers are currently rejected.
 #   - Function definition parameters must be named; unnamed parameters are
 #     only allowed in function prototypes and function pointer signatures.
+#
+# Typedefs:
+#   - Only simple scalar integer typedefs are supported (char, short, int, long).
+#   - typedef declarations may not have initializers.
+#   - Pointer typedefs, array typedefs, function typedefs, struct/enum typedefs
+#     are not yet supported.
+#   - <typedef_name> is a semantic rule: an identifier is a typedef_name only
+#     if it is currently known as a typedef in the active scope.
 #
 # Arrays:
 #   - Omitted array size is only supported for block-scope char arrays

@@ -4,9 +4,10 @@
 #include "type.h"
 
 typedef enum {
-    SC_NONE   = 0,
-    SC_EXTERN = 1,
-    SC_STATIC = 2
+    SC_NONE    = 0,
+    SC_EXTERN  = 1,
+    SC_STATIC  = 2,
+    SC_TYPEDEF = 4
 } StorageClass;
 
 typedef enum {
@@ -47,7 +48,8 @@ typedef enum {
     AST_SIZEOF_EXPR,
     AST_CONDITIONAL_EXPR,
     AST_COMMA_EXPR,
-    AST_DECL_LIST
+    AST_DECL_LIST,
+    AST_TYPEDEF_DECL
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64
