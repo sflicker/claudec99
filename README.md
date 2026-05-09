@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 28-02 (pointer typedefs):
+Through Stage 28-03 (function pointer typedefs):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -99,7 +99,7 @@ Through Stage 28-02 (pointer typedefs):
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
   unparenthesized forms. Typedef aliases for integer scalar types and pointer types
   (e.g., `typedef int *IntPtr;`, `typedef char *String;`) with full type chain support,
-  block-scope tracking, and shadowing.
+  block-scope tracking, and shadowing. Function pointer typedefs (e.g., `typedef int (*BinaryFn)(int, int);`) are also supported — the typedef name can be used as a type specifier in variable declarations, assignments, multi-declarator lists, and indirect calls.
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
@@ -194,7 +194,7 @@ Through Stage 28-02 (pointer typedefs):
 ## Not yet supported
 
 Structs, unions, enums; floating-point and unsigned types; array/struct
-typedefs (pointer typedefs are now supported); block-scope storage class specifiers;
+typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
 global string-literal array initialization are not yet supported.
@@ -222,9 +222,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 28-01 all
-tests pass (442 valid, 141 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 716 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 28-03 all
+tests pass (449 valid, 141 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 723 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

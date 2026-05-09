@@ -1341,13 +1341,13 @@ static ASTNode *parse_statement(Parser *parser) {
                 "error: storage class specifier not allowed in block scope\n");
         exit(1);
     }
-    /* Stage 28-01/28-02: typedef declaration at block scope. */
+    /* Stage 28-01/28-02/28-03: typedef declaration at block scope. */
     if (parser->current.type == TOKEN_TYPEDEF) {
         parser->current = lexer_next_token(parser->lexer);
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
-        if (d.is_func_pointer || d.is_function || d.is_array) {
+        if (d.is_function || d.is_array) {
             fprintf(stderr,
                     "error: only scalar and pointer typedefs are supported\n");
             exit(1);
@@ -1358,6 +1358,11 @@ static ASTNode *parse_statement(Parser *parser) {
             exit(1);
         }
         parser_expect(parser, TOKEN_SEMICOLON);
+        if (d.is_func_pointer) {
+            Type *fp_type = build_fp_type(base_type, &d);
+            parser_register_typedef(parser, d.name, TYPE_POINTER, fp_type);
+            return ast_new(AST_TYPEDEF_DECL, d.name);
+        }
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
@@ -1774,9 +1779,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     Type *base_type = ds.base_type;
     ParsedDeclarator d = parse_declarator(parser);
 
-    /* Stage 28-01/28-02: typedef declaration at file scope. */
+    /* Stage 28-01/28-02/28-03: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
-        if (d.is_func_pointer || d.is_function || d.is_array) {
+        if (d.is_function || d.is_array) {
             fprintf(stderr,
                     "error: only scalar and pointer typedefs are supported\n");
             exit(1);
@@ -1787,6 +1792,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             exit(1);
         }
         parser_expect(parser, TOKEN_SEMICOLON);
+        if (d.is_func_pointer) {
+            Type *fp_type = build_fp_type(base_type, &d);
+            parser_register_typedef(parser, d.name, TYPE_POINTER, fp_type);
+            return ast_new(AST_TYPEDEF_DECL, d.name);
+        }
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);

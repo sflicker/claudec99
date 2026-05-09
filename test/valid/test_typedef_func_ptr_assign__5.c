@@ -1,0 +1,11 @@
+typedef int (*BinaryFn)(int, int);
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    BinaryFn f;
+    f = add;
+    return (*f)(2, 3);     /* expect 5 */
+}
