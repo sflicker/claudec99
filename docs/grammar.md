@@ -8,7 +8,9 @@
 
 <function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
 
-<declaration_specifiers>    ::= [ <storage_class_specifier> ] <type_specifier>
+<declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
+<declaration_specifier>  ::= <storage_class_specifier>
+                            | <type_specifier>
 
 <storage_class_specifier>   ::= "extern" | "static"
 

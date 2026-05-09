@@ -1585,12 +1585,70 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
 }
 
 /*
+ * Stage 27: collect declaration specifiers as a list, validate semantics.
+ *
+ * <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
+ * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier>
+ *
+ * Errors: duplicate storage class, duplicate type specifier, missing type specifier.
+ */
+typedef struct {
+    StorageClass sc;
+    TypeKind base_kind;
+    Type *base_type;
+} DeclSpecResult;
+
+static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
+    DeclSpecResult r;
+    r.sc = SC_NONE;
+    r.base_kind = TYPE_INT;
+    r.base_type = NULL;
+    int has_sc = 0;
+    int has_type = 0;
+
+    while (1) {
+        if (parser->current.type == TOKEN_EXTERN ||
+            parser->current.type == TOKEN_STATIC) {
+            if (has_sc) {
+                fprintf(stderr,
+                        "error: multiple storage class specifiers are not allowed\n");
+                exit(1);
+            }
+            has_sc = 1;
+            r.sc = (parser->current.type == TOKEN_EXTERN) ? SC_EXTERN : SC_STATIC;
+            parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_CHAR ||
+                   parser->current.type == TOKEN_SHORT ||
+                   parser->current.type == TOKEN_INT ||
+                   parser->current.type == TOKEN_LONG) {
+            if (has_type) {
+                fprintf(stderr,
+                        "error: multiple type specifiers are not allowed\n");
+                exit(1);
+            }
+            has_type = 1;
+            r.base_type = parse_type_specifier(parser, &r.base_kind);
+        } else {
+            break;
+        }
+    }
+
+    if (!has_type) {
+        fprintf(stderr, "error: expected type specifier\n");
+        exit(1);
+    }
+
+    return r;
+}
+
+/*
  * <external_declaration> ::= <function_definition>
  *                           | <declaration>
  *
  * <function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
  * <declaration>            ::= <declaration_specifiers> <init_declarator_list> ";"
- * <declaration_specifiers> ::= [ <storage_class_specifier> ] <type_specifier>
+ * <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
+ * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier>
  * <storage_class_specifier>::= "extern" | "static"
  *
  * After parsing the common declaration_specifiers + declarator prefix:
@@ -1605,25 +1663,10 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
  * (no AST_BLOCK).
  */
 static ASTNode *parse_external_declaration(Parser *parser) {
-    /* Stage 23: optional storage class specifier. */
-    StorageClass sc = SC_NONE;
-    if (parser->current.type == TOKEN_EXTERN) {
-        sc = SC_EXTERN;
-        parser->current = lexer_next_token(parser->lexer);
-    } else if (parser->current.type == TOKEN_STATIC) {
-        sc = SC_STATIC;
-        parser->current = lexer_next_token(parser->lexer);
-    }
-    /* Reject combinations like "extern static" or "static extern". */
-    if (parser->current.type == TOKEN_EXTERN ||
-        parser->current.type == TOKEN_STATIC) {
-        fprintf(stderr,
-                "error: multiple storage class specifiers are not allowed\n");
-        exit(1);
-    }
-
-    TypeKind base_kind;
-    Type *base_type = parse_type_specifier(parser, &base_kind);
+    DeclSpecResult ds = parse_declaration_specifiers(parser);
+    StorageClass sc = ds.sc;
+    TypeKind base_kind = ds.base_kind;
+    Type *base_type = ds.base_type;
     ParsedDeclarator d = parse_declarator(parser);
 
     /* Stage 25-01/25-02: function-pointer file-scope declaration. */
