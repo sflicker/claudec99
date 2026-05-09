@@ -411,6 +411,43 @@ static void codegen_expression(CodeGen *cg, ASTNode *node);
 static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     ASTNode *base_node = node->children[0];
     ASTNode *index_node = node->children[1];
+    /* Stage 28-04: (*ptr_to_array)[idx] — base is a deref of a pointer to array.
+     * Load the pointer value (the array's base address) and use the array's
+     * element type for index scaling. */
+    if (base_node->type == AST_DEREF) {
+        ASTNode *inner = base_node->children[0];
+        if (inner->type != AST_VAR_REF) {
+            fprintf(stderr, "error: subscript base must be an identifier\n");
+            exit(1);
+        }
+        LocalVar *plv = codegen_find_var(cg, inner->value);
+        if (!plv || plv->kind != TYPE_POINTER || !plv->full_type ||
+            !plv->full_type->base || plv->full_type->base->kind != TYPE_ARRAY) {
+            fprintf(stderr, "error: subscript base must be a pointer to array\n");
+            exit(1);
+        }
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
+        Type *element = plv->full_type->base->base;
+        int elem_size = type_size(element);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            fprintf(stderr, "error: array subscript index must be an integer\n");
+            exit(1);
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        if (elem_size != 1) {
+            fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
     if (base_node->type != AST_VAR_REF) {
         fprintf(stderr, "error: subscript base must be an identifier\n");
         exit(1);

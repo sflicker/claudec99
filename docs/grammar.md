@@ -171,9 +171,10 @@
 #   - Scalar integer typedefs (char, short, int, long) are supported.
 #   - Pointer typedefs are supported (e.g. typedef int *IntPtr;).
 #   - Function pointer typedefs are supported (e.g. typedef int (*BinaryFn)(int, int);).
+#   - Array typedefs are supported (e.g. typedef int A[4];).
 #   - Chained typedefs (typedef of a typedef) are supported.
 #   - typedef declarations may not have initializers.
-#   - Array typedefs, non-pointer function typedefs, struct/enum typedefs are not yet supported.
+#   - Non-pointer function typedefs, struct/enum typedefs are not yet supported.
 #   - <typedef_name> is a semantic rule: an identifier is a typedef_name only
 #     if it is currently known as a typedef in the active scope.
 #

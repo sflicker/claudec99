@@ -683,7 +683,9 @@ static ASTNode *parse_postfix(Parser *parser) {
             continue;
         }
         if (parser->current.type == TOKEN_LBRACKET) {
-            if (expr->type != AST_VAR_REF) {
+            /* Stage 28-04: also allow a parenthesized deref as the subscript
+             * base, supporting (*ptr_to_array)[idx] patterns. */
+            if (expr->type != AST_VAR_REF && expr->type != AST_DEREF) {
                 fprintf(stderr, "error: subscript base must be an identifier\n");
                 exit(1);
             }
@@ -1341,16 +1343,27 @@ static ASTNode *parse_statement(Parser *parser) {
                 "error: storage class specifier not allowed in block scope\n");
         exit(1);
     }
-    /* Stage 28-01/28-02/28-03: typedef declaration at block scope. */
+    /* Stage 28-01/28-02/28-03/28-04: typedef declaration at block scope. */
     if (parser->current.type == TOKEN_TYPEDEF) {
         parser->current = lexer_next_token(parser->lexer);
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
-        if (d.is_function || d.is_array) {
+        if (d.is_function) {
             fprintf(stderr,
-                    "error: only scalar and pointer typedefs are supported\n");
+                    "error: only scalar, pointer, and array typedefs are supported\n");
             exit(1);
+        }
+        /* Stage 28-04: array typedef — register with the full array Type*. */
+        if (d.is_array) {
+            if (!d.has_size) {
+                fprintf(stderr, "error: array typedef requires explicit size\n");
+                exit(1);
+            }
+            parser_expect(parser, TOKEN_SEMICOLON);
+            Type *array_type = type_array(base_type, d.array_length);
+            parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
+            return ast_new(AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             fprintf(stderr,
@@ -1490,6 +1503,11 @@ static ASTNode *parse_statement(Parser *parser) {
         if (d.pointer_count > 0 || base_kind == TYPE_POINTER) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
+        } else if (base_kind == TYPE_ARRAY) {
+            /* Stage 28-04: variable declared with a typedef'd array type.
+             * full_type is already the array Type* returned by parse_type_specifier. */
+            decl->decl_type = TYPE_ARRAY;
+            decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
         }
@@ -1519,6 +1537,11 @@ static ASTNode *parse_statement(Parser *parser) {
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
+                next_decl->full_type = full_type2;
+            } else if (base_kind == TYPE_ARRAY) {
+                /* Stage 28-04: typedef'd array base — each declarator gets its
+                 * own TYPE_ARRAY slot with the shared array type. */
+                next_decl->decl_type = TYPE_ARRAY;
                 next_decl->full_type = full_type2;
             } else {
                 next_decl->decl_type = base_kind;
@@ -1779,12 +1802,23 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     Type *base_type = ds.base_type;
     ParsedDeclarator d = parse_declarator(parser);
 
-    /* Stage 28-01/28-02/28-03: typedef declaration at file scope. */
+    /* Stage 28-01/28-02/28-03/28-04: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
-        if (d.is_function || d.is_array) {
+        if (d.is_function) {
             fprintf(stderr,
-                    "error: only scalar and pointer typedefs are supported\n");
+                    "error: only scalar, pointer, and array typedefs are supported\n");
             exit(1);
+        }
+        /* Stage 28-04: array typedef — register with the full array Type*. */
+        if (d.is_array) {
+            if (!d.has_size) {
+                fprintf(stderr, "error: array typedef requires explicit size\n");
+                exit(1);
+            }
+            parser_expect(parser, TOKEN_SEMICOLON);
+            Type *array_type = type_array(base_type, d.array_length);
+            parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
+            return ast_new(AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             fprintf(stderr,
