@@ -60,7 +60,7 @@ static TypedefEntry *parser_find_typedef(Parser *parser, const char *name) {
 }
 
 static void parser_register_typedef(Parser *parser, const char *name,
-                                    TypeKind kind) {
+                                    TypeKind kind, Type *full_type) {
     for (int i = 0; i < parser->typedef_count; i++) {
         if (parser->typedefs[i].scope_depth == parser->scope_depth &&
             strcmp(parser->typedefs[i].name, name) == 0) {
@@ -78,6 +78,7 @@ static void parser_register_typedef(Parser *parser, const char *name,
     strncpy(e->name, name, sizeof(e->name) - 1);
     e->name[sizeof(e->name) - 1] = '\0';
     e->kind = kind;
+    e->full_type = full_type;
     e->scope_depth = parser->scope_depth;
 }
 
@@ -309,7 +310,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
     case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
     case TOKEN_IDENTIFIER: {
-        /* Stage 28-01: typedef name used as a type specifier. */
+        /* Stage 28-01/28-02: typedef name used as a type specifier. */
         TypedefEntry *entry = parser_find_typedef(parser, parser->current.value);
         if (!entry) {
             fprintf(stderr, "error: unknown type name '%s'\n",
@@ -317,11 +318,15 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             exit(1);
         }
         kind = entry->kind;
-        switch (kind) {
-        case TYPE_CHAR:  t = type_char();  break;
-        case TYPE_SHORT: t = type_short(); break;
-        case TYPE_LONG:  t = type_long();  break;
-        default:         t = type_int();   break;
+        if (entry->full_type) {
+            t = entry->full_type; /* pointer typedef: return the full chain */
+        } else {
+            switch (kind) {
+            case TYPE_CHAR:  t = type_char();  break;
+            case TYPE_SHORT: t = type_short(); break;
+            case TYPE_LONG:  t = type_long();  break;
+            default:         t = type_int();   break;
+            }
         }
         break;
     }
@@ -1336,15 +1341,15 @@ static ASTNode *parse_statement(Parser *parser) {
                 "error: storage class specifier not allowed in block scope\n");
         exit(1);
     }
-    /* Stage 28-01: typedef declaration at block scope. */
+    /* Stage 28-01/28-02: typedef declaration at block scope. */
     if (parser->current.type == TOKEN_TYPEDEF) {
         parser->current = lexer_next_token(parser->lexer);
         TypeKind base_kind;
-        parse_type_specifier(parser, &base_kind);
+        Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
-        if (d.is_func_pointer || d.is_function || d.pointer_count > 0 || d.is_array) {
+        if (d.is_func_pointer || d.is_function || d.is_array) {
             fprintf(stderr,
-                    "error: only simple scalar typedefs are supported\n");
+                    "error: only scalar and pointer typedefs are supported\n");
             exit(1);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
@@ -1353,7 +1358,13 @@ static ASTNode *parse_statement(Parser *parser) {
             exit(1);
         }
         parser_expect(parser, TOKEN_SEMICOLON);
-        parser_register_typedef(parser, d.name, base_kind);
+        Type *full_type = base_type;
+        for (int i = 0; i < d.pointer_count; i++)
+            full_type = type_pointer(full_type);
+        TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
+                                ? TYPE_POINTER : base_kind;
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER) ? full_type : NULL;
+        parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }
     /* labeled_statement: <identifier> ":" <statement> */
@@ -1471,7 +1482,7 @@ static ASTNode *parse_statement(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
         }
-        if (d.pointer_count > 0) {
+        if (d.pointer_count > 0 || base_kind == TYPE_POINTER) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
         } else {
@@ -1501,7 +1512,7 @@ static ASTNode *parse_statement(Parser *parser) {
                 full_type2 = type_pointer(full_type2);
             }
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
-            if (d2.pointer_count > 0) {
+            if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = full_type2;
             } else {
@@ -1763,11 +1774,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     Type *base_type = ds.base_type;
     ParsedDeclarator d = parse_declarator(parser);
 
-    /* Stage 28-01: typedef declaration at file scope. */
+    /* Stage 28-01/28-02: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
-        if (d.is_func_pointer || d.is_function || d.pointer_count > 0 || d.is_array) {
+        if (d.is_func_pointer || d.is_function || d.is_array) {
             fprintf(stderr,
-                    "error: only simple scalar typedefs are supported\n");
+                    "error: only scalar and pointer typedefs are supported\n");
             exit(1);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
@@ -1776,7 +1787,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             exit(1);
         }
         parser_expect(parser, TOKEN_SEMICOLON);
-        parser_register_typedef(parser, d.name, base_kind);
+        Type *full_type = base_type;
+        for (int i = 0; i < d.pointer_count; i++)
+            full_type = type_pointer(full_type);
+        TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
+                                ? TYPE_POINTER : base_kind;
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER) ? full_type : NULL;
+        parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }
 
@@ -1864,8 +1881,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             exit(1);
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
-                            d.pointer_count > 0 ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (d.pointer_count > 0) ? full_type : NULL;
+                            (d.pointer_count > 0 || base_kind == TYPE_POINTER) ? TYPE_POINTER : base_kind;
+        Type *reg_full_type = (obj_kind == TYPE_POINTER) ? full_type : NULL;
         parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
@@ -1882,7 +1899,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
         }
-        if (d.pointer_count > 0) {
+        if (d.pointer_count > 0 || base_kind == TYPE_POINTER) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
         } else {
@@ -1919,15 +1936,16 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                         "error: '%s' redeclared as a different kind of symbol\n", d2.name);
                 exit(1);
             }
-            TypeKind k2 = d2.pointer_count > 0 ? TYPE_POINTER : base_kind;
+            TypeKind k2 = (d2.pointer_count > 0 || base_kind == TYPE_POINTER)
+                          ? TYPE_POINTER : base_kind;
             Type *ft2 = base_type;
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);
-            Type *reg_ft2 = (d2.pointer_count > 0) ? ft2 : NULL;
+            Type *reg_ft2 = (k2 == TYPE_POINTER) ? ft2 : NULL;
             parser_register_global(parser, d2.name, k2, sc, reg_ft2);
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
-            if (d2.pointer_count > 0) {
+            if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = ft2;
             } else {

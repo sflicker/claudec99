@@ -168,10 +168,11 @@
 #     only allowed in function prototypes and function pointer signatures.
 #
 # Typedefs:
-#   - Only simple scalar integer typedefs are supported (char, short, int, long).
+#   - Scalar integer typedefs (char, short, int, long) are supported.
+#   - Pointer typedefs are supported (e.g. typedef int *IntPtr;).
+#   - Chained typedefs (typedef of a typedef) are supported.
 #   - typedef declarations may not have initializers.
-#   - Pointer typedefs, array typedefs, function typedefs, struct/enum typedefs
-#     are not yet supported.
+#   - Array typedefs, function typedefs, struct/enum typedefs are not yet supported.
 #   - <typedef_name> is a semantic rule: an identifier is a typedef_name only
 #     if it is currently known as a typedef in the active scope.
 #

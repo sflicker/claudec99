@@ -2,7 +2,7 @@
 
 ## Task
   - Extend typedef to support pointers
-
+  
 ## Tests
    ```C
         typedef int *IntPtr;
@@ -41,7 +41,7 @@
        
        int main() {
            int x = 9;
-           a = &9;
+           a = &x;
            b = a;
            return *b;        // expect 9
        }

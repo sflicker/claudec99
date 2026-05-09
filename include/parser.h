@@ -12,11 +12,12 @@
 #define PARSER_MAX_TYPEDEFS 64
 #define FUNC_MAX_PARAMS 16
 
-/* Stage 28-01: entry in the parser-level typedef table. */
+/* Stage 28-01/28-02: entry in the parser-level typedef table. */
 typedef struct {
-    char    name[256];
-    TypeKind kind;
-    int     scope_depth; /* 0 = file scope, 1+ = block scope */
+    char         name[256];
+    TypeKind     kind;       /* outermost kind; TYPE_POINTER for pointer typedefs */
+    struct Type *full_type;  /* NULL for scalar typedefs; pointer chain for pointer typedefs */
+    int          scope_depth; /* 0 = file scope, 1+ = block scope */
 } TypedefEntry;
 
 typedef struct {

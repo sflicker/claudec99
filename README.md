@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 28-01 (simple typedef names):
+Through Stage 28-02 (pointer typedefs):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -97,8 +97,9 @@ Through Stage 28-01 (simple typedef names):
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
   `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
-  unparenthesized forms. Simple typedef aliases for existing integer scalar types
-  (char, short, int, long) with block-scope tracking and shadowing support.
+  unparenthesized forms. Typedef aliases for integer scalar types and pointer types
+  (e.g., `typedef int *IntPtr;`, `typedef char *String;`) with full type chain support,
+  block-scope tracking, and shadowing.
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
@@ -192,10 +193,9 @@ Through Stage 28-01 (simple typedef names):
 
 ## Not yet supported
 
-Structs, unions, enums; floating-point and unsigned types; pointer/array/struct
-typedefs (only simple scalar typedefs are currently supported);
-block-scope storage class specifiers; variadics; preprocessor;
-pointer-to-function-pointer and function-returning-function-pointer;
+Structs, unions, enums; floating-point and unsigned types; array/struct
+typedefs (pointer typedefs are now supported); block-scope storage class specifiers;
+variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
 global string-literal array initialization are not yet supported.
 
