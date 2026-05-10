@@ -1193,6 +1193,30 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(stderr, "error: arrays are not assignable\n");
                 exit(1);
             }
+            /* Stage 33: struct-to-struct assignment — byte copy of sizeof(T) bytes. */
+            if (lv->kind == TYPE_STRUCT && lv->full_type) {
+                if (node->child_count < 1 || node->children[0]->type != AST_VAR_REF) {
+                    fprintf(stderr, "error: struct assignment requires a struct variable\n");
+                    exit(1);
+                }
+                LocalVar *src = codegen_find_var(cg, node->children[0]->value);
+                if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
+                    fprintf(stderr, "error: cannot assign non-struct to struct '%s'\n", lv->name);
+                    exit(1);
+                }
+                if (src->full_type != lv->full_type) {
+                    fprintf(stderr, "error: incompatible struct types in assignment to '%s'\n", lv->name);
+                    exit(1);
+                }
+                int sz = lv->full_type->size;
+                for (int b = 0; b < sz; b++) {
+                    fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
+                    fprintf(cg->output, "    mov [rbp - %d], al\n", lv->offset - b);
+                }
+                node->result_type = TYPE_STRUCT;
+                node->full_type = lv->full_type;
+                return;
+            }
             codegen_expression(cg, node->children[0]);
             /* Stage 25-02: when the LHS is a function pointer, verify
              * the RHS carries a compatible function pointer type. */
@@ -2212,6 +2236,26 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                     int src_is_long = (list->children[i]->result_type == TYPE_LONG ||
                                        list->children[i]->result_type == TYPE_POINTER);
                     emit_store_local(cg, foffset, fsize, src_is_long);
+                }
+            } else if (node->child_count > 0) {
+                /* Stage 33: struct T d = c — copy from another struct variable. */
+                ASTNode *init = node->children[0];
+                if (init->type != AST_VAR_REF) {
+                    fprintf(stderr, "error: struct initializer must be a struct variable\n");
+                    exit(1);
+                }
+                LocalVar *src = codegen_find_var(cg, init->value);
+                if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
+                    fprintf(stderr, "error: struct initializer must be a struct variable\n");
+                    exit(1);
+                }
+                if (src->full_type != node->full_type) {
+                    fprintf(stderr, "error: incompatible struct types in initializer for '%s'\n", node->value);
+                    exit(1);
+                }
+                for (int b = 0; b < size; b++) {
+                    fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
+                    fprintf(cg->output, "    mov [rbp - %d], al\n", offset - b);
                 }
             }
             return;

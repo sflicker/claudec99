@@ -219,6 +219,10 @@
 # Initializers:
 #   - File-scope object initializers must currently be integer or character
 #     literals. Full constant expressions are not yet supported.
+#   - Struct initializers support brace-enclosed lists (stage 32) and
+#     whole-struct copy from a variable of the same type (stage 33).
+#   - Struct assignment (`d = c`) copies all bytes when both operands share
+#     the same struct type; mismatched struct types are rejected (stage 33).
 #
 # Statements:
 #   - for-loop initializers are expressions only, not declarations.
