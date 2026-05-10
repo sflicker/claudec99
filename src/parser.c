@@ -48,6 +48,8 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->switch_depth = 0;
     parser->typedef_count = 0;
     parser->scope_depth = 0;
+    parser->enum_const_count = 0;
+    parser->enum_tag_count = 0;
 }
 
 /* Stage 28-01: typedef name table helpers. */
@@ -296,6 +298,138 @@ static Token parser_expect(Parser *parser, TokenType type) {
 }
 
 /*
+ * <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
+ *                    | "enum"             "{" <enumerator_list> "}"
+ *                    | "enum" <identifier>
+ *
+ * <enumerator_list> ::= <enumerator> { "," <enumerator> } [","]
+ * <enumerator>      ::= <identifier> [ "=" <integer_literal> | <char_literal> ]
+ *
+ * Always returns type_int(). Enum constants are registered in the parser's
+ * flat enum_consts table so parse_primary can fold them to AST_INT_LITERAL.
+ */
+static Type *parse_enum_specifier(Parser *parser) {
+    /* consume 'enum' */
+    parser->current = lexer_next_token(parser->lexer);
+
+    char tag[256] = "";
+    int has_tag = 0;
+
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        strncpy(tag, parser->current.value, sizeof(tag) - 1);
+        tag[sizeof(tag) - 1] = '\0';
+        has_tag = 1;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+
+    if (parser->current.type == TOKEN_LBRACE) {
+        parser->current = lexer_next_token(parser->lexer);
+
+        if (has_tag) {
+            /* Register or update the tag as defined. */
+            EnumTag *et = NULL;
+            for (int i = 0; i < parser->enum_tag_count; i++) {
+                if (strcmp(parser->enum_tags[i].tag, tag) == 0) {
+                    et = &parser->enum_tags[i];
+                    break;
+                }
+            }
+            if (!et) {
+                if (parser->enum_tag_count >= PARSER_MAX_ENUM_TAGS) {
+                    fprintf(stderr, "error: too many enum tags (max %d)\n",
+                            PARSER_MAX_ENUM_TAGS);
+                    exit(1);
+                }
+                et = &parser->enum_tags[parser->enum_tag_count++];
+                strncpy(et->tag, tag, sizeof(et->tag) - 1);
+                et->tag[sizeof(et->tag) - 1] = '\0';
+            }
+            et->is_defined = 1;
+        }
+
+        long next_val = 0;
+
+        while (parser->current.type != TOKEN_RBRACE) {
+            if (parser->current.type != TOKEN_IDENTIFIER) {
+                fprintf(stderr, "error: expected identifier in enumerator list, got '%s'\n",
+                        parser->current.value);
+                exit(1);
+            }
+            char ename[256];
+            strncpy(ename, parser->current.value, sizeof(ename) - 1);
+            ename[sizeof(ename) - 1] = '\0';
+            parser->current = lexer_next_token(parser->lexer);
+
+            for (int i = 0; i < parser->enum_const_count; i++) {
+                if (strcmp(parser->enum_consts[i].name, ename) == 0) {
+                    fprintf(stderr, "error: duplicate enumerator '%s'\n", ename);
+                    exit(1);
+                }
+            }
+
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_INT_LITERAL) {
+                    next_val = parser->current.long_value;
+                    parser->current = lexer_next_token(parser->lexer);
+                } else if (parser->current.type == TOKEN_CHAR_LITERAL) {
+                    next_val = (long)(unsigned char)parser->current.value[0];
+                    parser->current = lexer_next_token(parser->lexer);
+                } else {
+                    fprintf(stderr,
+                            "error: enumerator value must be an integer or character literal\n");
+                    exit(1);
+                }
+                /* Reject expressions: only a bare literal is accepted. */
+                if (parser->current.type != TOKEN_COMMA &&
+                    parser->current.type != TOKEN_RBRACE) {
+                    fprintf(stderr,
+                            "error: enumerator value must be an integer or character literal\n");
+                    exit(1);
+                }
+            }
+
+            if (parser->enum_const_count >= PARSER_MAX_ENUM_CONSTS) {
+                fprintf(stderr, "error: too many enum constants (max %d)\n",
+                        PARSER_MAX_ENUM_CONSTS);
+                exit(1);
+            }
+            EnumConst *ec = &parser->enum_consts[parser->enum_const_count++];
+            strncpy(ec->name, ename, sizeof(ec->name) - 1);
+            ec->name[sizeof(ec->name) - 1] = '\0';
+            ec->value = next_val++;
+
+            if (parser->current.type == TOKEN_COMMA) {
+                parser->current = lexer_next_token(parser->lexer);
+                /* trailing comma allowed — if next is '}' the while exits */
+            }
+        }
+        parser_expect(parser, TOKEN_RBRACE);
+
+    } else {
+        /* Enum reference without body: "enum Tag" */
+        if (!has_tag) {
+            fprintf(stderr, "error: expected identifier or '{' after 'enum'\n");
+            exit(1);
+        }
+        int found = 0;
+        for (int i = 0; i < parser->enum_tag_count; i++) {
+            if (strcmp(parser->enum_tags[i].tag, tag) == 0 &&
+                parser->enum_tags[i].is_defined) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            fprintf(stderr, "error: 'enum %s' is not defined\n", tag);
+            exit(1);
+        }
+    }
+
+    return type_int();
+}
+
+/*
  * <type_specifier> ::= "char" | "short" | "int" | "long"
  *
  * Parses one integer-type keyword, advances the token, and returns the
@@ -329,6 +463,12 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             }
         }
         break;
+    }
+    case TOKEN_ENUM: {
+        /* parse_enum_specifier advances past all enum tokens itself. */
+        Type *et = parse_enum_specifier(parser);
+        if (out_kind) *out_kind = TYPE_INT;
+        return et;
     }
     default:
         fprintf(stderr, "error: expected integer type, got '%s'\n",
@@ -585,6 +725,18 @@ static ASTNode *parse_primary(Parser *parser) {
         return node;
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
+        /* Stage 29: fold enum constants to integer literals before any other
+         * identifier resolution. */
+        for (int i = 0; i < parser->enum_const_count; i++) {
+            if (strcmp(parser->enum_consts[i].name, parser->current.value) == 0) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%ld", parser->enum_consts[i].value);
+                parser->current = lexer_next_token(parser->lexer);
+                ASTNode *node = ast_new(AST_INT_LITERAL, buf);
+                node->decl_type = TYPE_INT;
+                return node;
+            }
+        }
         Token token = parser_expect(parser, TOKEN_IDENTIFIER);
         if (parser->current.type == TOKEN_LPAREN) {
             parser_expect(parser, TOKEN_LPAREN);
@@ -1414,10 +1566,18 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG ||
+        parser->current.type == TOKEN_ENUM ||
         (parser->current.type == TOKEN_IDENTIFIER &&
          parser_find_typedef(parser, parser->current.value))) {
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
+
+        /* Stage 29: standalone enum declaration with no variable (e.g. "enum E{};"). */
+        if (parser->current.type == TOKEN_SEMICOLON) {
+            parser_expect(parser, TOKEN_SEMICOLON);
+            return ast_new(AST_TYPEDEF_DECL, "");
+        }
+
         ParsedDeclarator d = parse_declarator(parser);
 
         if (d.is_func_pointer) {
@@ -1751,6 +1911,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
                    parser->current.type == TOKEN_LONG ||
+                   parser->current.type == TOKEN_ENUM ||
                    (!has_type &&
                     parser->current.type == TOKEN_IDENTIFIER &&
                     parser_find_typedef(parser, parser->current.value))) {
@@ -1800,6 +1961,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     StorageClass sc = ds.sc;
     TypeKind base_kind = ds.base_kind;
     Type *base_type = ds.base_type;
+
+    /* Stage 29: standalone type declaration with no declarator (e.g. "enum E{};"). */
+    if (parser->current.type == TOKEN_SEMICOLON) {
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return ast_new(AST_TYPEDEF_DECL, "");
+    }
+
     ParsedDeclarator d = parse_declarator(parser);
 
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at file scope. */

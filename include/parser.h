@@ -10,7 +10,19 @@
 #define PARSER_MAX_FUNCTIONS 64
 #define PARSER_MAX_GLOBALS 64
 #define PARSER_MAX_TYPEDEFS 64
+#define PARSER_MAX_ENUM_CONSTS 256
+#define PARSER_MAX_ENUM_TAGS 32
 #define FUNC_MAX_PARAMS 16
+
+typedef struct {
+    char name[256];
+    long value;
+} EnumConst;
+
+typedef struct {
+    char tag[256];
+    int  is_defined;
+} EnumTag;
 
 /* Stage 28-01/28-02: entry in the parser-level typedef table. */
 typedef struct {
@@ -57,6 +69,11 @@ typedef struct {
     TypedefEntry typedefs[PARSER_MAX_TYPEDEFS];
     int typedef_count;
     int scope_depth; /* 0 = file scope, incremented by each parse_block */
+    /* Stage 29: enum constant and tag tables (flat, global scope). */
+    EnumConst enum_consts[PARSER_MAX_ENUM_CONSTS];
+    int enum_const_count;
+    EnumTag enum_tags[PARSER_MAX_ENUM_TAGS];
+    int enum_tag_count;
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);

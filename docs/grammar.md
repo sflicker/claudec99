@@ -47,13 +47,21 @@
                        | <direct_declarator> "[" [ <integer_literal> ] "]"
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
-<type_specifier> ::= <integer_type> | <typedef_name>
+<type_specifier> ::= <integer_type> | <typedef_name> | <enum_specifier>
 
 <typedef_name> ::= <identifier>
 
 <type_name> ::= <type_specifier> { "*" }
 
 <integer_type> ::= "char" | "short" | "int" | "long"
+
+<enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
+                   | "enum"             "{" <enumerator_list> "}"
+                   | "enum" <identifier>
+
+<enumerator_list> ::= <enumerator> { "," <enumerator> } [","]
+
+<enumerator> ::= <identifier> [ "=" <constant_expression> ]
 
 <return_statement> ::= "return" <expression> ";"
 
@@ -174,9 +182,17 @@
 #   - Array typedefs are supported (e.g. typedef int A[4];).
 #   - Chained typedefs (typedef of a typedef) are supported.
 #   - typedef declarations may not have initializers.
-#   - Non-pointer function typedefs, struct/enum typedefs are not yet supported.
+#   - Non-pointer function typedefs, struct typedefs, and typedef enum are not yet supported.
 #   - <typedef_name> is a semantic rule: an identifier is a typedef_name only
 #     if it is currently known as a typedef in the active scope.
+#
+# Enums:
+#   - Enum constants have flat (non-scoped) visibility regardless of where the
+#     enum is declared.
+#   - Explicit enumerator values must be integer or character literals only.
+#     Full constant expressions (e.g. 1+2) are not yet supported.
+#   - typedef enum is not yet supported.
+#   - Forward enum declarations without a body are not supported.
 #
 # Arrays:
 #   - Omitted array size is only supported for block-scope char arrays

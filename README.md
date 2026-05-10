@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 28-04 (array typedefs):
+Through Stage 29 (enum support):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -102,6 +102,8 @@ Through Stage 28-04 (array typedefs):
   and function pointer types (e.g., `typedef int (*BinaryFn)(int, int);`) with full type chain support,
   block-scope tracking, and shadowing. The typedef name can be used as a type specifier in variable
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
+  Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
+  enum constants are available as compile-time integer values throughout the translation unit.
 - **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
   conversions, and explicit casts. Integer literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
