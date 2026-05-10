@@ -13,7 +13,7 @@ add `struct`
                        | <enum_specifier>
                        | <struct_specifier>
                        
-    <struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list "}"
+    <struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list> "}"
                           | "struct" <identifier>
                           
     
@@ -55,7 +55,7 @@ Base support
     struct Mixed {
         char c;
         int i;
-    }
+    };
     
     int main() {
         return sizeof(struct Mixed);   // the expected could vary depending on the padding used in the implementation.
@@ -72,4 +72,5 @@ Correct expected in above test depending on if padding is used or not for the `c
     int main() {
         struct Point p;
         return sizeof(p);     // expect 8
+    }
 ```
