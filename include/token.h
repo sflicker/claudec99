@@ -74,6 +74,8 @@ typedef enum {
     TOKEN_CARET,
     TOKEN_PIPE,
     TOKEN_QUESTION,
+    TOKEN_DOT,
+    TOKEN_ARROW,
     TOKEN_UNKNOWN
 } TokenType;
 

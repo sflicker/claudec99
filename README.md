@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 30 (struct support):
+Through Stage 31 (struct member access):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -131,8 +131,8 @@ Through Stage 30 (struct support):
   of local `char` arrays from a string literal (with explicit or
   inferred size), file-scope (global) uninitialized array declarations.
 - **Structs**: named struct definitions with natural-alignment field layout,
-  local and global struct variables, sizeof operator on struct types and struct instances.
-  Member access via "." and "->" is not yet supported.
+  local and global struct variables, sizeof operator on struct types and struct instances,
+  member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -201,7 +201,7 @@ Through Stage 30 (struct support):
 
 ## Not yet supported
 
-Struct member access (`.` and `->`), anonymous structs, bit-fields, struct assignment/parameters/return values;
+Anonymous structs, bit-fields, struct assignment/parameters/return values;
 unions; floating-point and unsigned types; array/struct
 typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
@@ -231,9 +231,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 30 all
-tests pass (457 valid, 141 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 739 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 31 all
+tests pass (465 valid, 147 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 745 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

@@ -359,6 +359,10 @@ static Type *parse_struct_specifier(Parser *parser) {
         int current_offset = 0;
         int max_align = 1;
 
+        /* Stage 31: collect field descriptors while parsing. */
+        StructField tmp_fields[64];
+        int n_fields = 0;
+
         while (parser->current.type != TOKEN_RBRACE) {
             /* Parse field type specifier. */
             Type *field_base = parse_type_specifier(parser, NULL);
@@ -382,6 +386,19 @@ static Type *parse_struct_specifier(Parser *parser) {
                 if (falign > max_align) max_align = falign;
                 /* Advance offset to satisfy field alignment. */
                 current_offset = (current_offset + falign - 1) & ~(falign - 1);
+
+                if (n_fields < 64) {
+                    strncpy(tmp_fields[n_fields].name, d.name,
+                            sizeof(tmp_fields[n_fields].name) - 1);
+                    tmp_fields[n_fields].name[sizeof(tmp_fields[n_fields].name) - 1] = '\0';
+                    tmp_fields[n_fields].offset    = current_offset;
+                    tmp_fields[n_fields].kind      = field_type->kind;
+                    tmp_fields[n_fields].full_type = (field_type->kind == TYPE_POINTER ||
+                                                     field_type->kind == TYPE_ARRAY   ||
+                                                     field_type->kind == TYPE_STRUCT)
+                                                     ? field_type : NULL;
+                    n_fields++;
+                }
                 current_offset += fsz;
 
             } while (parser->current.type == TOKEN_COMMA);
@@ -395,6 +412,13 @@ static Type *parse_struct_specifier(Parser *parser) {
         if (total_size == 0) total_size = 1; /* empty struct: 1 byte by convention */
 
         st->type = type_struct(total_size, max_align);
+
+        /* Stage 31: copy collected fields into the Type. */
+        if (n_fields > 0) {
+            st->type->fields = calloc(n_fields, sizeof(StructField));
+            memcpy(st->type->fields, tmp_fields, n_fields * sizeof(StructField));
+            st->type->field_count = n_fields;
+        }
 
     } else {
         /* Reference without body: "struct Tag" — tag must already be defined. */
@@ -932,7 +956,9 @@ static ASTNode *parse_postfix(Parser *parser) {
     while (parser->current.type == TOKEN_INCREMENT ||
            parser->current.type == TOKEN_DECREMENT ||
            parser->current.type == TOKEN_LBRACKET ||
-           parser->current.type == TOKEN_LPAREN) {
+           parser->current.type == TOKEN_LPAREN    ||
+           parser->current.type == TOKEN_DOT       ||
+           parser->current.type == TOKEN_ARROW) {
         /* Stage 25-03: call suffix — handles (*fp)(args) where the callee
          * expression is already parsed (e.g. as a grouped dereference). */
         if (parser->current.type == TOKEN_LPAREN) {
@@ -963,6 +989,22 @@ static ASTNode *parse_postfix(Parser *parser) {
             ASTNode *node = ast_new(AST_ARRAY_INDEX, NULL);
             ast_add_child(node, expr);
             ast_add_child(node, index);
+            expr = node;
+            continue;
+        }
+        if (parser->current.type == TOKEN_DOT) {
+            parser->current = lexer_next_token(parser->lexer);
+            Token field = parser_expect(parser, TOKEN_IDENTIFIER);
+            ASTNode *node = ast_new(AST_MEMBER_ACCESS, field.value);
+            ast_add_child(node, expr);
+            expr = node;
+            continue;
+        }
+        if (parser->current.type == TOKEN_ARROW) {
+            parser->current = lexer_next_token(parser->lexer);
+            Token field = parser_expect(parser, TOKEN_IDENTIFIER);
+            ASTNode *node = ast_new(AST_ARROW_ACCESS, field.value);
+            ast_add_child(node, expr);
             expr = node;
             continue;
         }
@@ -1403,7 +1445,9 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
     ASTNode *lhs = parse_conditional(parser);
     if (parser->current.type == TOKEN_ASSIGN) {
         if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF &&
-            lhs->type != AST_ARRAY_INDEX) {
+            lhs->type != AST_ARRAY_INDEX &&
+            lhs->type != AST_MEMBER_ACCESS &&
+            lhs->type != AST_ARROW_ACCESS) {
             fprintf(stderr, "error: assignment target must be an lvalue\n");
             exit(1);
         }

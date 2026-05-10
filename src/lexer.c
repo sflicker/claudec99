@@ -68,14 +68,16 @@ Token lexer_next_token(Lexer *lexer) {
     if (c == ':') { token.type = TOKEN_COLON;     token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '?') { token.type = TOKEN_QUESTION;  token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == ',') { token.type = TOKEN_COMMA;     token.value[0] = c; lexer->pos++; return finalize(token); }
+    if (c == '.') { token.type = TOKEN_DOT;       token.value[0] = c; lexer->pos++; return finalize(token); }
     if (c == '+') {
         if (lexer->source[lexer->pos + 1] == '+') { token.type = TOKEN_INCREMENT; strcpy(token.value, "++"); lexer->pos += 2; return finalize(token); }
         if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PLUS_ASSIGN; strcpy(token.value, "+="); lexer->pos += 2; return finalize(token); }
         token.type = TOKEN_PLUS; token.value[0] = c; lexer->pos++; return finalize(token);
     }
     if (c == '-') {
-        if (lexer->source[lexer->pos + 1] == '-') { token.type = TOKEN_DECREMENT; strcpy(token.value, "--"); lexer->pos += 2; return finalize(token); }
+        if (lexer->source[lexer->pos + 1] == '-') { token.type = TOKEN_DECREMENT;    strcpy(token.value, "--"); lexer->pos += 2; return finalize(token); }
         if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; strcpy(token.value, "-="); lexer->pos += 2; return finalize(token); }
+        if (lexer->source[lexer->pos + 1] == '>') { token.type = TOKEN_ARROW;        strcpy(token.value, "->"); lexer->pos += 2; return finalize(token); }
         token.type = TOKEN_MINUS; token.value[0] = c; lexer->pos++; return finalize(token);
     }
     if (c == '*') {
@@ -456,6 +458,8 @@ const char *token_display_name(TokenType type) {
         case TOKEN_CARET:            return "'^'";
         case TOKEN_PIPE:             return "'|'";
         case TOKEN_QUESTION:         return "'?'";
+        case TOKEN_DOT:              return "'.'";
+        case TOKEN_ARROW:            return "'->'";
         case TOKEN_UNKNOWN:          return "<unknown>";
     }
     return "<unknown>";

@@ -15,9 +15,9 @@ Add These if not already
                     { "[" <expression> "]"                     
                       | "++" 
                       | "--"
-                      | "(" [ <argument_expression_list> ] ")" }    
+                      | "(" [ <argument_expression_list> ] ")"     
                       | "." <identifier>
-                      | "->" <identifier>
+                      | "->" <identifier> }
 ```
 ## Tests
 **Core Tests**
@@ -39,7 +39,7 @@ Add These if not already
     struct Point {
         int x;
         int y;
-    }
+    };
     
     int main() {
         struct Point p;
@@ -72,6 +72,7 @@ Add These if not already
     main() {
         int x;
         return x.y;    // INVALID
+    }
 ```
 
 ```C
@@ -91,7 +92,7 @@ Add These if not already
     };
     
     int main() {
-        struct p;
+        struct Point p;
         return p->x;     // INVALID
     }
 ```

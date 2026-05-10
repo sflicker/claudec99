@@ -26,9 +26,17 @@ typedef enum {
      * variable; always wrapped in at least one TYPE_POINTER. */
     TYPE_FUNCTION,
     /* Stage 30: named struct type. size and alignment are computed from the
-     * field layout at definition time. Member access is not yet supported. */
+     * field layout at definition time. */
     TYPE_STRUCT
 } TypeKind;
+
+/* Stage 31: field descriptor stored inside a TYPE_STRUCT Type node. */
+typedef struct {
+    char name[256];
+    int  offset;            /* byte offset of this field within the struct */
+    TypeKind kind;
+    struct Type *full_type; /* non-NULL for pointer/array/struct fields */
+} StructField;
 
 typedef struct Type {
     TypeKind kind;
@@ -43,6 +51,10 @@ typedef struct Type {
     /* Stage 25-01: parameter count and types for TYPE_FUNCTION nodes. */
     int param_count;
     struct Type *params[FUNC_TYPE_MAX_PARAMS];
+    /* Stage 31: field table for TYPE_STRUCT nodes. NULL for other kinds.
+     * Points to a calloc'd array of field_count StructField entries. */
+    StructField *fields;
+    int field_count;
 } Type;
 
 Type *type_char(void);

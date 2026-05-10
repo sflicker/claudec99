@@ -511,6 +511,90 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
 }
 
 /*
+ * Stage 31: look up a named field in a TYPE_STRUCT Type.
+ * Returns a pointer into the Type's field table, or NULL if not found.
+ */
+static StructField *find_struct_field(Type *st, const char *name) {
+    for (int i = 0; i < st->field_count; i++) {
+        if (strcmp(st->fields[i].name, name) == 0)
+            return &st->fields[i];
+    }
+    return NULL;
+}
+
+/*
+ * Stage 31: emit the address of a struct field accessed via "." and
+ * leave it in rax.  The base must be an AST_VAR_REF naming a local or
+ * global struct variable.  Returns the StructField descriptor so the
+ * caller knows the field's size and type.
+ *
+ * For a local struct at rbp-relative offset O, field at byte offset F:
+ *   field address = rbp - O + F  =  rbp - (O - F)
+ */
+static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
+    ASTNode *base = node->children[0];
+    const char *field_name = node->value;
+
+    if (base->type != AST_VAR_REF) {
+        fprintf(stderr, "error: '.' base must be an identifier\n");
+        exit(1);
+    }
+    LocalVar *lv = codegen_find_var(cg, base->value);
+    if (!lv) {
+        fprintf(stderr, "error: undeclared variable '%s'\n", base->value);
+        exit(1);
+    }
+    if (lv->kind != TYPE_STRUCT || !lv->full_type) {
+        fprintf(stderr, "error: '.' applied to non-struct '%s'\n", base->value);
+        exit(1);
+    }
+    StructField *f = find_struct_field(lv->full_type, field_name);
+    if (!f) {
+        fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+        exit(1);
+    }
+    fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset - f->offset);
+    return f;
+}
+
+/*
+ * Stage 31: emit the address of a struct field accessed via "->" and
+ * leave it in rax.  The base must be an AST_VAR_REF naming a local
+ * pointer-to-struct variable.  Returns the StructField descriptor.
+ */
+static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
+    ASTNode *base = node->children[0];
+    const char *field_name = node->value;
+
+    if (base->type != AST_VAR_REF) {
+        fprintf(stderr, "error: '->' base must be an identifier\n");
+        exit(1);
+    }
+    LocalVar *lv = codegen_find_var(cg, base->value);
+    if (!lv) {
+        fprintf(stderr, "error: undeclared variable '%s'\n", base->value);
+        exit(1);
+    }
+    if (lv->kind != TYPE_POINTER || !lv->full_type ||
+        !lv->full_type->base || lv->full_type->base->kind != TYPE_STRUCT) {
+        fprintf(stderr,
+                "error: '->' applied to non-pointer-to-struct '%s'\n",
+                base->value);
+        exit(1);
+    }
+    Type *st = lv->full_type->base;
+    StructField *f = find_struct_field(st, field_name);
+    if (!f) {
+        fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+        exit(1);
+    }
+    fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+    if (f->offset != 0)
+        fprintf(cg->output, "    add rax, %d\n", f->offset);
+    return f;
+}
+
+/*
  * Conservative upper bound on stack bytes needed for locals: 8 bytes
  * per scalar/pointer declaration, and the array's actual byte count
  * plus 7 bytes of alignment slack per array declaration. The
@@ -680,6 +764,29 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
     }
     case AST_COMMA_EXPR:
         return sizeof_type_of_expr(cg, node->children[1]);
+    case AST_MEMBER_ACCESS: {
+        ASTNode *base = node->children[0];
+        if (base->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base->value);
+            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+                StructField *f = find_struct_field(lv->full_type, node->value);
+                if (f) return f->kind;
+            }
+        }
+        return TYPE_INT;
+    }
+    case AST_ARROW_ACCESS: {
+        ASTNode *base = node->children[0];
+        if (base->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base->value);
+            if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
+                lv->full_type->base && lv->full_type->base->kind == TYPE_STRUCT) {
+                StructField *f = find_struct_field(lv->full_type->base, node->value);
+                if (f) return f->kind;
+            }
+        }
+        return TYPE_INT;
+    }
     default:
         return TYPE_INT;
     }
@@ -812,6 +919,37 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_COMMA_EXPR:
         t = expr_result_type(cg, node->children[1]);
         break;
+    case AST_MEMBER_ACCESS: {
+        ASTNode *base_node = node->children[0];
+        if (base_node->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base_node->value);
+            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+                StructField *f = find_struct_field(lv->full_type, node->value);
+                if (f) {
+                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                        : promote_kind(f->kind);
+                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                }
+            }
+        }
+        break;
+    }
+    case AST_ARROW_ACCESS: {
+        ASTNode *base_node = node->children[0];
+        if (base_node->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, base_node->value);
+            if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
+                lv->full_type->base && lv->full_type->base->kind == TYPE_STRUCT) {
+                StructField *f = find_struct_field(lv->full_type->base, node->value);
+                if (f) {
+                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                        : promote_kind(f->kind);
+                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                }
+            }
+        }
+        break;
+    }
     default:
         t = TYPE_INT;
         break;
@@ -950,6 +1088,66 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             if (element->kind == TYPE_POINTER) {
                 node->full_type = element;
             }
+            return;
+        }
+        /* Stage 31: struct member assignment via "." */
+        if (node->child_count == 2 &&
+            node->children[0]->type == AST_MEMBER_ACCESS) {
+            StructField *f = emit_member_addr(cg, node->children[0]);
+            int sz = f->full_type ? type_size(f->full_type) : 0;
+            if (sz == 0) {
+                switch (f->kind) {
+                case TYPE_CHAR:  sz = 1; break;
+                case TYPE_SHORT: sz = 2; break;
+                case TYPE_LONG:
+                case TYPE_POINTER: sz = 8; break;
+                default: sz = 4; break;
+                }
+            }
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    pop rbx\n");
+            cg->push_depth--;
+            switch (sz) {
+            case 1: fprintf(cg->output, "    mov [rbx], al\n"); break;
+            case 2: fprintf(cg->output, "    mov [rbx], ax\n"); break;
+            case 8: fprintf(cg->output, "    mov [rbx], rax\n"); break;
+            case 4:
+            default: fprintf(cg->output, "    mov [rbx], eax\n"); break;
+            }
+            node->result_type = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                                : promote_kind(f->kind);
+            return;
+        }
+        /* Stage 31: struct member assignment via "->" */
+        if (node->child_count == 2 &&
+            node->children[0]->type == AST_ARROW_ACCESS) {
+            StructField *f = emit_arrow_addr(cg, node->children[0]);
+            int sz = f->full_type ? type_size(f->full_type) : 0;
+            if (sz == 0) {
+                switch (f->kind) {
+                case TYPE_CHAR:  sz = 1; break;
+                case TYPE_SHORT: sz = 2; break;
+                case TYPE_LONG:
+                case TYPE_POINTER: sz = 8; break;
+                default: sz = 4; break;
+                }
+            }
+            fprintf(cg->output, "    push rax\n");
+            cg->push_depth++;
+            codegen_expression(cg, node->children[1]);
+            fprintf(cg->output, "    pop rbx\n");
+            cg->push_depth--;
+            switch (sz) {
+            case 1: fprintf(cg->output, "    mov [rbx], al\n"); break;
+            case 2: fprintf(cg->output, "    mov [rbx], ax\n"); break;
+            case 8: fprintf(cg->output, "    mov [rbx], rax\n"); break;
+            case 4:
+            default: fprintf(cg->output, "    mov [rbx], eax\n"); break;
+            }
+            node->result_type = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                                : promote_kind(f->kind);
             return;
         }
         /* Stage 12-03: deref-LHS assignment uses a different shape —
@@ -1141,6 +1339,55 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (element->kind == TYPE_POINTER) {
             node->full_type = element;
         }
+        return;
+    }
+    if (node->type == AST_MEMBER_ACCESS) {
+        StructField *f = emit_member_addr(cg, node);
+        int sz = type_size(f->full_type ? f->full_type : NULL);
+        if (sz == 0) {
+            /* scalar field — derive size from kind */
+            switch (f->kind) {
+            case TYPE_CHAR:  sz = 1; break;
+            case TYPE_SHORT: sz = 2; break;
+            case TYPE_LONG:
+            case TYPE_POINTER: sz = 8; break;
+            default: sz = 4; break;
+            }
+        }
+        switch (sz) {
+        case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
+        case 2: fprintf(cg->output, "    movsx eax, word [rax]\n"); break;
+        case 8: fprintf(cg->output, "    mov rax, [rax]\n"); break;
+        case 4:
+        default: fprintf(cg->output, "    mov eax, [rax]\n"); break;
+        }
+        node->result_type = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+        return;
+    }
+    if (node->type == AST_ARROW_ACCESS) {
+        StructField *f = emit_arrow_addr(cg, node);
+        int sz = f->full_type ? type_size(f->full_type) : 0;
+        if (sz == 0) {
+            switch (f->kind) {
+            case TYPE_CHAR:  sz = 1; break;
+            case TYPE_SHORT: sz = 2; break;
+            case TYPE_LONG:
+            case TYPE_POINTER: sz = 8; break;
+            default: sz = 4; break;
+            }
+        }
+        switch (sz) {
+        case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
+        case 2: fprintf(cg->output, "    movsx eax, word [rax]\n"); break;
+        case 8: fprintf(cg->output, "    mov rax, [rax]\n"); break;
+        case 4:
+        default: fprintf(cg->output, "    mov eax, [rax]\n"); break;
+        }
+        node->result_type = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
         return;
     }
     if (node->type == AST_SIZEOF_TYPE) {

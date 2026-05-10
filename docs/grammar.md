@@ -143,7 +143,9 @@
                     { "[" <expression> "]"                     
                       | "++" 
                       | "--"
-                      | "(" [ <argument_expression_list> ] ")" }                    
+                      | "(" [ <argument_expression_list> ] ")"
+                      | "." <identifier>
+                      | "->" <identifier> }                    
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
