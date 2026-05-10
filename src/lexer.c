@@ -369,6 +369,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_TYPEDEF;
         } else if (strcmp(token.value, "enum") == 0) {
             token.type = TOKEN_ENUM;
+        } else if (strcmp(token.value, "struct") == 0) {
+            token.type = TOKEN_STRUCT;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -406,6 +408,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_STATIC:           return "'static'";
         case TOKEN_TYPEDEF:          return "'typedef'";
         case TOKEN_ENUM:             return "'enum'";
+        case TOKEN_STRUCT:           return "'struct'";
         case TOKEN_IDENTIFIER:       return "identifier";
         case TOKEN_INT_LITERAL:      return "integer literal";
         case TOKEN_STRING_LITERAL:   return "string literal";

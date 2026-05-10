@@ -47,7 +47,7 @@
                        | <direct_declarator> "[" [ <integer_literal> ] "]"
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
-<type_specifier> ::= <integer_type> | <typedef_name> | <enum_specifier>
+<type_specifier> ::= <integer_type> | <typedef_name> | <enum_specifier> | <struct_specifier>
 
 <typedef_name> ::= <identifier>
 
@@ -62,6 +62,15 @@
 <enumerator_list> ::= <enumerator> { "," <enumerator> } [","]
 
 <enumerator> ::= <identifier> [ "=" <constant_expression> ]
+
+<struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list> "}"
+                     | "struct" <identifier>
+
+<struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
+
+<struct_declaration> ::= <type_specifier> <struct_declarator_list> ";"
+
+<struct_declarator_list> ::= <declarator> { "," <declarator> }
 
 <return_statement> ::= "return" <expression> ";"
 

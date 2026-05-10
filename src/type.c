@@ -81,6 +81,22 @@ Type *type_function(Type *return_type, int param_count, Type **param_types) {
     return t;
 }
 
+/* Stage 30: heap-allocate a TYPE_STRUCT node with precomputed size and
+ * alignment. Fields are not stored in the Type — only the layout totals
+ * needed for sizeof and stack allocation. */
+Type *type_struct(int size, int alignment) {
+    Type *t = calloc(1, sizeof(Type));
+    if (!t) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    t->kind = TYPE_STRUCT;
+    t->size = size;
+    t->alignment = alignment;
+    t->is_signed = 0;
+    return t;
+}
+
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
     case TYPE_CHAR:     return "char";
@@ -90,6 +106,7 @@ const char *type_kind_name(TypeKind kind) {
     case TYPE_POINTER:  return "pointer";
     case TYPE_ARRAY:    return "array";
     case TYPE_FUNCTION: return "function";
+    case TYPE_STRUCT:   return "struct";
     }
     return "unknown";
 }
@@ -113,6 +130,7 @@ int type_is_integer(Type *t) {
     case TYPE_POINTER:
     case TYPE_ARRAY:
     case TYPE_FUNCTION:
+    case TYPE_STRUCT:
         return 0;
     }
     return 0;

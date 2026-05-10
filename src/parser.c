@@ -50,6 +50,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->scope_depth = 0;
     parser->enum_const_count = 0;
     parser->enum_tag_count = 0;
+    parser->struct_tag_count = 0;
 }
 
 /* Stage 28-01: typedef name table helpers. */
@@ -297,6 +298,115 @@ static Token parser_expect(Parser *parser, TokenType type) {
     return token;
 }
 
+/* Forward declarations needed by parse_struct_specifier. */
+static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind);
+static ParsedDeclarator parse_declarator(Parser *parser);
+
+/* Stage 30: struct tag table helpers. */
+static StructTag *parser_find_struct_tag(Parser *parser, const char *tag) {
+    for (int i = 0; i < parser->struct_tag_count; i++) {
+        if (strcmp(parser->struct_tags[i].tag, tag) == 0)
+            return &parser->struct_tags[i];
+    }
+    return NULL;
+}
+
+static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
+    StructTag *st = parser_find_struct_tag(parser, tag);
+    if (st) return st;
+    if (parser->struct_tag_count >= PARSER_MAX_STRUCT_TAGS) {
+        fprintf(stderr, "error: too many struct tags (max %d)\n",
+                PARSER_MAX_STRUCT_TAGS);
+        exit(1);
+    }
+    st = &parser->struct_tags[parser->struct_tag_count++];
+    strncpy(st->tag, tag, sizeof(st->tag) - 1);
+    st->tag[sizeof(st->tag) - 1] = '\0';
+    st->type = NULL;
+    return st;
+}
+
+/*
+ * <struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list> "}"
+ *                      | "struct" <identifier>
+ *
+ * <struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
+ * <struct_declaration>      ::= <type_specifier> <struct_declarator_list> ";"
+ * <struct_declarator_list>  ::= <declarator> { "," <declarator> }
+ *
+ * Layout uses natural alignment: each field is aligned to its type's natural
+ * alignment; the struct's total size is rounded up to the struct's alignment
+ * (the maximum field alignment). Returns the TYPE_STRUCT Type*.
+ */
+static Type *parse_struct_specifier(Parser *parser) {
+    /* consume 'struct' */
+    parser->current = lexer_next_token(parser->lexer);
+
+    if (parser->current.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "error: expected struct tag name after 'struct'\n");
+        exit(1);
+    }
+    char tag[256];
+    strncpy(tag, parser->current.value, sizeof(tag) - 1);
+    tag[sizeof(tag) - 1] = '\0';
+    parser->current = lexer_next_token(parser->lexer);
+
+    StructTag *st = parser_register_struct_tag(parser, tag);
+
+    if (parser->current.type == TOKEN_LBRACE) {
+        parser->current = lexer_next_token(parser->lexer);
+
+        int current_offset = 0;
+        int max_align = 1;
+
+        while (parser->current.type != TOKEN_RBRACE) {
+            /* Parse field type specifier. */
+            Type *field_base = parse_type_specifier(parser, NULL);
+
+            /* Parse one or more declarators: each names a field. */
+            do {
+                if (parser->current.type == TOKEN_COMMA)
+                    parser->current = lexer_next_token(parser->lexer);
+
+                ParsedDeclarator d = parse_declarator(parser);
+                /* Build the full field type from base + pointer stars. */
+                Type *field_type = field_base;
+                for (int i = 0; i < d.pointer_count; i++)
+                    field_type = type_pointer(field_type);
+
+                int fsz   = type_size(field_type);
+                int falign = type_alignment(field_type);
+                if (falign < 1) falign = 1;
+                if (fsz < 1)    fsz = 1;
+
+                if (falign > max_align) max_align = falign;
+                /* Advance offset to satisfy field alignment. */
+                current_offset = (current_offset + falign - 1) & ~(falign - 1);
+                current_offset += fsz;
+
+            } while (parser->current.type == TOKEN_COMMA);
+
+            parser_expect(parser, TOKEN_SEMICOLON);
+        }
+        parser_expect(parser, TOKEN_RBRACE);
+
+        /* Round total size up to the struct's alignment. */
+        int total_size = (current_offset + max_align - 1) & ~(max_align - 1);
+        if (total_size == 0) total_size = 1; /* empty struct: 1 byte by convention */
+
+        st->type = type_struct(total_size, max_align);
+
+    } else {
+        /* Reference without body: "struct Tag" — tag must already be defined. */
+        if (!st->type) {
+            fprintf(stderr, "error: 'struct %s' is not defined\n", tag);
+            exit(1);
+        }
+    }
+
+    return st->type;
+}
+
 /*
  * <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
  *                    | "enum"             "{" <enumerator_list> "}"
@@ -469,6 +579,12 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         Type *et = parse_enum_specifier(parser);
         if (out_kind) *out_kind = TYPE_INT;
         return et;
+    }
+    case TOKEN_STRUCT: {
+        /* parse_struct_specifier advances past all struct tokens itself. */
+        Type *st = parse_struct_specifier(parser);
+        if (out_kind) *out_kind = TYPE_STRUCT;
+        return st;
     }
     default:
         fprintf(stderr, "error: expected integer type, got '%s'\n",
@@ -894,6 +1010,7 @@ static ASTNode *parse_unary(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_STRUCT ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
@@ -901,6 +1018,8 @@ static ASTNode *parse_unary(Parser *parser) {
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
             node->decl_type = t->kind;
+            if (t->kind == TYPE_STRUCT)
+                node->full_type = t;
             return node;
         }
         if (parser->current.type == TOKEN_RPAREN) {
@@ -1567,12 +1686,13 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG ||
         parser->current.type == TOKEN_ENUM ||
+        parser->current.type == TOKEN_STRUCT ||
         (parser->current.type == TOKEN_IDENTIFIER &&
          parser_find_typedef(parser, parser->current.value))) {
         TypeKind base_kind;
         Type *base_type = parse_type_specifier(parser, &base_kind);
 
-        /* Stage 29: standalone enum declaration with no variable (e.g. "enum E{};"). */
+        /* Standalone type declaration with no variable (e.g. "struct S{};"). */
         if (parser->current.type == TOKEN_SEMICOLON) {
             parser_expect(parser, TOKEN_SEMICOLON);
             return ast_new(AST_TYPEDEF_DECL, "");
@@ -1668,6 +1788,10 @@ static ASTNode *parse_statement(Parser *parser) {
              * full_type is already the array Type* returned by parse_type_specifier. */
             decl->decl_type = TYPE_ARRAY;
             decl->full_type = full_type;
+        } else if (base_kind == TYPE_STRUCT) {
+            /* Stage 30: struct variable — carry the struct Type* for size/alignment. */
+            decl->decl_type = TYPE_STRUCT;
+            decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
         }
@@ -1702,6 +1826,9 @@ static ASTNode *parse_statement(Parser *parser) {
                 /* Stage 28-04: typedef'd array base — each declarator gets its
                  * own TYPE_ARRAY slot with the shared array type. */
                 next_decl->decl_type = TYPE_ARRAY;
+                next_decl->full_type = full_type2;
+            } else if (base_kind == TYPE_STRUCT) {
+                next_decl->decl_type = TYPE_STRUCT;
                 next_decl->full_type = full_type2;
             } else {
                 next_decl->decl_type = base_kind;
@@ -1912,6 +2039,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                    parser->current.type == TOKEN_INT ||
                    parser->current.type == TOKEN_LONG ||
                    parser->current.type == TOKEN_ENUM ||
+                   parser->current.type == TOKEN_STRUCT ||
                    (!has_type &&
                     parser->current.type == TOKEN_IDENTIFIER &&
                     parser_find_typedef(parser, parser->current.value))) {
@@ -2094,7 +2222,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
                             (d.pointer_count > 0 || base_kind == TYPE_POINTER) ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (obj_kind == TYPE_POINTER) ? full_type : NULL;
+        Type *reg_full_type = (obj_kind == TYPE_POINTER || obj_kind == TYPE_STRUCT) ? full_type : NULL;
         parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
@@ -2113,6 +2241,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         if (d.pointer_count > 0 || base_kind == TYPE_POINTER) {
             decl->decl_type = TYPE_POINTER;
+            decl->full_type = full_type;
+        } else if (base_kind == TYPE_STRUCT) {
+            decl->decl_type = TYPE_STRUCT;
             decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;

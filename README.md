@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 29 (enum support):
+Through Stage 30 (struct support):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -130,8 +130,11 @@ Through Stage 29 (enum support):
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
   inferred size), file-scope (global) uninitialized array declarations.
+- **Structs**: named struct definitions with natural-alignment field layout,
+  local and global struct variables, sizeof operator on struct types and struct instances.
+  Member access via "." and "->" is not yet supported.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
-  pointers, arrays), both initialized (with constant integer expressions,
+  pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
   `.bss`). Duplicate declarations and type mismatches are rejected. Function
   and object names do not collide in the ordinary identifier namespace.
@@ -183,7 +186,8 @@ Through Stage 29 (enum support):
   the byte size of the operand's type as a `long` constant. The
   non-parenthesized form `sizeof expr` is also supported. Supported
   scalar types: `char` (1), `short` (2), `int` (4), `long` (8), and
-  any pointer type (8). For expression operands, integer promotions and
+  any pointer type (8). Struct types return the total byte size based on
+  natural-alignment field layout. For expression operands, integer promotions and
   usual arithmetic conversions apply to determine the result type
   (`sizeof(char_var + 1)` == 4 because char promotes to int). The
   expression operand is never evaluated — side effects such as `x++`,
@@ -197,7 +201,8 @@ Through Stage 29 (enum support):
 
 ## Not yet supported
 
-Structs, unions, enums; floating-point and unsigned types; array/struct
+Struct member access (`.` and `->`), anonymous structs, bit-fields, struct assignment/parameters/return values;
+unions; floating-point and unsigned types; array/struct
 typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Initializer lists for non-`char` arrays and
@@ -226,9 +231,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 28-04 all
-tests pass (454 valid, 141 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 728 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 30 all
+tests pass (457 valid, 141 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 739 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

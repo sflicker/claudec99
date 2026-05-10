@@ -24,7 +24,10 @@ typedef enum {
      * TYPE_POINTER node. `base` = return type, `param_count` = number of
      * parameters, `params[]` = parameter types. Never allocated directly as a
      * variable; always wrapped in at least one TYPE_POINTER. */
-    TYPE_FUNCTION
+    TYPE_FUNCTION,
+    /* Stage 30: named struct type. size and alignment are computed from the
+     * field layout at definition time. Member access is not yet supported. */
+    TYPE_STRUCT
 } TypeKind;
 
 typedef struct Type {
@@ -49,6 +52,7 @@ Type *type_long(void);
 Type *type_pointer(Type *base);
 Type *type_array(Type *element_type, int length);
 Type *type_function(Type *return_type, int param_count, Type **param_types);
+Type *type_struct(int size, int alignment);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

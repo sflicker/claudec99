@@ -12,6 +12,7 @@
 #define PARSER_MAX_TYPEDEFS 64
 #define PARSER_MAX_ENUM_CONSTS 256
 #define PARSER_MAX_ENUM_TAGS 32
+#define PARSER_MAX_STRUCT_TAGS 32
 #define FUNC_MAX_PARAMS 16
 
 typedef struct {
@@ -23,6 +24,12 @@ typedef struct {
     char tag[256];
     int  is_defined;
 } EnumTag;
+
+/* Stage 30: one entry per named struct tag in the translation unit. */
+typedef struct {
+    char         tag[256];
+    struct Type *type;   /* NULL until the struct body is parsed */
+} StructTag;
 
 /* Stage 28-01/28-02: entry in the parser-level typedef table. */
 typedef struct {
@@ -74,6 +81,9 @@ typedef struct {
     int enum_const_count;
     EnumTag enum_tags[PARSER_MAX_ENUM_TAGS];
     int enum_tag_count;
+    /* Stage 30: struct tag table (flat, global scope). */
+    StructTag struct_tags[PARSER_MAX_STRUCT_TAGS];
+    int struct_tag_count;
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);

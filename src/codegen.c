@@ -13,6 +13,7 @@ static int type_kind_bytes(TypeKind kind) {
     case TYPE_POINTER:  return 8;
     case TYPE_ARRAY:    return 0; /* size lives on full_type; caller uses that */
     case TYPE_FUNCTION: return 0; /* never directly allocated; base of FP pointer */
+    case TYPE_STRUCT:   return 0; /* size lives on full_type; caller uses that */
     }
     return 4;
 }
@@ -337,11 +338,12 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
 static Type *local_var_type(LocalVar *lv) {
     if (lv->full_type) return lv->full_type;
     switch (lv->kind) {
-    case TYPE_CHAR:  return type_char();
-    case TYPE_SHORT: return type_short();
-    case TYPE_LONG:  return type_long();
+    case TYPE_CHAR:   return type_char();
+    case TYPE_SHORT:  return type_short();
+    case TYPE_LONG:   return type_long();
+    case TYPE_STRUCT: return lv->full_type; /* always set for struct locals */
     case TYPE_INT:
-    default:         return type_int();
+    default:          return type_int();
     }
 }
 
@@ -520,6 +522,9 @@ static int compute_decl_bytes(ASTNode *node) {
     if (node->type == AST_DECLARATION) {
         if (node->decl_type == TYPE_ARRAY && node->full_type) {
             total = node->full_type->size + 7;
+        } else if (node->decl_type == TYPE_STRUCT && node->full_type) {
+            /* Struct: actual size plus alignment slack for stack alignment. */
+            total = node->full_type->size + (node->full_type->alignment - 1);
         } else {
             total = 8;
         }
@@ -1140,12 +1145,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_SIZEOF_TYPE) {
         int sz;
-        switch (node->decl_type) {
-        case TYPE_CHAR:    sz = 1; break;
-        case TYPE_SHORT:   sz = 2; break;
-        case TYPE_LONG:    sz = 8; break;
-        case TYPE_POINTER: sz = 8; break;
-        default:           sz = 4; break; /* TYPE_INT */
+        if (node->decl_type == TYPE_STRUCT && node->full_type) {
+            sz = node->full_type->size;
+        } else {
+            switch (node->decl_type) {
+            case TYPE_CHAR:    sz = 1; break;
+            case TYPE_SHORT:   sz = 2; break;
+            case TYPE_LONG:    sz = 8; break;
+            case TYPE_POINTER: sz = 8; break;
+            default:           sz = 4; break; /* TYPE_INT */
+            }
         }
         fprintf(cg->output, "    mov rax, %d\n", sz);
         node->result_type = TYPE_LONG;
@@ -1160,9 +1169,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->result_type = TYPE_LONG;
                 return;
             }
+            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+                fprintf(cg->output, "    mov rax, %d\n", lv->full_type->size);
+                node->result_type = TYPE_LONG;
+                return;
+            }
             if (!lv) {
                 GlobalVar *gv = codegen_find_global(cg, child->value);
                 if (gv && gv->kind == TYPE_ARRAY && gv->full_type) {
+                    fprintf(cg->output, "    mov rax, %d\n", gv->full_type->size);
+                    node->result_type = TYPE_LONG;
+                    return;
+                }
+                if (gv && gv->kind == TYPE_STRUCT && gv->full_type) {
                     fprintf(cg->output, "    mov rax, %d\n", gv->full_type->size);
                     node->result_type = TYPE_LONG;
                     return;
@@ -1916,6 +1935,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * terminator and zero fill out to the array's declared size.
          * The literal is not added to the .rodata pool — codegen
          * emits per-byte stack stores instead. */
+        if (node->decl_type == TYPE_STRUCT && node->full_type) {
+            /* Stage 30: struct local — allocated by full_type->size with
+             * full_type->alignment. No initializer supported in this stage. */
+            int size = node->full_type->size;
+            int align = node->full_type->alignment;
+            codegen_add_var(cg, node->value, size, align,
+                            node->decl_type, node->full_type);
+            return;
+        }
         if (node->decl_type == TYPE_ARRAY) {
             int size = node->full_type->size;
             int align = node->full_type->base->alignment;
