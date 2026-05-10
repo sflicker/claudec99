@@ -50,8 +50,9 @@ typedef enum {
     AST_COMMA_EXPR,
     AST_DECL_LIST,
     AST_TYPEDEF_DECL,
-    AST_MEMBER_ACCESS,  /* stage 31: expr "." identifier */
-    AST_ARROW_ACCESS    /* stage 31: expr "->" identifier */
+    AST_MEMBER_ACCESS,     /* stage 31: expr "." identifier */
+    AST_ARROW_ACCESS,      /* stage 31: expr "->" identifier */
+    AST_INITIALIZER_LIST   /* stage 32: "{" expr, ... "}" aggregate initializer */
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64

@@ -2183,20 +2183,70 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * The literal is not added to the .rodata pool — codegen
          * emits per-byte stack stores instead. */
         if (node->decl_type == TYPE_STRUCT && node->full_type) {
-            /* Stage 30: struct local — allocated by full_type->size with
-             * full_type->alignment. No initializer supported in this stage. */
+            /* Stage 30/32: struct local. Stage 32 adds brace-initializer support. */
             int size = node->full_type->size;
             int align = node->full_type->alignment;
-            codegen_add_var(cg, node->value, size, align,
-                            node->decl_type, node->full_type);
+            int offset = codegen_add_var(cg, node->value, size, align,
+                                         node->decl_type, node->full_type);
+            if (node->child_count > 0 &&
+                node->children[0]->type == AST_INITIALIZER_LIST) {
+                /* Zero-fill the entire struct slot first, then store provided values. */
+                for (int b = 0; b < size; b++) {
+                    fprintf(cg->output, "    mov byte [rbp - %d], 0\n", offset - b);
+                }
+                ASTNode *list = node->children[0];
+                Type *st = node->full_type;
+                int nfields = st->field_count;
+                int ninit = list->child_count;
+                if (ninit > nfields) {
+                    fprintf(stderr, "error: too many initializers for struct '%s'\n",
+                            node->value);
+                    exit(1);
+                }
+                for (int i = 0; i < ninit; i++) {
+                    StructField *f = &st->fields[i];
+                    int fsize = f->full_type ? f->full_type->size
+                                             : type_kind_bytes(f->kind);
+                    int foffset = offset - f->offset;
+                    codegen_expression(cg, list->children[i]);
+                    int src_is_long = (list->children[i]->result_type == TYPE_LONG ||
+                                       list->children[i]->result_type == TYPE_POINTER);
+                    emit_store_local(cg, foffset, fsize, src_is_long);
+                }
+            }
             return;
         }
         if (node->decl_type == TYPE_ARRAY) {
             int size = node->full_type->size;
+            int elem_size = node->full_type->base->size;
             int align = node->full_type->base->alignment;
+            int length = node->full_type->length;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
-            if (node->child_count > 0) {
+            if (node->child_count > 0 &&
+                node->children[0]->type == AST_INITIALIZER_LIST) {
+                /* Stage 32: brace-initializer list. Evaluate each element and
+                 * store it; zero-fill any elements beyond the list length. */
+                ASTNode *list = node->children[0];
+                for (int i = 0; i < length; i++) {
+                    int elem_offset = offset - i * elem_size;
+                    if (i < list->child_count) {
+                        codegen_expression(cg, list->children[i]);
+                        int src_is_long = (list->children[i]->result_type == TYPE_LONG ||
+                                           list->children[i]->result_type == TYPE_POINTER);
+                        emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                    } else {
+                        /* zero-fill */
+                        switch (elem_size) {
+                        case 1: fprintf(cg->output, "    mov byte [rbp - %d], 0\n", elem_offset); break;
+                        case 2: fprintf(cg->output, "    mov word [rbp - %d], 0\n", elem_offset); break;
+                        case 8: fprintf(cg->output, "    mov qword [rbp - %d], 0\n", elem_offset); break;
+                        default: fprintf(cg->output, "    mov dword [rbp - %d], 0\n", elem_offset); break;
+                        }
+                    }
+                }
+            } else if (node->child_count > 0) {
+                /* String-literal initializer path (existing). */
                 ASTNode *str = node->children[0];
                 for (int i = 0; i < size; i++) {
                     unsigned char b = (i < str->byte_length)

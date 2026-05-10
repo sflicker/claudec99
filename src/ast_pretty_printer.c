@@ -251,6 +251,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_TYPEDEF_DECL:
         printf("TypedefDecl: %s\n", node->value);
         break;
+    case AST_INITIALIZER_LIST:
+        printf("InitializerList:\n");
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {

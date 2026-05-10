@@ -36,9 +36,12 @@
 
 <init_declarator_list> ::= <init_declarator> { "," <init_declarator> }
 
-<init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
+<init_declarator> ::= <declarator> [ "=" <initializer> ]
 
-<initializer_expression> ::= <assignment_expression>
+<initializer> ::= <assignment_expression>
+                | "{" <initializer_list> [ "," ] "}"
+
+<initializer_list> ::= <initializer> { "," <initializer> }
 
 <declarator> ::= { "*" } <direct_declarator>
 
@@ -208,6 +211,8 @@
 # Arrays:
 #   - Omitted array size is only supported for block-scope char arrays
 #     initialized from string literal.
+#   - Block-scope array initializers support brace-enclosed lists (stage 32)
+#     with partial initialization zero-filling remaining elements.
 #   - File-scope array initializers are not currently supported.
 #   - Array declarators in multi-declarator lists are not currently supported.
 #

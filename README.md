@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 31 (struct member access):
+Through Stage 32 (aggregate initializer lists):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -129,10 +129,14 @@ Through Stage 31 (struct member access):
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic, subscript-as-pointer-arithmetic, initialization
   of local `char` arrays from a string literal (with explicit or
-  inferred size), file-scope (global) uninitialized array declarations.
+  inferred size), brace-enclosed initializer lists for local arrays with
+  partial initialization and automatic zero-fill (e.g., `int a[3] = {1, 2, 3};`),
+  file-scope (global) uninitialized array declarations.
 - **Structs**: named struct definitions with natural-alignment field layout,
   local and global struct variables, sizeof operator on struct types and struct instances,
-  member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts.
+  member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
+  brace-enclosed initializer lists for local struct variables with automatic zero-fill
+  (e.g., `struct Point p = {3, 4};`).
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -205,8 +209,8 @@ Anonymous structs, bit-fields, struct assignment/parameters/return values;
 unions; floating-point and unsigned types; array/struct
 typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
-calls with more than 6 arguments. Initializer lists for non-`char` arrays and
-global string-literal array initialization are not yet supported.
+calls with more than 6 arguments. Global aggregate initializers (brace lists and
+string-literal array initialization at file scope) are not yet supported.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -231,9 +235,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 31 all
-tests pass (465 valid, 147 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 745 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 32 all
+tests pass (468 valid, 147 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 748 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

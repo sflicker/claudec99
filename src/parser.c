@@ -816,6 +816,7 @@ static Type *build_fp_type(Type *base_type, const ParsedDeclarator *d) {
  */
 static ASTNode *parse_expression(Parser *parser);
 static ASTNode *parse_assignment_expression(Parser *parser);
+static ASTNode *parse_initializer(Parser *parser);
 
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
@@ -1383,6 +1384,43 @@ static ASTNode *parse_conditional(Parser *parser) {
 }
 
 /*
+ * Stage 32: <initializer> ::= <assignment_expression>
+ *                            | "{" <initializer_list> [ "," ] "}"
+ *
+ * Returns an AST_INITIALIZER_LIST node when a brace-initializer is
+ * parsed; otherwise returns the result of parse_assignment_expression.
+ */
+static ASTNode *parse_initializer(Parser *parser) {
+    if (parser->current.type != TOKEN_LBRACE)
+        return parse_assignment_expression(parser);
+
+    /* Consume "{". */
+    parser->current = lexer_next_token(parser->lexer);
+
+    ASTNode *list = ast_new(AST_INITIALIZER_LIST, NULL);
+
+    /* Empty brace-initializer "{}" — zero-fill everything. */
+    if (parser->current.type == TOKEN_RBRACE) {
+        parser->current = lexer_next_token(parser->lexer);
+        return list;
+    }
+
+    ast_add_child(list, parse_initializer(parser));
+    while (parser->current.type == TOKEN_COMMA) {
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_RBRACE)
+            break; /* trailing comma */
+        ast_add_child(list, parse_initializer(parser));
+    }
+    if (parser->current.type != TOKEN_RBRACE) {
+        fprintf(stderr, "error: expected '}' to close initializer list\n");
+        exit(1);
+    }
+    parser->current = lexer_next_token(parser->lexer);
+    return list;
+}
+
+/*
  * <assignment_expression> ::= <identifier> <assignment_operator> <assignment_expression>
  *                            | <unary_expression> "=" <assignment_expression>
  *                            | <conditional_expression>
@@ -1773,41 +1811,51 @@ static ASTNode *parse_statement(Parser *parser) {
             int has_size = d.has_size;
             int length = d.array_length;
 
-            ASTNode *str_init = NULL;
+            ASTNode *init_node = NULL;
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
-                if (parser->current.type != TOKEN_STRING_LITERAL) {
+                if (parser->current.type == TOKEN_LBRACE) {
+                    /* Stage 32: brace-initializer list for array. */
+                    if (!has_size) {
+                        fprintf(stderr,
+                                "error: omitted array size requires string literal initializer\n");
+                        exit(1);
+                    }
+                    init_node = parse_initializer(parser);
+                } else if (parser->current.type == TOKEN_STRING_LITERAL) {
+                    if (full_type->kind != TYPE_CHAR) {
+                        fprintf(stderr,
+                                "error: string initializer only supported for char arrays\n");
+                        exit(1);
+                    }
+                    Token str_tok = parser->current;
+                    parser->current = lexer_next_token(parser->lexer);
+                    ASTNode *str_init = ast_new(AST_STRING_LITERAL, NULL);
+                    memcpy(str_init->value, str_tok.value, str_tok.length);
+                    str_init->value[str_tok.length] = '\0';
+                    str_init->byte_length = str_tok.length;
+                    str_init->decl_type = TYPE_ARRAY;
+                    str_init->full_type = type_array(type_char(), str_tok.length + 1);
+                    int needed = str_init->byte_length + 1;
+                    if (has_size) {
+                        if (length < needed) {
+                            fprintf(stderr,
+                                    "error: array too small for string literal initializer\n");
+                            exit(1);
+                        }
+                    } else {
+                        length = needed;
+                    }
+                    init_node = str_init;
+                } else {
                     if (!has_size) {
                         fprintf(stderr,
                                 "error: omitted array size requires string literal initializer\n");
                     } else {
                         fprintf(stderr,
-                                "error: array initializers not supported\n");
+                                "error: array initializer must be a brace-enclosed list or string literal\n");
                     }
                     exit(1);
-                }
-                if (full_type->kind != TYPE_CHAR) {
-                    fprintf(stderr,
-                            "error: string initializer only supported for char arrays\n");
-                    exit(1);
-                }
-                Token str_tok = parser->current;
-                parser->current = lexer_next_token(parser->lexer);
-                str_init = ast_new(AST_STRING_LITERAL, NULL);
-                memcpy(str_init->value, str_tok.value, str_tok.length);
-                str_init->value[str_tok.length] = '\0';
-                str_init->byte_length = str_tok.length;
-                str_init->decl_type = TYPE_ARRAY;
-                str_init->full_type = type_array(type_char(), str_tok.length + 1);
-                int needed = str_init->byte_length + 1;
-                if (has_size) {
-                    if (length < needed) {
-                        fprintf(stderr,
-                                "error: array too small for string literal initializer\n");
-                        exit(1);
-                    }
-                } else {
-                    length = needed;
                 }
             } else if (!has_size) {
                 fprintf(stderr,
@@ -1818,8 +1866,8 @@ static ASTNode *parse_statement(Parser *parser) {
             Type *array_type = type_array(full_type, length);
             decl->decl_type = TYPE_ARRAY;
             decl->full_type = array_type;
-            if (str_init) {
-                ast_add_child(decl, str_init);
+            if (init_node) {
+                ast_add_child(decl, init_node);
             }
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
@@ -1841,7 +1889,12 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
-            ASTNode *init = parse_assignment_expression(parser);
+            ASTNode *init = parse_initializer(parser); /* stage 32: allows brace lists */
+            if (init->type == AST_INITIALIZER_LIST &&
+                decl->decl_type != TYPE_STRUCT && decl->decl_type != TYPE_ARRAY) {
+                fprintf(stderr, "error: brace initializer not valid for scalar type\n");
+                exit(1);
+            }
             ast_add_child(decl, init);
         }
         if (parser->current.type != TOKEN_COMMA) {
