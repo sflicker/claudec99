@@ -50,7 +50,10 @@
                        | <direct_declarator> "[" [ <integer_literal> ] "]"
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
-<type_specifier> ::= <integer_type> | <typedef_name> | <enum_specifier> | <struct_specifier>
+<type_specifier> ::= <integer_type> 
+                     | <typedef_name> 
+                     | <enum_specifier> 
+                     | <struct_specifier>
 
 <typedef_name> ::= <identifier>
 
