@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 33 (struct assignment):
+Through Stage 34 (struct pointer parameters):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -137,7 +137,9 @@ Through Stage 33 (struct assignment):
   member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
   brace-enclosed initializer lists for local struct variables with automatic zero-fill
   (e.g., `struct Point p = {3, 4};`), whole-struct copy assignment and copy initialization
-  from another struct variable of the same type.
+  from another struct variable of the same type. Pointer-to-struct function parameters
+  (`struct T *p`) with `->` field access and mutation; `&local_struct` and `&global_struct`
+  pass correctly as arguments; `(*p).field` deref-dot syntax works.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -206,7 +208,7 @@ Through Stage 33 (struct assignment):
 
 ## Not yet supported
 
-Anonymous structs, bit-fields, struct parameters/return values;
+Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point and unsigned types; array/struct
 typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
@@ -236,9 +238,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 33 all
-tests pass (470 valid, 148 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 751 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 34 all
+tests pass (474 valid, 150 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 757 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

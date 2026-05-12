@@ -535,6 +535,37 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     ASTNode *base = node->children[0];
     const char *field_name = node->value;
 
+    /* Stage 34: (*ptr).field — load pointer, add field offset. */
+    if (base->type == AST_DEREF) {
+        ASTNode *ptr_expr = base->children[0];
+        if (ptr_expr->type != AST_VAR_REF) {
+            fprintf(stderr, "error: '.' via dereference: pointer must be an identifier\n");
+            exit(1);
+        }
+        LocalVar *plv = codegen_find_var(cg, ptr_expr->value);
+        if (!plv) {
+            fprintf(stderr, "error: undeclared variable '%s'\n", ptr_expr->value);
+            exit(1);
+        }
+        if (plv->kind != TYPE_POINTER || !plv->full_type ||
+            !plv->full_type->base || plv->full_type->base->kind != TYPE_STRUCT) {
+            fprintf(stderr,
+                    "error: '.' via dereference: '%s' is not a pointer to struct\n",
+                    ptr_expr->value);
+            exit(1);
+        }
+        Type *st = plv->full_type->base;
+        StructField *f = find_struct_field(st, field_name);
+        if (!f) {
+            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+            exit(1);
+        }
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+
     if (base->type != AST_VAR_REF) {
         fprintf(stderr, "error: '.' base must be an identifier\n");
         exit(1);
@@ -773,6 +804,16 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
                 if (f) return f->kind;
             }
         }
+        /* Stage 34: (*ptr).field */
+        if (base->type == AST_DEREF && base->child_count > 0 &&
+            base->children[0]->type == AST_VAR_REF) {
+            LocalVar *plv = codegen_find_var(cg, base->children[0]->value);
+            if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
+                plv->full_type->base && plv->full_type->base->kind == TYPE_STRUCT) {
+                StructField *f = find_struct_field(plv->full_type->base, node->value);
+                if (f) return f->kind;
+            }
+        }
         return TYPE_INT;
     }
     case AST_ARROW_ACCESS: {
@@ -925,6 +966,20 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             LocalVar *lv = codegen_find_var(cg, base_node->value);
             if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
                 StructField *f = find_struct_field(lv->full_type, node->value);
+                if (f) {
+                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                        : promote_kind(f->kind);
+                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                }
+            }
+        }
+        /* Stage 34: (*ptr).field */
+        if (base_node->type == AST_DEREF && base_node->child_count > 0 &&
+            base_node->children[0]->type == AST_VAR_REF) {
+            LocalVar *plv = codegen_find_var(cg, base_node->children[0]->value);
+            if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
+                plv->full_type->base && plv->full_type->base->kind == TYPE_STRUCT) {
+                StructField *f = find_struct_field(plv->full_type->base, node->value);
                 if (f) {
                     t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
                         : promote_kind(f->kind);

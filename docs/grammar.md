@@ -236,5 +236,10 @@
 #
 # Semantics:
 #   - Assignment left-hand sides must be valid lvalues.
+#
+# Structs:
+#   - Struct-by-value function parameters are not yet supported.
+#     Pointer-to-struct parameters (struct T *p) are supported (stage 34).
+#   - Struct-by-value return types are not yet supported.
 
 ```
