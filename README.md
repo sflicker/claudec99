@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 34 (struct pointer parameters):
+Through Stage 35 (nested structs and arrays of structs):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -139,7 +139,10 @@ Through Stage 34 (struct pointer parameters):
   (e.g., `struct Point p = {3, 4};`), whole-struct copy assignment and copy initialization
   from another struct variable of the same type. Pointer-to-struct function parameters
   (`struct T *p`) with `->` field access and mutation; `&local_struct` and `&global_struct`
-  pass correctly as arguments; `(*p).field` deref-dot syntax works.
+  pass correctly as arguments; `(*p).field` deref-dot syntax works. Struct types as members
+  of other structs (nested structs) with chained member access (e.g., `r.origin.x`).
+  Arrays with struct element types (e.g., `struct Point points[10]`) with indexed member
+  access patterns (e.g., `points[0].x`).
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -238,9 +241,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 34 all
-tests pass (474 valid, 150 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 757 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 35 all
+tests pass (481 valid, 153 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 767 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

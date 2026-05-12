@@ -566,6 +566,41 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
         return f;
     }
 
+    /* Stage 35: chained member access — base is itself a member access (e.g. r.origin.x). */
+    if (base->type == AST_MEMBER_ACCESS) {
+        StructField *inner_f = emit_member_addr(cg, base);
+        if (inner_f->kind != TYPE_STRUCT || !inner_f->full_type) {
+            fprintf(stderr, "error: '.' applied to non-struct member '%s'\n",
+                    base->value);
+            exit(1);
+        }
+        StructField *f = find_struct_field(inner_f->full_type, field_name);
+        if (!f) {
+            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+            exit(1);
+        }
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+
+    /* Stage 35: array-element member access — base is array subscript (e.g. points[0].x). */
+    if (base->type == AST_ARRAY_INDEX) {
+        Type *element = emit_array_index_addr(cg, base);
+        if (element->kind != TYPE_STRUCT) {
+            fprintf(stderr, "error: '.' applied to non-struct array element\n");
+            exit(1);
+        }
+        StructField *f = find_struct_field(element, field_name);
+        if (!f) {
+            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+            exit(1);
+        }
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+
     if (base->type != AST_VAR_REF) {
         fprintf(stderr, "error: '.' base must be an identifier\n");
         exit(1);
