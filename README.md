@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 36 (typedef alias for complete struct types):
+Through Stage 37 (incomplete struct declarations / forward declarations):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -99,9 +99,10 @@ Through Stage 36 (typedef alias for complete struct types):
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
   unparenthesized forms. Typedef aliases for integer scalar types, pointer types
   (e.g., `typedef int *IntPtr;`, `typedef char *String;`), array types (e.g., `typedef int A[4];`),
-  function pointer types (e.g., `typedef int (*BinaryFn)(int, int);`), and complete struct types
-  (e.g., `typedef struct Point { int x; int y; } Point;`) with full type chain support,
-  block-scope tracking, and shadowing. The typedef name can be used as a type specifier in variable
+  function pointer types (e.g., `typedef int (*BinaryFn)(int, int);`), complete struct types
+  (e.g., `typedef struct Point { int x; int y; } Point;`), and incomplete struct forward
+  declarations (e.g., `typedef struct ASTNode ASTNode;` before the body is defined) with full
+  type chain support, block-scope tracking, and shadowing. The typedef name can be used as a type specifier in variable
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
   Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
   enum constants are available as compile-time integer values throughout the translation unit.
@@ -143,7 +144,9 @@ Through Stage 36 (typedef alias for complete struct types):
   pass correctly as arguments; `(*p).field` deref-dot syntax works. Struct types as members
   of other structs (nested structs) with chained member access (e.g., `r.origin.x`).
   Arrays with struct element types (e.g., `struct Point points[10]`) with indexed member
-  access patterns (e.g., `points[0].x`).
+  access patterns (e.g., `points[0].x`). Incomplete struct forward declarations:
+  `struct Tag;` can appear before the body is defined; pointer-to-incomplete-struct fields
+  and self-referential structs via typedef (e.g., `typedef struct Node Node; struct Node { Node *next; };`) are supported.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -242,9 +245,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 36 all
-tests pass (484 valid, 153 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 770 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 37 all
+tests pass (486 valid, 153 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 772 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

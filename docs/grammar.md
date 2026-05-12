@@ -243,6 +243,11 @@
 #   - Assignment left-hand sides must be valid lvalues.
 #
 # Structs:
+#   - Incomplete struct declarations (forward declarations) are supported (stage 37):
+#     `struct Tag;` can appear before the body is defined, enabling self-referential
+#     structs via typedef aliases and opaque pointer fields.
+#   - Non-pointer incomplete struct fields are rejected; only pointer-to-incomplete-struct
+#     fields are allowed as struct members.
 #   - Struct-by-value function parameters are not yet supported.
 #     Pointer-to-struct parameters (struct T *p) are supported (stage 34).
 #   - Struct-by-value return types are not yet supported.

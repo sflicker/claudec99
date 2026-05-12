@@ -378,6 +378,14 @@ static Type *parse_struct_specifier(Parser *parser) {
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
 
+                /* Stage 37: a non-pointer field of an incomplete struct type
+                 * is invalid; pointer-to-incomplete is allowed. */
+                if (field_type->kind == TYPE_STRUCT && field_type->size == 0) {
+                    fprintf(stderr,
+                            "error: field '%s' has incomplete struct type\n", d.name);
+                    exit(1);
+                }
+
                 int fsz   = type_size(field_type);
                 int falign = type_alignment(field_type);
                 if (falign < 1) falign = 1;
@@ -411,7 +419,15 @@ static Type *parse_struct_specifier(Parser *parser) {
         int total_size = (current_offset + max_align - 1) & ~(max_align - 1);
         if (total_size == 0) total_size = 1; /* empty struct: 1 byte by convention */
 
-        st->type = type_struct(total_size, max_align);
+        /* Stage 37: if a placeholder was created by a forward declaration,
+         * update it in-place so any existing Type* references (e.g. typedef
+         * entries) automatically reflect the completed layout. */
+        if (st->type && st->type->size == 0) {
+            st->type->size      = total_size;
+            st->type->alignment = max_align;
+        } else {
+            st->type = type_struct(total_size, max_align);
+        }
 
         /* Stage 31: copy collected fields into the Type. */
         if (n_fields > 0) {
@@ -421,11 +437,11 @@ static Type *parse_struct_specifier(Parser *parser) {
         }
 
     } else {
-        /* Reference without body: "struct Tag" — tag must already be defined. */
-        if (!st->type) {
-            fprintf(stderr, "error: 'struct %s' is not defined\n", tag);
-            exit(1);
-        }
+        /* Reference without body: "struct Tag" used as a type (e.g. pointer
+         * target or forward declaration).  Stage 37: create an incomplete
+         * placeholder so forward declarations and opaque pointer fields work. */
+        if (!st->type)
+            st->type = type_struct(0, 0);
     }
 
     return st->type;
