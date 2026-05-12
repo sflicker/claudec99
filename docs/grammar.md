@@ -199,7 +199,9 @@
 #   - Array typedefs are supported (e.g. typedef int A[4];).
 #   - Chained typedefs (typedef of a typedef) are supported.
 #   - typedef declarations may not have initializers.
-#   - Non-pointer function typedefs, struct typedefs, and typedef enum are not yet supported.
+#   - Struct typedefs are supported (stage 36): both `typedef struct Tag Alias;` and
+#     `typedef struct Tag { ... } Alias;` forms.
+#   - Non-pointer function typedefs and typedef enum are not yet supported.
 #   - <typedef_name> is a semantic rule: an identifier is a typedef_name only
 #     if it is currently known as a typedef in the active scope.
 #

@@ -1734,7 +1734,8 @@ static ASTNode *parse_statement(Parser *parser) {
             full_type = type_pointer(full_type);
         TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
                                 ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER) ? full_type : NULL;
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
+                               typedef_kind == TYPE_STRUCT) ? full_type : NULL;
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }
@@ -2229,7 +2230,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             full_type = type_pointer(full_type);
         TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
                                 ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER) ? full_type : NULL;
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
+                               typedef_kind == TYPE_STRUCT) ? full_type : NULL;
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }

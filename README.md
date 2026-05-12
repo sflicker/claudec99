@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 35 (nested structs and arrays of structs):
+Through Stage 36 (typedef alias for complete struct types):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -99,7 +99,8 @@ Through Stage 35 (nested structs and arrays of structs):
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
   unparenthesized forms. Typedef aliases for integer scalar types, pointer types
   (e.g., `typedef int *IntPtr;`, `typedef char *String;`), array types (e.g., `typedef int A[4];`),
-  and function pointer types (e.g., `typedef int (*BinaryFn)(int, int);`) with full type chain support,
+  function pointer types (e.g., `typedef int (*BinaryFn)(int, int);`), and complete struct types
+  (e.g., `typedef struct Point { int x; int y; } Point;`) with full type chain support,
   block-scope tracking, and shadowing. The typedef name can be used as a type specifier in variable
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
   Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
@@ -212,8 +213,8 @@ Through Stage 35 (nested structs and arrays of structs):
 ## Not yet supported
 
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
-unions; floating-point and unsigned types; array/struct
-typedefs (pointer and function-pointer typedefs are now supported); block-scope storage class specifiers;
+unions; floating-point and unsigned types; array
+typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Global aggregate initializers (brace lists and
 string-literal array initialization at file scope) are not yet supported.
@@ -241,9 +242,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 35 all
-tests pass (481 valid, 153 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 767 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 36 all
+tests pass (484 valid, 153 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 770 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
