@@ -473,6 +473,126 @@
 - [x] Grammar: `<direct_declarator>` suffixes ([...] and (...)) apply recursively to any direct_declarator
 - [x] Error message updated: "functions returning function pointers are not supported" for int (*fp())(int)
 
+## Stage 27 - Declaration Specifier Refactor
+
+- [x] parse_declaration_specifiers helper
+	- [x] Loop-based collection: storage class and type specifier accepted in any order
+	- [x] Duplicate storage class specifier rejected (e.g. `static extern int x;`)
+	- [x] Duplicate type specifier rejected (e.g. `int int x;`)
+	- [x] Missing type specifier rejected
+- [x] TOKEN_TYPEDEF recognized as a storage class specifier in the loop
+- [x] Grammar updated: `<declaration_specifiers> ::= <declaration_specifier>+`
+
+## Stage 28 - Typedef Support
+
+- [x] Stage 28-01: Simple scalar typedefs
+	- [x] TOKEN_TYPEDEF keyword; SC_TYPEDEF storage class; AST_TYPEDEF_DECL node
+	- [x] Scoped typedef table in Parser (scope_depth tracks enter/leave block)
+	- [x] Typedef declarations at file scope and block scope
+	- [x] Typedef names recognized in: object declarations, function return/parameter types, casts, sizeof(type)
+	- [x] Duplicate typedef detection within the same scope
+	- [x] Block-scope typedefs expire when the block exits
+	- [x] typedef declarations may not have initializers
+- [x] Stage 28-02: Pointer typedefs (`typedef int *IP;`)
+	- [x] TypedefEntry.full_type carries the full pointer Type* chain
+	- [x] Pointer typedef names decay correctly in all declaration contexts
+- [x] Stage 28-03: Function-pointer typedefs (`typedef void (*FP)(int);`)
+	- [x] Registered as TYPE_POINTER with full TYPE_POINTER → TYPE_FUNCTION chain
+- [x] Stage 28-04: Array typedefs (`typedef int A[4];`)
+	- [x] Registered as TYPE_ARRAY with full type_array(base, length) chain
+	- [x] Multi-declarator list with typedef'd array base (each declarator gets its own array slot)
+	- [x] Subscript base in parse_postfix relaxed to accept AST_DEREF (enables `(*p)[i]`)
+	- [x] codegen: emit_array_index_addr handles AST_DEREF base for pointer-to-array indexing
+
+## Stage 29 - Enum Support
+
+- [x] Tokenizer: enum keyword
+- [x] parse_enum_specifier
+	- [x] Named and anonymous enum forms: `enum E { ... }` and `enum { ... }`
+	- [x] Explicit enumerator values: integer literal or character literal
+	- [x] Auto-increment for subsequent enumerators
+	- [x] Trailing comma in enumerator list
+	- [x] Duplicate enumerator name detection
+	- [x] Enum tag table; undefined tag reference rejected
+- [x] Enum constants folded to AST_INT_LITERAL (TYPE_INT) at parse time
+- [x] `enum Tag` used as a type specifier resolves to int
+- [x] Standalone enum declarations at file scope and block scope
+
+## Stage 30 - Struct Definitions
+
+- [x] Tokenizer: struct keyword
+- [x] Type system: TYPE_STRUCT kind; type_struct(size, alignment) constructor
+- [x] parse_struct_specifier
+	- [x] Named struct definitions: `struct Tag { field-list }`
+	- [x] Natural-alignment field layout: each field padded to its type's alignment
+	- [x] Struct size rounded up to the maximum field alignment
+	- [x] Empty struct: 1 byte by convention
+	- [x] Struct tag table in Parser
+- [x] sizeof on struct type and struct instances
+- [x] Local struct variable allocation (full struct size reserved on stack)
+- [x] `struct Tag` recognized as a type specifier in declarations and sizeof
+
+## Stage 31 - Struct Member Access
+
+- [x] Tokenizer: TOKEN_DOT (.) and TOKEN_ARROW (->)
+- [x] AST: AST_MEMBER_ACCESS and AST_ARROW_ACCESS node types
+- [x] Parser: parse_struct_specifier records field name and byte offset into StructField entries on the Type
+- [x] parse_postfix handles `.` and `->` in the postfix repetition loop
+- [x] Both operators accepted as lvalues for assignment
+- [x] Code generation
+	- [x] emit_member_addr: `expr.field` → `lea rax, [rbp - (offset - field_offset)]`
+	- [x] emit_arrow_addr: `expr->field` → load pointer, add field offset
+	- [x] Rvalue load and lvalue store paths for both operators
+
+## Stage 32 - Aggregate Initializer Lists
+
+- [x] AST: AST_INITIALIZER_LIST node type
+- [x] parse_initializer: handles `{ expr, ... }` recursively; falls through to parse_assignment_expression for scalars
+- [x] Array brace initializers: per-element stores; remaining elements zero-filled
+- [x] Struct brace initializers: field-by-field stores; remaining fields zero-filled
+- [x] Trailing comma allowed in initializer list
+- [x] Empty `{}` zero-fills all elements/fields
+- [x] Nested brace initializers (recursion)
+- [x] Brace initializer rejected for scalar declarations
+
+## Stage 33 - Struct Assignment and Copy Initialization
+
+- [x] Whole-struct assignment: `dst = src` copies the full struct byte-by-byte
+- [x] Struct declaration-initializer copy: `struct S b = a;`
+- [x] Type mismatch between distinct struct types rejected
+- [x] codegen: emit_struct_copy (byte-by-byte movzx/mov loop)
+
+## Stage 34 - Struct Pointer Parameters and Mutation
+
+- [x] `(*p).field` syntax: emit_member_addr handles AST_DEREF as the base of AST_MEMBER_ACCESS
+- [x] Struct pointer parameters: passing `&local_struct` to a pointer parameter
+- [x] Mutation through pointer parameters visible to the caller via `->` and `(*p).`
+
+## Stage 35 - Nested Structs and Arrays of Structs
+
+- [x] Nested struct member access: `r.origin.x` (emit_member_addr with AST_MEMBER_ACCESS base, recursive address accumulation)
+- [x] Array-of-structs indexing: `points[0].x` (emit_member_addr with AST_ARRAY_INDEX base)
+
+## Stage 36 - Struct Typedefs
+
+- [x] `typedef struct Tag Alias;` — alias for a previously defined (complete) struct
+- [x] `typedef struct Tag { ... } Alias;` — inline struct definition plus typedef in one declaration
+- [x] Typedef carries the full TYPE_STRUCT Type* for correct size/alignment
+
+## Stage 37 - Incomplete Struct Declarations
+
+- [x] Forward declarations: `struct Tag;` creates an incomplete placeholder (size=0, alignment=0)
+- [x] In-place completion: when the struct body is later provided, the placeholder is mutated so existing Type* references (e.g. in typedef entries) automatically reflect the completed layout
+- [x] Field guard: non-pointer field with incomplete struct type is a compile-time error
+- [x] Pointer-to-incomplete struct allowed (enables opaque/forward-declared types)
+- [x] Self-referential structs through pointer fields (e.g. linked-list nodes)
+
+## Stage 37-02 - Additional Struct Tests and Codegen Fixes
+
+- [x] codegen: emit_arrow_addr handles AST_MEMBER_ACCESS base — enables chained dot-then-arrow access (`n.next->value`)
+- [x] codegen: AST_SIZEOF_TYPE rejects `sizeof(struct Tag)` when the struct is incomplete
+- [x] codegen: AST_DECLARATION struct path rejects variable declarations with incomplete struct type
+
 ---
 
 ## TODO
@@ -503,15 +623,10 @@
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [ ] void type (for void functions and void*)
 - [ ] void* pointer type and implicit conversion to/from typed pointers
-- [ ] Enum types (enum E { A, B, C })
-- [ ] Struct types (struct S { int x; char y; })
 - [ ] Union types
-- [ ] typedef
-- [ ] Struct and union member access (. and ->)
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
 - [ ] Compound literals: (Type){ ... }
-- [ ] Designated initializers for structs: .member = value
 - [ ] const and volatile qualifiers
 - [ ] restrict qualifier on pointers
 - [ ] Type compatibility and composite type rules
@@ -524,16 +639,12 @@
 - [ ] For-loop initializer declarations: for (int i = 0; ...)
 - [ ] Multiple pointer levels in multi-declarator lists
 - [ ] Function declarations at block scope
-- [ ] Nested function-scope struct/enum declarations
 - [ ] Incomplete array types in extern declarations
 
 ### Initializers
-- [ ] Brace-enclosed initializers for arrays: int a[3] = {1, 2, 3}
-- [ ] Partial initialization of arrays (remaining elements zero-initialized)
 - [ ] Designated initializers for arrays: [idx] = value
-- [ ] Struct initializers with braces
-- [ ] Nested initializers
-- [ ] Zero-initialization of static-duration objects
+- [ ] Designated initializers for structs: .member = value
+- [ ] Zero-initialization of static-duration objects (global structs/arrays)
 
 ### Expressions
 - [ ] sizeof with unsigned result type (size_t)
@@ -545,7 +656,6 @@
 - [ ] Multi-dimensional arrays and indexing: a[i][j]
 - [ ] Implicit conversion from array of T to pointer to T in all expression contexts
 - [ ] Lvalue conversion rules for all expression contexts
-- [ ] Assignment to struct lvalue (whole-struct copy)
 - [ ] Unary + on floating-point
 - [ ] Mixed integer/floating-point arithmetic (usual arithmetic conversions)
 - [ ] Integer and floating-point promotions in function arguments (default argument promotions)
@@ -560,7 +670,6 @@
 - [ ] Variadic functions: va_list, va_start, va_arg, va_end (<stdarg.h>)
 - [ ] Old-style (K&R) function definitions
 - [ ] Implicit return in void functions
-- [ ] Recursive structs through pointers
 - [ ] Functions returning function pointers: int (*f())(int)
 - [ ] Inline functions (inline keyword)
 
