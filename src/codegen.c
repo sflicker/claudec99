@@ -163,14 +163,23 @@ static ASTNode *codegen_find_function_decl(CodeGen *cg, const char *name) {
 
 /*
  * Emit a size-appropriate load of a local into rax/eax.
- * char/short sign-extend into eax (implicit zero-extend into rax);
- * int loads into eax (implicit zero-extend into rax); long loads
- * the full 8-byte slot into rax.
+ * For signed small types, sign-extend; for unsigned small types, zero-extend.
+ * int loads into eax (zero-extends rax implicitly in x86-64); long loads rax.
  */
-static void emit_load_local(CodeGen *cg, int offset, int size) {
+static void emit_load_local(CodeGen *cg, int offset, int size, int is_unsigned) {
     switch (size) {
-    case 1: fprintf(cg->output, "    movsx eax, byte [rbp - %d]\n", offset); break;
-    case 2: fprintf(cg->output, "    movsx eax, word [rbp - %d]\n", offset); break;
+    case 1:
+        if (is_unsigned)
+            fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", offset);
+        else
+            fprintf(cg->output, "    movsx eax, byte [rbp - %d]\n", offset);
+        break;
+    case 2:
+        if (is_unsigned)
+            fprintf(cg->output, "    movzx eax, word [rbp - %d]\n", offset);
+        else
+            fprintf(cg->output, "    movsx eax, word [rbp - %d]\n", offset);
+        break;
     case 8: fprintf(cg->output, "    mov rax, [rbp - %d]\n", offset); break;
     case 4:
     default:
@@ -183,9 +192,9 @@ static void emit_load_local(CodeGen *cg, int offset, int size) {
  * Store the current value into a local, truncating to the local's
  * storage size. `src_is_long` tells the helper whether the value is
  * already in the full rax (src_is_long=1) or only in eax as a 32-bit
- * int (src_is_long=0). For an 8-byte destination with a 32-bit source
- * the value is sign-extended via movsxd before the store so the full
- * slot is written with a correct signed value.
+ * value (src_is_long=0). For an 8-byte destination with a 32-bit signed
+ * source the value is sign-extended via movsxd. For an unsigned 32-bit
+ * source pass src_is_long=1 — x86-64 32-bit writes already zero-extend.
  */
 static void emit_store_local(CodeGen *cg, int offset, int size, int src_is_long) {
     switch (size) {
@@ -390,10 +399,20 @@ static Type *global_var_type(GlobalVar *gv) {
     }
 }
 
-static void emit_load_global(CodeGen *cg, const char *name, int size) {
+static void emit_load_global(CodeGen *cg, const char *name, int size, int is_unsigned) {
     switch (size) {
-    case 1: fprintf(cg->output, "    movsx eax, byte [rel %s]\n", name); break;
-    case 2: fprintf(cg->output, "    movsx eax, word [rel %s]\n", name); break;
+    case 1:
+        if (is_unsigned)
+            fprintf(cg->output, "    movzx eax, byte [rel %s]\n", name);
+        else
+            fprintf(cg->output, "    movsx eax, byte [rel %s]\n", name);
+        break;
+    case 2:
+        if (is_unsigned)
+            fprintf(cg->output, "    movzx eax, word [rel %s]\n", name);
+        else
+            fprintf(cg->output, "    movsx eax, word [rel %s]\n", name);
+        break;
     case 8: fprintf(cg->output, "    mov rax, [rel %s]\n", name); break;
     case 4:
     default:
@@ -408,6 +427,8 @@ static void emit_store_global(CodeGen *cg, const char *name, int size,
     case 1: fprintf(cg->output, "    mov [rel %s], al\n", name); break;
     case 2: fprintf(cg->output, "    mov [rel %s], ax\n", name); break;
     case 8:
+        /* src_is_long=1 for both 64-bit values and unsigned 32-bit values
+         * (x86-64 zero-extends 32-bit writes automatically). */
         if (!src_is_long)
             fprintf(cg->output, "    movsxd rax, eax\n");
         fprintf(cg->output, "    mov [rel %s], rax\n", name);
@@ -760,6 +781,30 @@ static TypeKind common_arith_kind(TypeKind a, TypeKind b) {
         return TYPE_LONG;
     }
     return TYPE_INT;
+}
+
+/*
+ * Stage 40: Usual arithmetic conversion signedness rule.
+ * Returns 1 if the result of operating on two values with the given
+ * promoted kinds and signedness should be treated as unsigned.
+ * Implements the C99 UAC rules for the integer ranks we support
+ * (int rank 3, long rank 4):
+ *   same signedness    → use that signedness (higher rank wins kind)
+ *   uint + slong       → signed (long can hold all uint values)
+ *   ulong + sint       → unsigned (unsigned rank >= signed rank)
+ *   uint + sint        → unsigned (same rank; unsigned wins)
+ *   ulong + slong      → unsigned (same rank; unsigned wins)
+ */
+static int uac_is_unsigned(TypeKind ak, int au, TypeKind bk, int bu) {
+    if (ak == TYPE_CHAR || ak == TYPE_SHORT) ak = TYPE_INT;
+    if (bk == TYPE_CHAR || bk == TYPE_SHORT) bk = TYPE_INT;
+    if (au == bu) return au;
+    /* Different signedness. */
+    int ulong_present = (au && ak == TYPE_LONG) || (bu && bk == TYPE_LONG);
+    int slong_present = (!au && ak == TYPE_LONG) || (!bu && bk == TYPE_LONG);
+    if (ulong_present) return 1;   /* unsigned long beats everything */
+    if (slong_present) return 0;   /* signed long beats unsigned int */
+    return 1;                       /* unsigned int beats signed int */
 }
 
 /*
@@ -1175,8 +1220,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = lv->full_type;
             } else {
                 node->result_type = promote_kind(type_kind_from_size(lv->size));
+                node->is_unsigned = lv->is_unsigned;
             }
-            emit_load_local(cg, lv->offset, lv->size);
+            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             return;
         }
         /* Stage 22-01: fall back to global table. */
@@ -1206,8 +1252,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->full_type = gv->full_type;
         } else {
             node->result_type = promote_kind(type_kind_from_size(gv->size));
+            node->is_unsigned = gv->is_unsigned;
         }
-        emit_load_global(cg, gv->name, gv->size);
+        emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
         return;
     }
     if (node->type == AST_ASSIGNMENT) {
@@ -1708,7 +1755,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
-            emit_load_local(cg, lv->offset, lv->size);
+            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             if (strcmp(node->value, "++") == 0) {
                 fprintf(cg->output, "    add eax, 1\n");
             } else {
@@ -1721,7 +1768,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
                 exit(1);
             }
-            emit_load_global(cg, gv->name, gv->size);
+            emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
             if (strcmp(node->value, "++") == 0) {
                 fprintf(cg->output, "    add eax, 1\n");
             } else {
@@ -1737,7 +1784,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
-            emit_load_local(cg, lv->offset, lv->size);
+            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
             if (strcmp(node->value, "++") == 0) {
                 fprintf(cg->output, "    add eax, 1\n");
@@ -1751,7 +1798,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
                 exit(1);
             }
-            emit_load_global(cg, gv->name, gv->size);
+            emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
             fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
             if (strcmp(node->value, "++") == 0) {
                 fprintf(cg->output, "    add eax, 1\n");
@@ -2043,6 +2090,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(cg->output, "    %s eax, ecx\n", insn);
             }
             node->result_type = common;
+            /* Stage 40: propagate unsigned result from UAC. */
+            node->is_unsigned = uac_is_unsigned(
+                node->children[0]->result_type, node->children[0]->is_unsigned,
+                node->children[1]->result_type, node->children[1]->is_unsigned);
             return;
         }
         if (strcmp(node->value, "<<") == 0 || strcmp(node->value, ">>") == 0) {
@@ -2066,13 +2117,22 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
              * as cl. */
             fprintf(cg->output, "    xchg rax, rcx\n");
             TypeKind result = promote_kind(node->children[0]->result_type);
-            const char *insn = (strcmp(sop, "<<") == 0) ? "shl" : "sar";
+            /* Stage 40: unsigned right shift uses shr; signed uses sar. */
+            const char *insn;
+            if (strcmp(sop, "<<") == 0) {
+                insn = "shl";
+            } else if (node->children[0]->is_unsigned) {
+                insn = "shr";
+            } else {
+                insn = "sar";
+            }
             if (result == TYPE_LONG) {
                 fprintf(cg->output, "    %s rax, cl\n", insn);
             } else {
                 fprintf(cg->output, "    %s eax, cl\n", insn);
             }
             node->result_type = result;
+            node->is_unsigned = node->children[0]->is_unsigned;
             return;
         }
         const char *op = node->value;
@@ -2142,7 +2202,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, node->children[0]);
         if ((is_arith || is_cmp) && common == TYPE_LONG &&
             node->children[0]->result_type != TYPE_LONG &&
-            node->children[0]->result_type != TYPE_POINTER) {
+            node->children[0]->result_type != TYPE_POINTER &&
+            !node->children[0]->is_unsigned) {
+            /* Stage 40: unsigned 32-bit is already zero-extended; skip movsxd. */
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
         fprintf(cg->output, "    push rax\n");
@@ -2151,7 +2213,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, node->children[1]);
         if ((is_arith || is_cmp) && common == TYPE_LONG &&
             node->children[1]->result_type != TYPE_LONG &&
-            node->children[1]->result_type != TYPE_POINTER) {
+            node->children[1]->result_type != TYPE_POINTER &&
+            !node->children[1]->is_unsigned) {
             fprintf(cg->output, "    movsxd rax, eax\n");
         }
         /* Pop left into rcx; now rcx=left, rax=right */
@@ -2236,6 +2299,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             return;
         }
 
+        /* Stage 40: compute result signedness via UAC now that both children
+         * have been evaluated and their is_unsigned flags are set. */
+        int op_is_unsigned = 0;
+        if (!is_pointer_cmp && !is_pointer_arith && (is_arith || is_cmp)) {
+            op_is_unsigned = uac_is_unsigned(
+                node->children[0]->result_type, node->children[0]->is_unsigned,
+                node->children[1]->result_type, node->children[1]->is_unsigned);
+        }
+
         if (is_arith && common == TYPE_LONG) {
             if (strcmp(op, "+") == 0) {
                 fprintf(cg->output, "    add rax, rcx\n");
@@ -2248,58 +2320,87 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             } else if (strcmp(op, "/") == 0) {
                 /* left / right: rcx / rax */
                 fprintf(cg->output, "    xchg rax, rcx\n");
-                fprintf(cg->output, "    cqo\n");
-                fprintf(cg->output, "    idiv rcx\n");
+                if (op_is_unsigned) {
+                    fprintf(cg->output, "    xor edx, edx\n");
+                    fprintf(cg->output, "    div rcx\n");
+                } else {
+                    fprintf(cg->output, "    cqo\n");
+                    fprintf(cg->output, "    idiv rcx\n");
+                }
             } else { /* "%" */
-                /* left % right: remainder of rcx / rax. Place dividend
-                 * in rax and divisor in rcx, sign-extend into rdx, then
-                 * read the remainder out of rdx. */
+                /* left % right: remainder of rcx / rax. */
                 fprintf(cg->output, "    xchg rax, rcx\n");
-                fprintf(cg->output, "    cqo\n");
-                fprintf(cg->output, "    idiv rcx\n");
+                if (op_is_unsigned) {
+                    fprintf(cg->output, "    xor edx, edx\n");
+                    fprintf(cg->output, "    div rcx\n");
+                } else {
+                    fprintf(cg->output, "    cqo\n");
+                    fprintf(cg->output, "    idiv rcx\n");
+                }
                 fprintf(cg->output, "    mov rax, rdx\n");
             }
             node->result_type = TYPE_LONG;
+            node->is_unsigned = op_is_unsigned;
             return;
         }
         if (strcmp(op, "+") == 0) {
             fprintf(cg->output, "    add eax, ecx\n");
             node->result_type = TYPE_INT;
+            node->is_unsigned = op_is_unsigned;
         } else if (strcmp(op, "-") == 0) {
             /* left - right: ecx - eax */
             fprintf(cg->output, "    sub ecx, eax\n");
             fprintf(cg->output, "    mov eax, ecx\n");
             node->result_type = TYPE_INT;
+            node->is_unsigned = op_is_unsigned;
         } else if (strcmp(op, "*") == 0) {
             fprintf(cg->output, "    imul eax, ecx\n");
             node->result_type = TYPE_INT;
+            node->is_unsigned = op_is_unsigned;
         } else if (strcmp(op, "/") == 0) {
             /* left / right: ecx / eax */
             fprintf(cg->output, "    xchg eax, ecx\n");
-            fprintf(cg->output, "    cdq\n");
-            fprintf(cg->output, "    idiv ecx\n");
+            if (op_is_unsigned) {
+                fprintf(cg->output, "    xor edx, edx\n");
+                fprintf(cg->output, "    div ecx\n");
+            } else {
+                fprintf(cg->output, "    cdq\n");
+                fprintf(cg->output, "    idiv ecx\n");
+            }
             node->result_type = TYPE_INT;
+            node->is_unsigned = op_is_unsigned;
         } else if (strcmp(op, "%") == 0) {
-            /* left % right: remainder of ecx / eax. After xchg the
-             * dividend is in eax and the divisor in ecx; cdq sign-
-             * extends eax into edx:eax and idiv leaves the remainder
-             * in edx. */
+            /* left % right: remainder of ecx / eax. */
             fprintf(cg->output, "    xchg eax, ecx\n");
-            fprintf(cg->output, "    cdq\n");
-            fprintf(cg->output, "    idiv ecx\n");
+            if (op_is_unsigned) {
+                fprintf(cg->output, "    xor edx, edx\n");
+                fprintf(cg->output, "    div ecx\n");
+            } else {
+                fprintf(cg->output, "    cdq\n");
+                fprintf(cg->output, "    idiv ecx\n");
+            }
             fprintf(cg->output, "    mov eax, edx\n");
             node->result_type = TYPE_INT;
+            node->is_unsigned = op_is_unsigned;
         } else {
             /* Comparisons: compare left (rcx/ecx) with right (rax/eax),
              * using the width of the common type after promotion. Result
-             * is a normalized 0/1 in eax of type int. */
+             * is a normalized 0/1 in eax of type int.
+             * Stage 40: use unsigned setcc variants when op_is_unsigned. */
             const char *setcc = NULL;
             if      (strcmp(op, "==") == 0) setcc = "sete";
             else if (strcmp(op, "!=") == 0) setcc = "setne";
-            else if (strcmp(op, "<")  == 0) setcc = "setl";
-            else if (strcmp(op, "<=") == 0) setcc = "setle";
-            else if (strcmp(op, ">")  == 0) setcc = "setg";
-            else if (strcmp(op, ">=") == 0) setcc = "setge";
+            else if (op_is_unsigned) {
+                if      (strcmp(op, "<")  == 0) setcc = "setb";
+                else if (strcmp(op, "<=") == 0) setcc = "setbe";
+                else if (strcmp(op, ">")  == 0) setcc = "seta";
+                else if (strcmp(op, ">=") == 0) setcc = "setae";
+            } else {
+                if      (strcmp(op, "<")  == 0) setcc = "setl";
+                else if (strcmp(op, "<=") == 0) setcc = "setle";
+                else if (strcmp(op, ">")  == 0) setcc = "setg";
+                else if (strcmp(op, ">=") == 0) setcc = "setge";
+            }
             if (common == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rcx, rax\n");
             } else {
@@ -2506,6 +2607,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
         cg->locals[cg->local_count - 1].is_const = node->is_const;
+        cg->locals[cg->local_count - 1].is_unsigned = node->is_unsigned;
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
             TypeKind init_kind = node->children[0]->result_type;
@@ -2544,10 +2646,13 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             /* Pointer values live in the full rax already (lea / 8-byte
              * load), so they take the same store path as long values
              * without the movsxd widening step. A null pointer constant
-             * also takes the 8-byte path so the full slot is written. */
+             * also takes the 8-byte path so the full slot is written.
+             * Stage 40: unsigned 32-bit values are already zero-extended
+             * in rax by x86-64 semantics, so also skip movsxd. */
             int rhs_is_long = (init_kind == TYPE_LONG ||
                                init_kind == TYPE_POINTER ||
-                               rhs_is_null_ptr);
+                               rhs_is_null_ptr ||
+                               (size == 8 && node->children[0]->is_unsigned));
             emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_DECL_LIST) {
@@ -3088,6 +3193,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->is_label_init = 0;
     gv->init_label[0] = '\0';
     gv->is_const = decl->is_const;
+    gv->is_unsigned = decl->is_unsigned;
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {

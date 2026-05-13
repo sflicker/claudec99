@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 39 (minimal const support):
+Through Stage 40 (unsigned integer types):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -106,8 +106,12 @@ Through Stage 39 (minimal const support):
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
   Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
   enum constants are available as compile-time integer values throughout the translation unit.
-- **Integer types**: `char`, `short`, `int`, `long` with usual promotions,
-  conversions, and explicit casts. Integer literals with `L` suffix.
+- **Integer types**: `char`, `short`, `int`, `long` and their `unsigned` variants
+  (`unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, plain `unsigned`).
+  Usual arithmetic conversions (UAC) handle mixed signed/unsigned arithmetic. Unsigned
+  loads use zero-extension (`movzx`); unsigned division uses `div`; unsigned right shift
+  uses `shr` (logical); unsigned comparisons use unsigned condition codes. Integer
+  literals with `L` suffix.
 - **Functions**: multiple functions per translation unit, forward
   declarations with compatibility checking (return type and parameter type
   matching between declarations and definitions), SysV AMD64 calls with up to
@@ -225,7 +229,7 @@ Through Stage 39 (minimal const support):
 ## Not yet supported
 
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
-unions; floating-point and unsigned types; array
+unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments. Global aggregate initializers (brace lists and
@@ -254,9 +258,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 39 all
-tests pass (498 valid, 167 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 798 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 40 all
+tests pass (508 valid, 169 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 810 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

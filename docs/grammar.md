@@ -65,7 +65,12 @@
 
 <type_name> ::= <type_specifier> { "*" }
 
-<integer_type> ::= "char" | "short" | "int" | "long"
+<integer_type> ::= [ "unsigned" ] "char"
+               | [ "unsigned" ] "short"
+               | [ "unsigned" ] "int"
+               | [ "unsigned" ]
+               | "unsigned" "long"
+               | "long"
 
 <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
                    | "enum"             "{" <enumerator_list> "}"
@@ -199,7 +204,7 @@
 #     only allowed in function prototypes and function pointer signatures.
 #
 # Typedefs:
-#   - Scalar integer typedefs (char, short, int, long) are supported.
+#   - Scalar integer typedefs (char, short, int, long, unsigned char, unsigned short, unsigned int, unsigned long) are supported.
 #   - Pointer typedefs are supported (e.g. typedef int *IntPtr;).
 #   - Function pointer typedefs are supported (e.g. typedef int (*BinaryFn)(int, int);).
 #   - Array typedefs are supported (e.g. typedef int A[4];).

@@ -26,6 +26,8 @@ typedef struct {
     Type *full_type;
     /* Stage 39: set when the variable itself is const-qualified. */
     int is_const;
+    /* Stage 40: set when the variable has an unsigned integer type. */
+    int is_unsigned;
 } LocalVar;
 
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
@@ -48,6 +50,8 @@ typedef struct {
     char init_label[256];
     /* Stage 39: set when the variable itself is const-qualified. */
     int is_const;
+    /* Stage 40: set when the variable has an unsigned integer type. */
+    int is_unsigned;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

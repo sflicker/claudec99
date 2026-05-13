@@ -9,17 +9,25 @@
  * any of them yet.
  */
 
-static Type type_void_singleton  = { TYPE_VOID,  0, 0, 0, NULL, 0 };
-static Type type_char_singleton  = { TYPE_CHAR,  1, 1, 1, NULL, 0 };
-static Type type_short_singleton = { TYPE_SHORT, 2, 2, 1, NULL, 0 };
-static Type type_int_singleton   = { TYPE_INT,   4, 4, 1, NULL, 0 };
-static Type type_long_singleton  = { TYPE_LONG,  8, 8, 1, NULL, 0 };
+static Type type_void_singleton           = { TYPE_VOID,  0, 0, 0, NULL, 0 };
+static Type type_char_singleton           = { TYPE_CHAR,  1, 1, 1, NULL, 0 };
+static Type type_short_singleton          = { TYPE_SHORT, 2, 2, 1, NULL, 0 };
+static Type type_int_singleton            = { TYPE_INT,   4, 4, 1, NULL, 0 };
+static Type type_long_singleton           = { TYPE_LONG,  8, 8, 1, NULL, 0 };
+static Type type_unsigned_char_singleton  = { TYPE_CHAR,  1, 1, 0, NULL, 0 };
+static Type type_unsigned_short_singleton = { TYPE_SHORT, 2, 2, 0, NULL, 0 };
+static Type type_unsigned_int_singleton   = { TYPE_INT,   4, 4, 0, NULL, 0 };
+static Type type_unsigned_long_singleton  = { TYPE_LONG,  8, 8, 0, NULL, 0 };
 
-Type *type_void(void)  { return &type_void_singleton;  }
-Type *type_char(void)  { return &type_char_singleton;  }
-Type *type_short(void) { return &type_short_singleton; }
-Type *type_int(void)   { return &type_int_singleton;   }
-Type *type_long(void)  { return &type_long_singleton;  }
+Type *type_void(void)           { return &type_void_singleton;           }
+Type *type_char(void)           { return &type_char_singleton;           }
+Type *type_short(void)          { return &type_short_singleton;          }
+Type *type_int(void)            { return &type_int_singleton;            }
+Type *type_long(void)           { return &type_long_singleton;           }
+Type *type_unsigned_char(void)  { return &type_unsigned_char_singleton;  }
+Type *type_unsigned_short(void) { return &type_unsigned_short_singleton; }
+Type *type_unsigned_int(void)   { return &type_unsigned_int_singleton;   }
+Type *type_unsigned_long(void)  { return &type_unsigned_long_singleton;  }
 
 /*
  * Stage 12-01: heap-allocate a pointer Type that wraps `base`.

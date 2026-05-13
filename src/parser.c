@@ -595,6 +595,33 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
     case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
+    case TOKEN_UNSIGNED: {
+        /* Stage 40: "unsigned" [ "char" | "short" | "int" | "long" ] */
+        parser->current = lexer_next_token(parser->lexer); /* consume 'unsigned' */
+        switch (parser->current.type) {
+        case TOKEN_CHAR:
+            kind = TYPE_CHAR;  t = type_unsigned_char();
+            break;
+        case TOKEN_SHORT:
+            kind = TYPE_SHORT; t = type_unsigned_short();
+            break;
+        case TOKEN_INT:
+            kind = TYPE_INT;   t = type_unsigned_int();
+            break;
+        case TOKEN_LONG:
+            kind = TYPE_LONG;  t = type_unsigned_long();
+            break;
+        default:
+            /* plain "unsigned" == unsigned int; do not consume the next token */
+            kind = TYPE_INT;   t = type_unsigned_int();
+            if (out_kind) *out_kind = kind;
+            return t;
+        }
+        /* Advance past the type keyword. */
+        parser->current = lexer_next_token(parser->lexer);
+        if (out_kind) *out_kind = kind;
+        return t;
+    }
     case TOKEN_IDENTIFIER: {
         /* Stage 28-01/28-02: typedef name used as a type specifier. */
         TypedefEntry *entry = parser_find_typedef(parser, parser->current.value);
@@ -605,7 +632,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         }
         kind = entry->kind;
         if (entry->full_type) {
-            t = entry->full_type; /* pointer typedef: return the full chain */
+            t = entry->full_type; /* pointer typedef or unsigned scalar typedef */
         } else {
             switch (kind) {
             case TYPE_CHAR:  t = type_char();  break;
@@ -648,6 +675,8 @@ static Type *parse_type_name(Parser *parser) {
     /* Stage 39: consume optional leading const qualifier. */
     if (parser->current.type == TOKEN_CONST)
         parser->current = lexer_next_token(parser->lexer);
+    /* Stage 40: consume optional leading unsigned qualifier (handled inside
+     * parse_type_specifier when TOKEN_UNSIGNED is the current token). */
     Type *t = parse_type_specifier(parser, NULL);
     while (parser->current.type == TOKEN_STAR) {
         t = type_pointer(t);
@@ -1081,6 +1110,7 @@ static ASTNode *parse_unary(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_UNSIGNED ||
             parser->current.type == TOKEN_STRUCT ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
@@ -1173,6 +1203,7 @@ static ASTNode *parse_cast(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_UNSIGNED ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
             Type *cast_type = parse_type_name(parser);
@@ -1763,8 +1794,11 @@ static ASTNode *parse_statement(Parser *parser) {
             full_type = type_pointer(full_type);
         TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
                                 ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
-                               typedef_kind == TYPE_STRUCT) ? full_type : NULL;
+        /* Stage 40: for unsigned scalar typedefs, store the base Type* (is_signed=0)
+         * as full_type so the signedness is preserved when the typedef is resolved. */
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER || typedef_kind == TYPE_STRUCT)
+                              ? full_type
+                              : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }
@@ -1805,6 +1839,7 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG ||
+        parser->current.type == TOKEN_UNSIGNED ||
         parser->current.type == TOKEN_ENUM ||
         parser->current.type == TOKEN_STRUCT ||
         (parser->current.type == TOKEN_IDENTIFIER &&
@@ -1934,6 +1969,8 @@ static ASTNode *parse_statement(Parser *parser) {
             decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
+            /* Stage 40: mark unsigned scalar. */
+            decl->is_unsigned = !base_type->is_signed;
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
@@ -1978,6 +2015,7 @@ static ASTNode *parse_statement(Parser *parser) {
                 next_decl->full_type = full_type2;
             } else {
                 next_decl->decl_type = base_kind;
+                next_decl->is_unsigned = !base_type->is_signed;
             }
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
@@ -2119,6 +2157,7 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
         param->full_type = full_type;
     } else {
         param->decl_type = base_kind;
+        param->is_unsigned = !base_type->is_signed;
     }
     return param;
 }
@@ -2199,6 +2238,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
                    parser->current.type == TOKEN_LONG ||
+                   parser->current.type == TOKEN_UNSIGNED ||
                    parser->current.type == TOKEN_ENUM ||
                    parser->current.type == TOKEN_STRUCT ||
                    (!has_type &&
@@ -2294,8 +2334,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             full_type = type_pointer(full_type);
         TypeKind typedef_kind = (d.pointer_count > 0 || base_kind == TYPE_POINTER)
                                 ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
-                               typedef_kind == TYPE_STRUCT) ? full_type : NULL;
+        /* Stage 40: for unsigned scalar typedefs, store the base Type* so
+         * signedness is preserved when the typedef name is later resolved. */
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER || typedef_kind == TYPE_STRUCT)
+                              ? full_type
+                              : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return ast_new(AST_TYPEDEF_DECL, d.name);
     }
@@ -2419,6 +2462,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
+            /* Stage 40: mark unsigned scalar. */
+            decl->is_unsigned = !base_type->is_signed;
         }
         /* Stage 22-02: optional constant initializer. */
         if (parser->current.type == TOKEN_ASSIGN) {
@@ -2466,6 +2511,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 next_decl->full_type = ft2;
             } else {
                 next_decl->decl_type = base_kind;
+                next_decl->is_unsigned = !base_type->is_signed;
             }
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
