@@ -31,7 +31,7 @@
 ```C
     struct Missing;
     
-    itn main() {
+    int main() {
         return sizeof(struct Missing);  // INVALID
         return 0;
     }
@@ -39,7 +39,7 @@
 
 ```C
     struct Node {
-        Struct Node next;   // INVALID: recursion by value
+        struct Node next;   // INVALID: recursion by value
         int value;
     };
     

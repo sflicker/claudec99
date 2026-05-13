@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 37 (incomplete struct declarations / forward declarations):
+Through Stage 37-02 (additional struct tests):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -137,6 +137,7 @@ Through Stage 37 (incomplete struct declarations / forward declarations):
 - **Structs**: named struct definitions with natural-alignment field layout,
   local and global struct variables, sizeof operator on struct types and struct instances,
   member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
+  chained arrow access (e.g., `n.next->value`),
   brace-enclosed initializer lists for local struct variables with automatic zero-fill
   (e.g., `struct Point p = {3, 4};`), whole-struct copy assignment and copy initialization
   from another struct variable of the same type. Pointer-to-struct function parameters
@@ -147,6 +148,7 @@ Through Stage 37 (incomplete struct declarations / forward declarations):
   access patterns (e.g., `points[0].x`). Incomplete struct forward declarations:
   `struct Tag;` can appear before the body is defined; pointer-to-incomplete-struct fields
   and self-referential structs via typedef (e.g., `typedef struct Node Node; struct Node { Node *next; };`) are supported.
+  Validation: `sizeof` and variable declarations reject incomplete struct types with diagnostic errors.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   emitted to `.data`) and uninitialized (with zero-initialization, emitted to
@@ -245,9 +247,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 37 all
-tests pass (486 valid, 153 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 772 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 37-02 all
+tests pass (487 valid, 156 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 776 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

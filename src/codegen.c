@@ -625,12 +625,33 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
 
 /*
  * Stage 31: emit the address of a struct field accessed via "->" and
- * leave it in rax.  The base must be an AST_VAR_REF naming a local
- * pointer-to-struct variable.  Returns the StructField descriptor.
+ * leave it in rax.  The base may be an AST_VAR_REF naming a local
+ * pointer-to-struct variable, or an AST_MEMBER_ACCESS (e.g. n.next->value).
+ * Returns the StructField descriptor.
  */
 static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
     ASTNode *base = node->children[0];
     const char *field_name = node->value;
+
+    /* Stage 37-02: chained dot-then-arrow (e.g. n.next->value). */
+    if (base->type == AST_MEMBER_ACCESS) {
+        StructField *inner = emit_member_addr(cg, base);
+        if (inner->kind != TYPE_POINTER || !inner->full_type ||
+            !inner->full_type->base || inner->full_type->base->kind != TYPE_STRUCT) {
+            fprintf(stderr, "error: '->' applied to non-pointer-to-struct\n");
+            exit(1);
+        }
+        Type *st = inner->full_type->base;
+        StructField *f = find_struct_field(st, field_name);
+        if (!f) {
+            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+            exit(1);
+        }
+        fprintf(cg->output, "    mov rax, [rax]\n");
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
 
     if (base->type != AST_VAR_REF) {
         fprintf(stderr, "error: '->' base must be an identifier\n");
@@ -1507,6 +1528,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_SIZEOF_TYPE) {
         int sz;
         if (node->decl_type == TYPE_STRUCT && node->full_type) {
+            if (node->full_type->size == 0) {
+                fprintf(stderr, "error: sizeof applied to incomplete struct type\n");
+                exit(1);
+            }
             sz = node->full_type->size;
         } else {
             switch (node->decl_type) {
@@ -2298,6 +2323,12 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * emits per-byte stack stores instead. */
         if (node->decl_type == TYPE_STRUCT && node->full_type) {
             /* Stage 30/32: struct local. Stage 32 adds brace-initializer support. */
+            if (node->full_type->size == 0) {
+                fprintf(stderr,
+                        "error: variable '%s' has incomplete struct type\n",
+                        node->value);
+                exit(1);
+            }
             int size = node->full_type->size;
             int align = node->full_type->alignment;
             int offset = codegen_add_var(cg, node->value, size, align,
