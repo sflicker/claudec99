@@ -9,6 +9,7 @@
 <function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
 
 <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
+
 <declaration_specifier>  ::= <storage_class_specifier>
                             | <type_specifier>
 
