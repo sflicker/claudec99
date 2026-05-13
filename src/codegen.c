@@ -6,6 +6,7 @@
 
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
+    case TYPE_VOID:     return 0; /* never directly allocated */
     case TYPE_CHAR:     return 1;
     case TYPE_SHORT:    return 2;
     case TYPE_INT:      return 4;
@@ -67,6 +68,26 @@ static int pointer_types_equal(Type *a, Type *b) {
     return a == b;
 }
 
+/* Stage 38: true when `t` is exactly `void *` (one pointer level over void). */
+static int is_void_ptr(Type *t) {
+    return t && t->kind == TYPE_POINTER && t->base && t->base->kind == TYPE_VOID;
+}
+
+/*
+ * Stage 38: pointer assignment compatibility. `void *` is assignable
+ * to/from any object pointer type (non-function pointer). Delegates to
+ * pointer_types_equal for all other cases.
+ */
+static int pointer_types_assignable(Type *dst, Type *src) {
+    if (!dst || dst->kind != TYPE_POINTER) return 0;
+    if (!src || src->kind != TYPE_POINTER) return 0;
+    /* void* <-> function pointer is not allowed */
+    if (dst->base && dst->base->kind == TYPE_FUNCTION) return pointer_types_equal(dst, src);
+    if (src->base && src->base->kind == TYPE_FUNCTION) return pointer_types_equal(dst, src);
+    if (is_void_ptr(dst) || is_void_ptr(src)) return 1;
+    return pointer_types_equal(dst, src);
+}
+
 /*
  * Stage 25-02: deep equality check for two function-pointer types.
  * Both a and b must be TYPE_POINTER → TYPE_FUNCTION chains.
@@ -90,6 +111,7 @@ static int func_ptr_types_equal_cg(Type *a, Type *b) {
 /* Stage 25-02: map a TypeKind to its singleton Type*. */
 static Type *type_from_kind(TypeKind kind) {
     switch (kind) {
+    case TYPE_VOID:  return type_void();
     case TYPE_CHAR:  return type_char();
     case TYPE_SHORT: return type_short();
     case TYPE_LONG:  return type_long();
@@ -467,6 +489,13 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
         } else if (lv->kind == TYPE_POINTER) {
             element = lv->full_type->base;
+            /* Stage 38: subscript on void * is not allowed. */
+            if (element && element->kind == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: cannot subscript void pointer '%s'\n",
+                        base_node->value);
+                exit(1);
+            }
             fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
         } else {
             fprintf(stderr,
@@ -480,6 +509,13 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
         } else if (gv->kind == TYPE_POINTER) {
             element = gv->full_type->base;
+            /* Stage 38: subscript on void * is not allowed. */
+            if (element && element->kind == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: cannot subscript void pointer '%s'\n",
+                        base_node->value);
+                exit(1);
+            }
             fprintf(cg->output, "    mov rax, [rel %s]\n", gv->name);
         } else {
             fprintf(stderr,
@@ -1328,6 +1364,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = lv->full_type;
                 return;
             }
+            /* Stage 38: reject assigning a void function call result. */
+            if (node->children[0]->type == AST_FUNCTION_CALL &&
+                node->children[0]->decl_type == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: cannot use void function result in assignment to '%s'\n",
+                        lv->name);
+                exit(1);
+            }
             codegen_expression(cg, node->children[0]);
             /* Stage 25-02: when the LHS is a function pointer, verify
              * the RHS carries a compatible function pointer type. */
@@ -1364,6 +1408,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         if (gv->kind == TYPE_ARRAY) {
             fprintf(stderr, "error: arrays are not assignable\n");
+            exit(1);
+        }
+        /* Stage 38: reject assigning a void function call result. */
+        if (node->children[0]->type == AST_FUNCTION_CALL &&
+            node->children[0]->decl_type == TYPE_VOID) {
+            fprintf(stderr,
+                    "error: cannot use void function result in assignment to '%s'\n",
+                    gv->name);
             exit(1);
         }
         codegen_expression(cg, node->children[0]);
@@ -1433,6 +1485,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             exit(1);
         }
         Type *base = operand_type->base;
+        /* Stage 38: reject dereferencing a void pointer. */
+        if (base->kind == TYPE_VOID) {
+            fprintf(stderr, "error: cannot dereference void pointer\n");
+            exit(1);
+        }
         /* Stage 25-03: dereferencing a function pointer is an identity —
          * the address already in rax is the callable value; no memory
          * load.  The result type is TYPE_POINTER so the indirect-call
@@ -2135,6 +2192,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: pointer arithmetic missing pointer type\n");
                 exit(1);
             }
+            /* Stage 38: pointer arithmetic on void * is not allowed. */
+            if (ptr_type->base && ptr_type->base->kind == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: cannot perform pointer arithmetic on void pointer\n");
+                exit(1);
+            }
             int elem_size = type_size(ptr_type->base);
             if (lhs_is_ptr) {
                 /* Pointer in rcx, integer in rax. */
@@ -2454,8 +2517,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                             node->value);
                     exit(1);
                 }
-                if (!pointer_types_equal(node->children[0]->full_type,
-                                         node->full_type)) {
+                if (!pointer_types_assignable(node->full_type,
+                                              node->children[0]->full_type)) {
                     fprintf(stderr,
                             "error: variable '%s' incompatible pointer type in initializer\n",
                             node->value);
@@ -2476,59 +2539,95 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             codegen_statement(cg, node->children[i], is_main);
         }
     } else if (node->type == AST_RETURN_STATEMENT) {
-        /* Stage 12-06: a return of the literal `0` from a pointer
-         * function is a null pointer constant; accept it before the
-         * integer-vs-pointer match enforced below. `mov eax, 0`
-         * already zero-extends to rax, so the value in the return
-         * register is the null address. */
-        int ret_is_null_ptr = (cg->current_return_type == TYPE_POINTER &&
-                               is_null_pointer_constant(node->children[0]));
-        codegen_expression(cg, node->children[0]);
-        TypeKind src_kind = node->children[0]->result_type;
-        TypeKind dst_kind = cg->current_return_type;
-        /* Stage 12-05: when either side is a pointer, no integer
-         * conversion applies — enforce strict type matching instead.
-         * The pointer value is already in the full rax. */
-        if (ret_is_null_ptr) {
-            /* null pointer constant: no conversion needed */
-        } else if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
-            if (dst_kind != TYPE_POINTER) {
+        if (node->child_count == 0) {
+            /* bare return; — only valid in void functions */
+            if (cg->current_return_type != TYPE_VOID) {
                 fprintf(stderr,
-                        "error: function '%s' returning pointer from non pointer function\n",
+                        "error: empty return statement in non-void function '%s'\n",
                         cg->current_func);
                 exit(1);
             }
-            if (src_kind != TYPE_POINTER) {
-                fprintf(stderr,
-                        "error: function '%s' returning non pointer; expected pointer\n",
-                        cg->current_func);
-                exit(1);
+            if (cg->has_frame) {
+                fprintf(cg->output, "    mov rsp, rbp\n");
+                fprintf(cg->output, "    pop rbp\n");
             }
-            if (!pointer_types_equal(node->children[0]->full_type,
-                                     cg->current_return_full_type)) {
-                fprintf(stderr,
-                        "error: function '%s' returning incorrect pointer type\n",
-                        cg->current_func);
-                exit(1);
-            }
+            fprintf(cg->output, "    ret\n");
         } else {
-            /* Convert the result to the function's declared return type
-             * before placing it in the return register. Narrowing to int
-             * is implicit (eax already holds the low 32 bits of rax); all
-             * other size changes emit an explicit sign-extend. */
-            emit_convert(cg, src_kind, dst_kind);
+            /* return with expression */
+            if (cg->current_return_type == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: void function '%s' cannot return a value\n",
+                        cg->current_func);
+                exit(1);
+            }
+            /* Reject using a void function call result as a return value. */
+            if (node->children[0]->type == AST_FUNCTION_CALL &&
+                node->children[0]->decl_type == TYPE_VOID) {
+                fprintf(stderr,
+                        "error: cannot use void function result as return value\n");
+                exit(1);
+            }
+            /* Stage 12-06: a return of the literal `0` from a pointer
+             * function is a null pointer constant; accept it before the
+             * integer-vs-pointer match enforced below. `mov eax, 0`
+             * already zero-extends to rax, so the value in the return
+             * register is the null address. */
+            int ret_is_null_ptr = (cg->current_return_type == TYPE_POINTER &&
+                                   is_null_pointer_constant(node->children[0]));
+            codegen_expression(cg, node->children[0]);
+            TypeKind src_kind = node->children[0]->result_type;
+            TypeKind dst_kind = cg->current_return_type;
+            /* Stage 12-05: when either side is a pointer, no integer
+             * conversion applies — enforce strict type matching instead.
+             * The pointer value is already in the full rax. */
+            if (ret_is_null_ptr) {
+                /* null pointer constant: no conversion needed */
+            } else if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
+                if (dst_kind != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: function '%s' returning pointer from non pointer function\n",
+                            cg->current_func);
+                    exit(1);
+                }
+                if (src_kind != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: function '%s' returning non pointer; expected pointer\n",
+                            cg->current_func);
+                    exit(1);
+                }
+                /* Stage 38: void* return is compatible with any object pointer return type,
+                 * and any object pointer is compatible with a void* return type. */
+                if (!pointer_types_assignable(node->children[0]->full_type,
+                                              cg->current_return_full_type) &&
+                    !pointer_types_assignable(cg->current_return_full_type,
+                                              node->children[0]->full_type)) {
+                    if (!pointer_types_equal(node->children[0]->full_type,
+                                             cg->current_return_full_type)) {
+                        fprintf(stderr,
+                                "error: function '%s' returning incorrect pointer type\n",
+                                cg->current_func);
+                        exit(1);
+                    }
+                }
+            } else {
+                /* Convert the result to the function's declared return type
+                 * before placing it in the return register. Narrowing to int
+                 * is implicit (eax already holds the low 32 bits of rax); all
+                 * other size changes emit an explicit sign-extend. */
+                emit_convert(cg, src_kind, dst_kind);
+            }
+            /* Stage 14-07: main now returns normally so the gcc-linked
+             * crt0 / __libc_start_main can call libc `exit`, which runs
+             * stdio cleanup (notably flushing buffered `puts` output to
+             * non-TTY stdouts). The exit code in eax becomes
+             * __libc_start_main's return-from-main value, which it then
+             * passes to exit. */
+            if (cg->has_frame) {
+                fprintf(cg->output, "    mov rsp, rbp\n");
+                fprintf(cg->output, "    pop rbp\n");
+            }
+            fprintf(cg->output, "    ret\n");
         }
-        /* Stage 14-07: main now returns normally so the gcc-linked
-         * crt0 / __libc_start_main can call libc `exit`, which runs
-         * stdio cleanup (notably flushing buffered `puts` output to
-         * non-TTY stdouts). The exit code in eax becomes
-         * __libc_start_main's return-from-main value, which it then
-         * passes to exit. */
-        if (cg->has_frame) {
-            fprintf(cg->output, "    mov rsp, rbp\n");
-            fprintf(cg->output, "    pop rbp\n");
-        }
-        fprintf(cg->output, "    ret\n");
     } else if (node->type == AST_IF_STATEMENT) {
         int label_id = cg->label_count++;
         codegen_expression(cg, node->children[0]);
@@ -2828,6 +2927,15 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Generate body statements directly — the function body acts as the outermost scope. */
         for (int i = 0; i < body->child_count; i++) {
             codegen_statement(cg, body->children[i], is_main);
+        }
+
+        /* Void functions get an implicit epilogue so falling off the end
+         * returns cleanly.  For non-void functions the behaviour of
+         * falling off the end is undefined; we don't emit a spurious ret. */
+        if (node->decl_type == TYPE_VOID) {
+            fprintf(cg->output, "    mov rsp, rbp\n");
+            fprintf(cg->output, "    pop rbp\n");
+            fprintf(cg->output, "    ret\n");
         }
     }
 }

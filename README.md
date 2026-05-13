@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 37-02 (additional struct tests):
+Through Stage 38 (void type and void pointer):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -118,6 +118,10 @@ Through Stage 37-02 (additional struct tests):
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
+- **void type**: `void` return type for functions; void functions may use bare `return;`
+  or fall off the end without an explicit return. `void *` generic object pointer with
+  implicit conversion to/from any non-function pointer type. `f(void)` parameter list
+  means zero parameters.
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
@@ -247,9 +251,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 37-02 all
-tests pass (487 valid, 156 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 776 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 38 all
+tests pass (493 valid, 165 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 791 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

@@ -14,6 +14,7 @@
 #define FUNC_TYPE_MAX_PARAMS 16
 
 typedef enum {
+    TYPE_VOID,
     TYPE_CHAR,
     TYPE_SHORT,
     TYPE_INT,
@@ -57,6 +58,7 @@ typedef struct Type {
     int field_count;
 } Type;
 
+Type *type_void(void);
 Type *type_char(void);
 Type *type_short(void);
 Type *type_int(void);

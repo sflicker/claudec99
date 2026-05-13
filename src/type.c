@@ -9,11 +9,13 @@
  * any of them yet.
  */
 
+static Type type_void_singleton  = { TYPE_VOID,  0, 0, 0, NULL, 0 };
 static Type type_char_singleton  = { TYPE_CHAR,  1, 1, 1, NULL, 0 };
 static Type type_short_singleton = { TYPE_SHORT, 2, 2, 1, NULL, 0 };
 static Type type_int_singleton   = { TYPE_INT,   4, 4, 1, NULL, 0 };
 static Type type_long_singleton  = { TYPE_LONG,  8, 8, 1, NULL, 0 };
 
+Type *type_void(void)  { return &type_void_singleton;  }
 Type *type_char(void)  { return &type_char_singleton;  }
 Type *type_short(void) { return &type_short_singleton; }
 Type *type_int(void)   { return &type_int_singleton;   }
@@ -99,6 +101,7 @@ Type *type_struct(int size, int alignment) {
 
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
+    case TYPE_VOID:     return "void";
     case TYPE_CHAR:     return "char";
     case TYPE_SHORT:    return "short";
     case TYPE_INT:      return "int";
@@ -127,6 +130,7 @@ int type_is_integer(Type *t) {
     case TYPE_INT:
     case TYPE_LONG:
         return 1;
+    case TYPE_VOID:
     case TYPE_POINTER:
     case TYPE_ARRAY:
     case TYPE_FUNCTION:

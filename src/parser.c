@@ -580,15 +580,17 @@ static Type *parse_enum_specifier(Parser *parser) {
 }
 
 /*
- * <type_specifier> ::= "char" | "short" | "int" | "long"
+ * <type_specifier> ::= "void" | "char" | "short" | "int" | "long"
+ *                    | <typedef_name> | <enum_specifier> | <struct_specifier>
  *
- * Parses one integer-type keyword, advances the token, and returns the
+ * Parses one type keyword, advances the token, and returns the
  * corresponding Type*. Writes the TypeKind to *out_kind when non-NULL.
  */
 static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     TypeKind kind;
     Type *t;
     switch (parser->current.type) {
+    case TOKEN_VOID:  kind = TYPE_VOID;  t = type_void();  break;
     case TOKEN_CHAR:  kind = TYPE_CHAR;  t = type_char();  break;
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
@@ -1065,6 +1067,10 @@ static ASTNode *parse_unary(Parser *parser) {
         }
         /* Peek past '(' to distinguish sizeof(type) from sizeof(expression) */
         parser->current = lexer_next_token(parser->lexer); /* consume '(' */
+        if (parser->current.type == TOKEN_VOID) {
+            fprintf(stderr, "error: sizeof applied to void type\n");
+            exit(1);
+        }
         if (parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
@@ -1156,7 +1162,8 @@ static ASTNode *parse_cast(Parser *parser) {
         int saved_pos = parser->lexer->pos;
         Token saved_token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        if (parser->current.type == TOKEN_CHAR ||
+        if (parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
@@ -1780,7 +1787,8 @@ static ASTNode *parse_statement(Parser *parser) {
      * Stage 25-01: a function-pointer declarator (*fp)(params) allocates an
      * 8-byte local with decl_type=TYPE_POINTER.
      * Stage 25-03: optional initializer supported. */
-    if (parser->current.type == TOKEN_CHAR ||
+    if (parser->current.type == TOKEN_VOID ||
+        parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG ||
@@ -1798,6 +1806,14 @@ static ASTNode *parse_statement(Parser *parser) {
         }
 
         ParsedDeclarator d = parse_declarator(parser);
+
+        /* Reject `void x;` — void cannot be an object type. */
+        if (base_kind == TYPE_VOID && d.pointer_count == 0 &&
+            !d.is_func_pointer && !d.is_array) {
+            fprintf(stderr,
+                    "error: cannot declare variable '%s' of type void\n", d.name);
+            exit(1);
+        }
 
         if (d.is_func_pointer) {
             ASTNode *decl = ast_new(AST_DECLARATION, d.name);
@@ -1959,10 +1975,15 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_RETURN) {
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *expr = parse_expression(parser);
-        parser_expect(parser, TOKEN_SEMICOLON);
         ASTNode *stmt = ast_new(AST_RETURN_STATEMENT, NULL);
-        ast_add_child(stmt, expr);
+        if (parser->current.type == TOKEN_SEMICOLON) {
+            /* bare return; — no expression child */
+            parser->current = lexer_next_token(parser->lexer);
+        } else {
+            ASTNode *expr = parse_expression(parser);
+            parser_expect(parser, TOKEN_SEMICOLON);
+            ast_add_child(stmt, expr);
+        }
         return stmt;
     }
     if (parser->current.type == TOKEN_IF) {
@@ -2148,7 +2169,8 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
             else if (parser->current.type == TOKEN_STATIC) r.sc = SC_STATIC;
             else r.sc = SC_TYPEDEF;
             parser->current = lexer_next_token(parser->lexer);
-        } else if (parser->current.type == TOKEN_CHAR ||
+        } else if (parser->current.type == TOKEN_VOID ||
+                   parser->current.type == TOKEN_CHAR ||
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
                    parser->current.type == TOKEN_LONG ||
@@ -2317,6 +2339,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             fprintf(stderr, "error: '%s' is not a function declarator\n", d.name);
             exit(1);
         }
+        /* Reject `void g;` — void cannot be an object type. */
+        if (base_kind == TYPE_VOID && d.pointer_count == 0 &&
+            !d.is_func_pointer && !d.is_array) {
+            fprintf(stderr,
+                    "error: cannot declare variable '%s' of type void\n", d.name);
+            exit(1);
+        }
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
@@ -2436,8 +2465,22 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         func->full_type = full_type;
 
     parser_expect(parser, TOKEN_LPAREN);
-    if (parser->current.type != TOKEN_RPAREN)
+    /* `f(void)` — the sole `void` keyword means zero parameters. */
+    if (parser->current.type == TOKEN_VOID) {
+        int saved_pos = parser->lexer->pos;
+        Token saved = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type != TOKEN_RPAREN) {
+            /* `void` followed by `*` or identifier is a normal parameter;
+             * restore and parse the full parameter list. */
+            parser->lexer->pos = saved_pos;
+            parser->current = saved;
+            parse_parameter_list(parser, func);
+        }
+        /* else: true `(void)` — zero parameters; leave func with no children */
+    } else if (parser->current.type != TOKEN_RPAREN) {
         parse_parameter_list(parser, func);
+    }
     parser_expect(parser, TOKEN_RPAREN);
 
     if (parser->current.type == TOKEN_ASSIGN) {

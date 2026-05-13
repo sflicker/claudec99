@@ -14,7 +14,8 @@
 
 <storage_class_specifier>   ::= "extern" | "static" | "typedef"
 
-<parameter_list> ::= <parameter_declarator> { "," <parameter_declarator> }
+<parameter_list> ::= "void"
+                   | <parameter_declarator> { "," <parameter_declarator> }
 
 <parameter_declarator> ::= <type_specifier> [ <declarator> ]
 
@@ -50,7 +51,8 @@
                        | <direct_declarator> "[" [ <integer_literal> ] "]"
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
-<type_specifier> ::= <integer_type> 
+<type_specifier> ::= "void"
+                     | <integer_type> 
                      | <typedef_name> 
                      | <enum_specifier> 
                      | <struct_specifier>
@@ -78,7 +80,7 @@
 
 <struct_declarator_list> ::= <declarator> { "," <declarator> }
 
-<return_statement> ::= "return" <expression> ";"
+<return_statement> ::= "return" [ <expression> ] ";"
 
 <if_statement> ::= "if" "(" <expression> ")" <statement> [ "else" <statement> ]
  
@@ -251,5 +253,16 @@
 #   - Struct-by-value function parameters are not yet supported.
 #     Pointer-to-struct parameters (struct T *p) are supported (stage 34).
 #   - Struct-by-value return types are not yet supported.
+#
+# void type (stage 38):
+#   - void cannot be used as an object type (void x; is rejected at all scopes).
+#   - void * is a generic object pointer compatible with any non-function pointer type.
+#   - Dereferencing void * is rejected.
+#   - Pointer arithmetic on void * is rejected.
+#   - Subscript on void * is rejected.
+#   - sizeof(void) is rejected.
+#   - The f(void) parameter list means zero parameters.
+#   - Functions returning void do not need a return statement; they may use bare return;
+#     or fall off the end.
 
 ```
