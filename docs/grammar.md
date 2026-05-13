@@ -12,6 +12,9 @@
 
 <declaration_specifier>  ::= <storage_class_specifier>
                             | <type_specifier>
+                            | <type_qualifier>
+
+<type_qualifier> ::= "const"
 
 <storage_class_specifier>   ::= "extern" | "static" | "typedef"
 
@@ -265,5 +268,12 @@
 #   - The f(void) parameter list means zero parameters.
 #   - Functions returning void do not need a return statement; they may use bare return;
 #     or fall off the end.
+#
+# const qualifier (stage 39):
+#   - const qualifiers are parsed and stored on base types.
+#   - Assignment to simple const-qualified variables (const int x; x = 5;) is rejected.
+#   - Pointer-level const enforcement is not yet supported: writes through const pointers
+#     (const int *p; *p = x;), const-to-non-const conversions, and pointer-to-const
+#     const-correctness checks are deferred to a later stage.
 
 ```

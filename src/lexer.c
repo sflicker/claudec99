@@ -375,6 +375,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_STRUCT;
         } else if (strcmp(token.value, "void") == 0) {
             token.type = TOKEN_VOID;
+        } else if (strcmp(token.value, "const") == 0) {
+            token.type = TOKEN_CONST;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -414,6 +416,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_ENUM:             return "'enum'";
         case TOKEN_STRUCT:           return "'struct'";
         case TOKEN_VOID:             return "'void'";
+        case TOKEN_CONST:            return "'const'";
         case TOKEN_IDENTIFIER:       return "identifier";
         case TOKEN_INT_LITERAL:      return "integer literal";
         case TOKEN_STRING_LITERAL:   return "string literal";

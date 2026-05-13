@@ -645,6 +645,9 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
  * Returns the fully pointer-wrapped Type*.
  */
 static Type *parse_type_name(Parser *parser) {
+    /* Stage 39: consume optional leading const qualifier. */
+    if (parser->current.type == TOKEN_CONST)
+        parser->current = lexer_next_token(parser->lexer);
     Type *t = parse_type_specifier(parser, NULL);
     while (parser->current.type == TOKEN_STAR) {
         t = type_pointer(t);
@@ -749,6 +752,9 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                                     " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
                             exit(1);
                         }
+                        /* Stage 39: consume optional const qualifier. */
+                        if (parser->current.type == TOKEN_CONST)
+                            parser->current = lexer_next_token(parser->lexer);
                         Type *pt = parse_type_specifier(parser, NULL);
                         int stars = 0;
                         while (parser->current.type == TOKEN_STAR) {
@@ -1777,7 +1783,7 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->lexer->pos = saved_pos;
         parser->current = saved_token;
     }
-    /* <declaration> ::= <type_specifier> <init_declarator> ";"
+    /* <declaration> ::= [<type_qualifier>] <type_specifier> <init_declarator> ";"
      * <init_declarator> ::= <declarator> [ "=" <initializer_expression> ]
      *
      * parse_type_specifier reads the base keyword; parse_declarator
@@ -1786,8 +1792,15 @@ static ASTNode *parse_statement(Parser *parser) {
      *
      * Stage 25-01: a function-pointer declarator (*fp)(params) allocates an
      * 8-byte local with decl_type=TYPE_POINTER.
-     * Stage 25-03: optional initializer supported. */
-    if (parser->current.type == TOKEN_VOID ||
+     * Stage 25-03: optional initializer supported.
+     * Stage 39: optional leading const qualifier. */
+    int local_is_const = 0;
+    if (parser->current.type == TOKEN_CONST) {
+        local_is_const = 1;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    if (local_is_const ||
+        parser->current.type == TOKEN_VOID ||
         parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
@@ -1836,6 +1849,8 @@ static ASTNode *parse_statement(Parser *parser) {
         }
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        /* Stage 39: const applies to the variable when no pointer depth. */
+        decl->is_const = (local_is_const && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
 
         /* Stage 13-01 / 14-06: optional array suffix on the declarator.
          * An omitted size is only valid with a string-literal initializer;
@@ -1949,6 +1964,7 @@ static ASTNode *parse_statement(Parser *parser) {
                 full_type2 = type_pointer(full_type2);
             }
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            next_decl->is_const = (local_is_const && d2.pointer_count == 0) ? 1 : 0;
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = full_type2;
@@ -2073,6 +2089,9 @@ static ASTNode *parse_statement(Parser *parser) {
  * ParsedDeclarator.is_func_pointer flag set by parse_declarator.
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
+    /* Stage 39: consume optional leading const qualifier on parameter types. */
+    if (parser->current.type == TOKEN_CONST)
+        parser->current = lexer_next_token(parser->lexer);
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
 
@@ -2137,7 +2156,8 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
  * Stage 27: collect declaration specifiers as a list, validate semantics.
  *
  * <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
- * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier>
+ * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier> | <type_qualifier>
+ * <type_qualifier>         ::= "const"
  *
  * Errors: duplicate storage class, duplicate type specifier, missing type specifier.
  */
@@ -2145,6 +2165,7 @@ typedef struct {
     StorageClass sc;
     TypeKind base_kind;
     Type *base_type;
+    int is_const;
 } DeclSpecResult;
 
 static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
@@ -2152,11 +2173,15 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
     r.sc = SC_NONE;
     r.base_kind = TYPE_INT;
     r.base_type = NULL;
+    r.is_const = 0;
     int has_sc = 0;
     int has_type = 0;
 
     while (1) {
-        if (parser->current.type == TOKEN_EXTERN ||
+        if (parser->current.type == TOKEN_CONST) {
+            r.is_const = 1;
+            parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_EXTERN ||
             parser->current.type == TOKEN_STATIC ||
             parser->current.type == TOKEN_TYPEDEF) {
             if (has_sc) {
@@ -2206,8 +2231,9 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
  * <function_definition>    ::= <declaration_specifiers> <declarator> <block_statement>
  * <declaration>            ::= <declaration_specifiers> <init_declarator_list> ";"
  * <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
- * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier>
+ * <declaration_specifier>  ::= <storage_class_specifier> | <type_specifier> | <type_qualifier>
  * <storage_class_specifier>::= "extern" | "static"
+ * <type_qualifier>         ::= "const"
  *
  * After parsing the common declaration_specifiers + declarator prefix:
  *   - function declarator + "{"  → function definition
@@ -2371,6 +2397,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
         decl->storage_class = sc;
+        /* Stage 39: const applies to the variable when no pointer depth. */
+        decl->is_const = (ds.is_const && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
         if (d.is_array) {
             if (!d.has_size) {
                 fprintf(stderr,
@@ -2432,6 +2460,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             parser_register_global(parser, d2.name, k2, sc, reg_ft2);
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
+            next_decl->is_const = (ds.is_const && d2.pointer_count == 0) ? 1 : 0;
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = ft2;

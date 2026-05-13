@@ -24,6 +24,8 @@ typedef struct {
      * to construct a `pointer-to-T` result type. */
     TypeKind kind;
     Type *full_type;
+    /* Stage 39: set when the variable itself is const-qualified. */
+    int is_const;
 } LocalVar;
 
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
@@ -44,6 +46,8 @@ typedef struct {
      * from a function designator). init_label holds the symbol name. */
     int is_label_init;
     char init_label[256];
+    /* Stage 39: set when the variable itself is const-qualified. */
+    int is_const;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

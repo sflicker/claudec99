@@ -348,6 +348,7 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
     cg->locals[cg->local_count].size = size;
     cg->locals[cg->local_count].kind = kind;
     cg->locals[cg->local_count].full_type = full_type;
+    cg->locals[cg->local_count].is_const = 0;
     cg->local_count++;
     return cg->stack_offset;
 }
@@ -1340,6 +1341,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(stderr, "error: arrays are not assignable\n");
                 exit(1);
             }
+            /* Stage 39: reject assignment to a const-qualified variable. */
+            if (lv->is_const) {
+                fprintf(stderr,
+                        "error: assignment to const variable '%s'\n", lv->name);
+                exit(1);
+            }
             /* Stage 33: struct-to-struct assignment — byte copy of sizeof(T) bytes. */
             if (lv->kind == TYPE_STRUCT && lv->full_type) {
                 if (node->child_count < 1 || node->children[0]->type != AST_VAR_REF) {
@@ -1408,6 +1415,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         if (gv->kind == TYPE_ARRAY) {
             fprintf(stderr, "error: arrays are not assignable\n");
+            exit(1);
+        }
+        /* Stage 39: reject assignment to a const-qualified global. */
+        if (gv->is_const) {
+            fprintf(stderr,
+                    "error: assignment to const variable '%s'\n", gv->name);
             exit(1);
         }
         /* Stage 38: reject assigning a void function call result. */
@@ -2396,6 +2409,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int align = node->full_type->alignment;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
+            cg->locals[cg->local_count - 1].is_const = node->is_const;
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Zero-fill the entire struct slot first, then store provided values. */
@@ -2451,6 +2465,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int length = node->full_type->length;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
+            cg->locals[cg->local_count - 1].is_const = node->is_const;
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Stage 32: brace-initializer list. Evaluate each element and
@@ -2490,6 +2505,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         int size = type_kind_bytes(node->decl_type);
         int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
+        cg->locals[cg->local_count - 1].is_const = node->is_const;
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
             TypeKind init_kind = node->children[0]->result_type;
@@ -3071,6 +3087,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->init_value = 0;
     gv->is_label_init = 0;
     gv->init_label[0] = '\0';
+    gv->is_const = decl->is_const;
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {

@@ -75,6 +75,9 @@ typedef struct ASTNode {
     /* Stage 23: storage class of file-scope declarations and function
      * definitions. SC_NONE (0) is the default (external linkage). */
     StorageClass storage_class;
+    /* Stage 39: set on AST_DECLARATION when the variable itself is
+     * const-qualified (const scalar; NOT set for pointer-to-const). */
+    int is_const;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);
