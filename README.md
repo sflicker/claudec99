@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 41 (pointer arithmetic completion):
+Through Stage 42 (arrays of pointers):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -141,10 +141,14 @@ Through Stage 41 (pointer arithmetic completion):
   to other functions.
 - **Arrays**: array declarations, indexing, array-to-pointer decay,
   pointer arithmetic (p + n, p - n, p++, p--, p += n, p -= n, p1 - p2 with element-size scaling),
-  subscript-as-pointer-arithmetic, initialization of local `char` arrays from a string literal (with explicit or
+  subscript-as-pointer-arithmetic, nested subscripting of arrays of pointers (e.g., `names[0][1]`),
+  initialization of local `char` arrays from a string literal (with explicit or
   inferred size), brace-enclosed initializer lists for local arrays with
   partial initialization and automatic zero-fill (e.g., `int a[3] = {1, 2, 3};`),
-  file-scope (global) uninitialized array declarations. Pointer arithmetic rejects void* and function pointer operands.
+  file-scope (global) uninitialized array declarations. Arrays of pointers with strict
+  type checking: compatible pointer assignments allowed, void-pointer conversions bidirectional,
+  null constant (0) accepted, nonzero integers and incompatible pointer types rejected.
+  Pointer arithmetic rejects void* and function pointer operands.
 - **Structs**: named struct definitions with natural-alignment field layout,
   local and global struct variables, sizeof operator on struct types and struct instances,
   member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
@@ -258,9 +262,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 41 all
-tests pass (519 valid, 170 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 819 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 42 all
+tests pass (534 valid, 174 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 841 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

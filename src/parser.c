@@ -1033,8 +1033,11 @@ static ASTNode *parse_postfix(Parser *parser) {
         }
         if (parser->current.type == TOKEN_LBRACKET) {
             /* Stage 28-04: also allow a parenthesized deref as the subscript
-             * base, supporting (*ptr_to_array)[idx] patterns. */
-            if (expr->type != AST_VAR_REF && expr->type != AST_DEREF) {
+             * base, supporting (*ptr_to_array)[idx] patterns.
+             * Stage 42: also allow a prior array subscript so that
+             * pointer-array element subscripts like names[0][1] work. */
+            if (expr->type != AST_VAR_REF && expr->type != AST_DEREF &&
+                expr->type != AST_ARRAY_INDEX) {
                 fprintf(stderr, "error: subscript base must be an identifier\n");
                 exit(1);
             }

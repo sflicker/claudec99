@@ -494,6 +494,42 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    add rax, rbx\n");
         return element;
     }
+    /* Stage 42: nested subscript — base is itself an array-index expression
+     * (e.g. names[0][1] where names is char *[]).  Evaluate the inner
+     * subscript address, load the pointer stored there, then use it as the
+     * pointer base for the outer index. */
+    if (base_node->type == AST_ARRAY_INDEX) {
+        Type *inner_element = emit_array_index_addr(cg, base_node);
+        if (inner_element->kind != TYPE_POINTER) {
+            fprintf(stderr, "error: subscript base is not a pointer or array\n");
+            exit(1);
+        }
+        Type *element = inner_element->base;
+        if (element->kind == TYPE_VOID) {
+            fprintf(stderr, "error: cannot subscript void pointer\n");
+            exit(1);
+        }
+        fprintf(cg->output, "    mov rax, [rax]\n");
+        int elem_size = type_size(element);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            fprintf(stderr, "error: array subscript index must be an integer\n");
+            exit(1);
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        if (elem_size != 1) {
+            fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
     if (base_node->type != AST_VAR_REF) {
         fprintf(stderr, "error: subscript base must be an identifier\n");
         exit(1);
@@ -1284,6 +1320,23 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
+            /* Stage 42: enforce pointer assignment rules for pointer-element arrays. */
+            if (element->kind == TYPE_POINTER) {
+                int rhs_is_null = is_null_pointer_constant(node->children[1]);
+                TypeKind rhs_kind = node->children[1]->result_type;
+                if (!rhs_is_null && rhs_kind != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: assigning nonzero integer to pointer\n");
+                    exit(1);
+                }
+                if (!rhs_is_null && rhs_kind == TYPE_POINTER &&
+                    !pointer_types_assignable(element,
+                                              node->children[1]->full_type)) {
+                    fprintf(stderr,
+                            "error: incompatible pointer type in array element assignment\n");
+                    exit(1);
+                }
+            }
             emit_convert(cg, node->children[1]->result_type, element->kind);
             fprintf(cg->output, "    pop rbx\n");
             cg->push_depth--;
