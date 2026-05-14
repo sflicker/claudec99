@@ -6,3 +6,4 @@ build/
 test1
 *.asm
 *.backup
+benchmarks/
