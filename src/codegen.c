@@ -711,9 +711,23 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         return f;
     }
 
+    /* Stage 41: support pointer-expression bases like (p+1)->field. */
     if (base->type != AST_VAR_REF) {
-        fprintf(stderr, "error: '->' base must be an identifier\n");
-        exit(1);
+        codegen_expression(cg, base);
+        Type *ptr_type = base->full_type;
+        if (!ptr_type || ptr_type->kind != TYPE_POINTER ||
+            !ptr_type->base || ptr_type->base->kind != TYPE_STRUCT) {
+            fprintf(stderr, "error: '->' applied to non-pointer-to-struct\n");
+            exit(1);
+        }
+        StructField *f = find_struct_field(ptr_type->base, field_name);
+        if (!f) {
+            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
+            exit(1);
+        }
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
     }
     LocalVar *lv = codegen_find_var(cg, base->value);
     if (!lv) {
@@ -1749,19 +1763,31 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_PREFIX_INC_DEC) {
-        /* ++x or --x: update variable, result is new value. Arithmetic
-         * stays 32-bit this stage; size-aware store/load preserves the
-         * declared width. */
+        /* ++x or --x: update variable, result is new value.
+         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops. */
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
             emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
-            if (strcmp(node->value, "++") == 0) {
-                fprintf(cg->output, "    add eax, 1\n");
+            if (lv->kind == TYPE_POINTER && lv->full_type) {
+                int elem_size = type_size(lv->full_type->base);
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add rax, %d\n", elem_size);
+                } else {
+                    fprintf(cg->output, "    sub rax, %d\n", elem_size);
+                }
+                emit_store_local(cg, lv->offset, lv->size, 1);
+                node->result_type = TYPE_POINTER;
+                node->full_type = lv->full_type;
             } else {
-                fprintf(cg->output, "    sub eax, 1\n");
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add eax, 1\n");
+                } else {
+                    fprintf(cg->output, "    sub eax, 1\n");
+                }
+                emit_store_local(cg, lv->offset, lv->size, 0);
+                node->result_type = TYPE_INT;
             }
-            emit_store_local(cg, lv->offset, lv->size, 0);
         } else {
             GlobalVar *gv = codegen_find_global(cg, var_name);
             if (!gv) {
@@ -1769,29 +1795,58 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 exit(1);
             }
             emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
-            if (strcmp(node->value, "++") == 0) {
-                fprintf(cg->output, "    add eax, 1\n");
+            if (gv->kind == TYPE_POINTER && gv->full_type) {
+                int elem_size = type_size(gv->full_type->base);
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add rax, %d\n", elem_size);
+                } else {
+                    fprintf(cg->output, "    sub rax, %d\n", elem_size);
+                }
+                emit_store_global(cg, gv->name, gv->size, 1);
+                node->result_type = TYPE_POINTER;
+                node->full_type = gv->full_type;
             } else {
-                fprintf(cg->output, "    sub eax, 1\n");
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add eax, 1\n");
+                } else {
+                    fprintf(cg->output, "    sub eax, 1\n");
+                }
+                emit_store_global(cg, gv->name, gv->size, 0);
+                node->result_type = TYPE_INT;
             }
-            emit_store_global(cg, gv->name, gv->size, 0);
         }
-        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_POSTFIX_INC_DEC) {
-        /* x++ or x--: result is old value, then update variable */
+        /* x++ or x--: result is old value, then update variable.
+         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops. */
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
             emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
-            fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
-            if (strcmp(node->value, "++") == 0) {
-                fprintf(cg->output, "    add eax, 1\n");
+            if (lv->kind == TYPE_POINTER && lv->full_type) {
+                int elem_size = type_size(lv->full_type->base);
+                fprintf(cg->output, "    mov rcx, rax\n");  /* save old pointer */
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add rax, %d\n", elem_size);
+                } else {
+                    fprintf(cg->output, "    sub rax, %d\n", elem_size);
+                }
+                emit_store_local(cg, lv->offset, lv->size, 1);
+                fprintf(cg->output, "    mov rax, rcx\n");  /* result: old pointer */
+                node->result_type = TYPE_POINTER;
+                node->full_type = lv->full_type;
             } else {
-                fprintf(cg->output, "    sub eax, 1\n");
+                fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add eax, 1\n");
+                } else {
+                    fprintf(cg->output, "    sub eax, 1\n");
+                }
+                emit_store_local(cg, lv->offset, lv->size, 0);
+                fprintf(cg->output, "    mov eax, ecx\n");  /* result: old value */
+                node->result_type = TYPE_INT;
             }
-            emit_store_local(cg, lv->offset, lv->size, 0);
         } else {
             GlobalVar *gv = codegen_find_global(cg, var_name);
             if (!gv) {
@@ -1799,16 +1854,30 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 exit(1);
             }
             emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
-            fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
-            if (strcmp(node->value, "++") == 0) {
-                fprintf(cg->output, "    add eax, 1\n");
+            if (gv->kind == TYPE_POINTER && gv->full_type) {
+                int elem_size = type_size(gv->full_type->base);
+                fprintf(cg->output, "    mov rcx, rax\n");  /* save old pointer */
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add rax, %d\n", elem_size);
+                } else {
+                    fprintf(cg->output, "    sub rax, %d\n", elem_size);
+                }
+                emit_store_global(cg, gv->name, gv->size, 1);
+                fprintf(cg->output, "    mov rax, rcx\n");  /* result: old pointer */
+                node->result_type = TYPE_POINTER;
+                node->full_type = gv->full_type;
             } else {
-                fprintf(cg->output, "    sub eax, 1\n");
+                fprintf(cg->output, "    mov ecx, eax\n");  /* save old value */
+                if (strcmp(node->value, "++") == 0) {
+                    fprintf(cg->output, "    add eax, 1\n");
+                } else {
+                    fprintf(cg->output, "    sub eax, 1\n");
+                }
+                emit_store_global(cg, gv->name, gv->size, 0);
+                fprintf(cg->output, "    mov eax, ecx\n");  /* result: old value */
+                node->result_type = TYPE_INT;
             }
-            emit_store_global(cg, gv->name, gv->size, 0);
         }
-        fprintf(cg->output, "    mov eax, ecx\n");  /* restore old value as result */
-        node->result_type = TYPE_INT;
         return;
     }
     if (node->type == AST_CAST) {
@@ -2159,6 +2228,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          */
         int is_pointer_cmp = 0;
         int is_pointer_arith = 0;
+        int is_pointer_diff = 0;
         if (is_arith || is_cmp) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
@@ -2176,17 +2246,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     common = TYPE_LONG;
                 } else if (strcmp(op, "-") == 0) {
                     if (lt == TYPE_POINTER && rt == TYPE_POINTER) {
-                        fprintf(stderr,
-                                "error: pointer subtraction not supported\n");
-                        exit(1);
+                        /* Stage 41: pointer difference p1 - p2. */
+                        is_pointer_diff = 1;
+                        common = TYPE_LONG;
+                    } else {
+                        if (rt == TYPE_POINTER) {
+                            fprintf(stderr,
+                                    "error: cannot subtract pointer from integer\n");
+                            exit(1);
+                        }
+                        is_pointer_arith = 1;
+                        common = TYPE_LONG;
                     }
-                    if (rt == TYPE_POINTER) {
-                        fprintf(stderr,
-                                "error: cannot subtract pointer from integer\n");
-                        exit(1);
-                    }
-                    is_pointer_arith = 1;
-                    common = TYPE_LONG;
                 } else {
                     fprintf(stderr,
                             "error: operator '%s' not supported on pointer operands\n",
@@ -2274,6 +2345,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: cannot perform pointer arithmetic on void pointer\n");
                 exit(1);
             }
+            /* Stage 41: pointer arithmetic on function pointers is not allowed. */
+            if (ptr_type->base && ptr_type->base->kind == TYPE_FUNCTION) {
+                fprintf(stderr,
+                        "error: cannot perform pointer arithmetic on function pointer\n");
+                exit(1);
+            }
             int elem_size = type_size(ptr_type->base);
             if (lhs_is_ptr) {
                 /* Pointer in rcx, integer in rax. */
@@ -2299,10 +2376,53 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             return;
         }
 
+        /* Stage 41: pointer difference p1 - p2. Both sides evaluated;
+         * rcx = p1 (LHS), rax = p2 (RHS). Validate matching pointee
+         * types, subtract addresses (byte delta), divide by sizeof(*p1)
+         * to produce a signed element-count (ptrdiff_t-equivalent long). */
+        if (is_pointer_diff) {
+            Type *lptr = node->children[0]->full_type;
+            Type *rptr = node->children[1]->full_type;
+            if (!lptr || lptr->kind != TYPE_POINTER ||
+                !rptr || rptr->kind != TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: pointer subtraction missing pointer type\n");
+                exit(1);
+            }
+            if ((lptr->base && lptr->base->kind == TYPE_VOID) ||
+                (rptr->base && rptr->base->kind == TYPE_VOID)) {
+                fprintf(stderr,
+                        "error: cannot perform pointer arithmetic on void pointer\n");
+                exit(1);
+            }
+            if ((lptr->base && lptr->base->kind == TYPE_FUNCTION) ||
+                (rptr->base && rptr->base->kind == TYPE_FUNCTION)) {
+                fprintf(stderr,
+                        "error: cannot perform pointer arithmetic on function pointer\n");
+                exit(1);
+            }
+            if (!pointer_types_equal(lptr, rptr)) {
+                fprintf(stderr,
+                        "error: incompatible pointer types in subtraction\n");
+                exit(1);
+            }
+            int elem_size = type_size(lptr->base);
+            /* rcx = p1, rax = p2; compute p1 - p2 in bytes then divide. */
+            fprintf(cg->output, "    sub rcx, rax\n");
+            fprintf(cg->output, "    mov rax, rcx\n");
+            if (elem_size > 1) {
+                fprintf(cg->output, "    cqo\n");
+                fprintf(cg->output, "    mov rcx, %d\n", elem_size);
+                fprintf(cg->output, "    idiv rcx\n");
+            }
+            node->result_type = TYPE_LONG;
+            return;
+        }
+
         /* Stage 40: compute result signedness via UAC now that both children
          * have been evaluated and their is_unsigned flags are set. */
         int op_is_unsigned = 0;
-        if (!is_pointer_cmp && !is_pointer_arith && (is_arith || is_cmp)) {
+        if (!is_pointer_cmp && !is_pointer_arith && !is_pointer_diff && (is_arith || is_cmp)) {
             op_is_unsigned = uac_is_unsigned(
                 node->children[0]->result_type, node->children[0]->is_unsigned,
                 node->children[1]->result_type, node->children[1]->is_unsigned);

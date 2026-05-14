@@ -280,5 +280,16 @@
 #   - Pointer-level const enforcement is not yet supported: writes through const pointers
 #     (const int *p; *p = x;), const-to-non-const conversions, and pointer-to-const
 #     const-correctness checks are deferred to a later stage.
+#
+# Pointer arithmetic (stage 41):
+#   - p + n and p - n: address(p) ± n * sizeof(*p); result type is T*.
+#   - n + p: equivalent to p + n.
+#   - p += n and p -= n: compound assignment forms; scale by sizeof(*p).
+#   - ++p, p++, --p, p--: prefix/postfix increment/decrement; step is sizeof(*p).
+#   - p1 - p2: pointer difference; result is (address(p1) - address(p2)) / sizeof(*p1),
+#     a signed long (ptrdiff_t equivalent). Requires identical pointee types.
+#   - p[n]: subscript; equivalent to *(p + n). Supported for both arrays and pointers.
+#   - Pointer arithmetic on void * is rejected.
+#   - Pointer arithmetic on function pointers is rejected.
 
 ```
