@@ -37,6 +37,7 @@ File-scope pointer to string literal
     int main() {
         puts(s);    // EXPECTED OUTPUT: "abc"
         return 0;   // EXPECTED EXIT CODE: 0
+    }
 ```
 
 File-scope array of pointers to string literals

@@ -1902,13 +1902,13 @@ static ASTNode *parse_statement(Parser *parser) {
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
                 if (parser->current.type == TOKEN_LBRACE) {
-                    /* Stage 32: brace-initializer list for array. */
-                    if (!has_size) {
-                        fprintf(stderr,
-                                "error: omitted array size requires string literal initializer\n");
-                        exit(1);
-                    }
+                    /* Stage 32: brace-initializer list for array.
+                     * Stage 43: allow omitted size — infer from element count. */
                     init_node = parse_initializer(parser);
+                    if (!has_size) {
+                        length = init_node->child_count;
+                        has_size = 1;
+                    }
                 } else if (parser->current.type == TOKEN_STRING_LITERAL) {
                     if (full_type->kind != TYPE_CHAR) {
                         fprintf(stderr,
@@ -2447,14 +2447,59 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         /* Stage 39: const applies to the variable when no pointer depth. */
         decl->is_const = (ds.is_const && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
         if (d.is_array) {
-            if (!d.has_size) {
+            /* Stage 43: file-scope array with optional initializer.
+             * Size may be inferred from a string literal or brace list. */
+            int has_size = d.has_size;
+            int length = d.array_length;
+            ASTNode *init_node = NULL;
+
+            if (parser->current.type == TOKEN_ASSIGN) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LBRACE) {
+                    init_node = parse_initializer(parser);
+                    if (!has_size) {
+                        length = init_node->child_count;
+                        has_size = 1;
+                    }
+                } else if (parser->current.type == TOKEN_STRING_LITERAL) {
+                    if (full_type->kind != TYPE_CHAR) {
+                        fprintf(stderr,
+                                "error: string initializer only supported for char arrays\n");
+                        exit(1);
+                    }
+                    Token str_tok = parser->current;
+                    parser->current = lexer_next_token(parser->lexer);
+                    ASTNode *str_init = ast_new(AST_STRING_LITERAL, NULL);
+                    memcpy(str_init->value, str_tok.value, str_tok.length);
+                    str_init->value[str_tok.length] = '\0';
+                    str_init->byte_length = str_tok.length;
+                    int needed = str_init->byte_length + 1;
+                    if (has_size) {
+                        if (length < needed) {
+                            fprintf(stderr,
+                                    "error: array too small for string literal initializer\n");
+                            exit(1);
+                        }
+                    } else {
+                        length = needed;
+                    }
+                    init_node = str_init;
+                } else {
+                    fprintf(stderr,
+                            "error: array initializer must be a brace-enclosed list or string literal\n");
+                    exit(1);
+                }
+            } else if (!has_size) {
                 fprintf(stderr,
                         "error: array size required for file-scope declaration '%s'\n",
                         d.name);
                 exit(1);
             }
+
             decl->decl_type = TYPE_ARRAY;
-            decl->full_type = type_array(full_type, d.array_length);
+            decl->full_type = type_array(full_type, length);
+            if (init_node)
+                ast_add_child(decl, init_node);
             parser_expect(parser, TOKEN_SEMICOLON);
             return decl;
         }
@@ -2469,13 +2514,20 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             /* Stage 40: mark unsigned scalar. */
             decl->is_unsigned = !base_type->is_signed;
         }
-        /* Stage 22-02: optional constant initializer. */
+        /* Stage 22-02: optional constant initializer.
+         * Stage 43: also accept string literals for pointer globals. */
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *init = parse_primary(parser);
-            if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL) {
+            if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
+                init->type != AST_STRING_LITERAL) {
                 fprintf(stderr,
                         "error: non-constant initializer for global '%s'\n", d.name);
+                exit(1);
+            }
+            if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
+                fprintf(stderr,
+                        "error: string literal can only initialize a pointer\n");
                 exit(1);
             }
             ast_add_child(decl, init);

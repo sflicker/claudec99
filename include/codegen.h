@@ -52,6 +52,10 @@ typedef struct {
     int is_const;
     /* Stage 40: set when the variable has an unsigned integer type. */
     int is_unsigned;
+    /* Stage 43: non-NULL when the initializer is a string literal or
+     * initializer-list (array/pointer-array cases). Points into the AST,
+     * which outlives codegen_translate_unit. */
+    struct ASTNode *init_node;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

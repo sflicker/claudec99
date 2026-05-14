@@ -225,16 +225,17 @@
 #   - Forward enum declarations without a body are not supported.
 #
 # Arrays:
-#   - Omitted array size is only supported for block-scope char arrays
-#     initialized from string literal.
+#   - Omitted array size is supported for arrays initialized from a string literal
+#     (char arrays only) or a brace-enclosed initializer list at both block scope and file scope.
 #   - Block-scope array initializers support brace-enclosed lists (stage 32)
 #     with partial initialization zero-filling remaining elements.
-#   - File-scope array initializers are not currently supported.
 #   - Array declarators in multi-declarator lists are not currently supported.
 #
 # Initializers:
-#   - File-scope object initializers must currently be integer or character
-#     literals. Full constant expressions are not yet supported.
+#   - File-scope object initializers support: integer and character literals (scalar types),
+#     string literals (pointer types, char *s = "abc"), and brace-enclosed constant lists
+#     for arrays (char s[] = "abc", int a[] = {1,2,3}, char *names[] = {"a","b"}). 
+#     Full constant expressions are not yet supported.
 #   - Struct initializers support brace-enclosed lists (stage 32) and
 #     whole-struct copy from a variable of the same type (stage 33).
 #   - Struct assignment (`d = c`) copies all bytes when both operands share

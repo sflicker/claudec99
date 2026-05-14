@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 42 (arrays of pointers):
+Through Stage 43 (file-scope array initializers):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -145,7 +145,10 @@ Through Stage 42 (arrays of pointers):
   initialization of local `char` arrays from a string literal (with explicit or
   inferred size), brace-enclosed initializer lists for local arrays with
   partial initialization and automatic zero-fill (e.g., `int a[3] = {1, 2, 3};`),
-  file-scope (global) uninitialized array declarations. Arrays of pointers with strict
+  file-scope (global) uninitialized array declarations. File-scope array initialization from
+  string literals (`char s[] = "abc"`) and brace-enclosed constant lists (`int values[] = {10,20,30}`,
+  `char *names[] = {"if","else","while"}`). Size inference from initializer for `[]` declarations
+  at both block scope and file scope. Arrays of pointers with strict
   type checking: compatible pointer assignments allowed, void-pointer conversions bidirectional,
   null constant (0) accepted, nonzero integers and incompatible pointer types rejected.
   Pointer arithmetic rejects void* and function pointer operands.
@@ -166,7 +169,8 @@ Through Stage 42 (arrays of pointers):
   Validation: `sizeof` and variable declarations reject incomplete struct types with diagnostic errors.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
-  emitted to `.data`) and uninitialized (with zero-initialization, emitted to
+  string-literal initialization for pointer globals, and brace-list initialization for array globals,
+  emitted to `.data` and `.rodata`) and uninitialized (with zero-initialization, emitted to
   `.bss`). Duplicate declarations and type mismatches are rejected. Function
   and object names do not collide in the ordinary identifier namespace.
   `extern` and `static` storage class specifiers are supported: `extern` declares
@@ -236,8 +240,7 @@ Anonymous structs, bit-fields, struct by-value parameters/return values (pointer
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
 variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
-calls with more than 6 arguments. Global aggregate initializers (brace lists and
-string-literal array initialization at file scope) are not yet supported.
+calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -262,9 +265,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 42 all
-tests pass (534 valid, 174 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 841 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 43 all
+tests pass (538 valid, 174 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 845 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

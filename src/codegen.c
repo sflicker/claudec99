@@ -3369,6 +3369,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->init_label[0] = '\0';
     gv->is_const = decl->is_const;
     gv->is_unsigned = decl->is_unsigned;
+    gv->init_node = NULL;
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {
@@ -3383,6 +3384,29 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             strncpy(gv->init_label, init->value, 255);
             gv->init_label[255] = '\0';
             gv->is_label_init = 1;
+            gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_ARRAY && init->type == AST_STRING_LITERAL) {
+            /* Stage 43: char s[] = "abc" — char array from string literal. */
+            gv->init_node = init;
+            gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_POINTER && init->type == AST_STRING_LITERAL) {
+            /* Stage 43: char *s = "abc" — pointer initialized from string
+             * literal.  Add the literal to the string pool now so its label
+             * is assigned before codegen_emit_data runs. */
+            if (cg->string_pool_count >= MAX_STRING_LITERALS) {
+                fprintf(stderr, "error: too many string literals (max %d)\n",
+                        MAX_STRING_LITERALS);
+                exit(1);
+            }
+            int idx = cg->string_pool_count;
+            cg->string_pool[idx] = init;
+            cg->string_pool_count++;
+            snprintf(gv->init_label, sizeof(gv->init_label), "Lstr%d", idx);
+            gv->is_label_init = 1;
+            gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_ARRAY && init->type == AST_INITIALIZER_LIST) {
+            /* Stage 43: int values[] = {10,20,30} or char *names[] = {...}. */
+            gv->init_node = init;
             gv->is_initialized = 1;
         }
     }
@@ -3416,15 +3440,76 @@ static void codegen_emit_data(CodeGen *cg) {
     fprintf(cg->output, "section .data\n");
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
-        if (gv->is_initialized) {
-            if (gv->is_label_init) {
-                /* Stage 25-02: emit a label-reference initializer (e.g. dq inc). */
-                fprintf(cg->output, "%s: %s %s\n",
-                        gv->name, data_init_directive(gv->kind), gv->init_label);
-            } else {
-                fprintf(cg->output, "%s: %s %ld\n",
-                        gv->name, data_init_directive(gv->kind), gv->init_value);
+        if (!gv->is_initialized) continue;
+
+        if (gv->init_node && gv->kind == TYPE_ARRAY &&
+            gv->init_node->type == AST_STRING_LITERAL) {
+            /* Stage 43: char s[] = "abc" — emit bytes inline. */
+            ASTNode *str = gv->init_node;
+            int arr_len = gv->full_type ? gv->full_type->length : str->byte_length + 1;
+            fprintf(cg->output, "%s: db ", gv->name);
+            for (int j = 0; j < arr_len; j++) {
+                unsigned char b = (j < str->byte_length)
+                                  ? (unsigned char)str->value[j] : 0;
+                if (j > 0) fprintf(cg->output, ", ");
+                fprintf(cg->output, "%d", b);
             }
+            fprintf(cg->output, "\n");
+        } else if (gv->init_node && gv->kind == TYPE_ARRAY &&
+                   gv->init_node->type == AST_INITIALIZER_LIST) {
+            /* Stage 43: int values[] = {10,20,30} or char *names[] = {...}.
+             * In NASM: "label: dir v0, v1, v2" — directive emitted once per
+             * element because each element may be a different pseudo-op size
+             * (e.g. dq for pointer, dd for int).  For uniform integer arrays
+             * all directives are the same, but NASM still accepts the form
+             * "label: dd 10\n    dd 20\n    dd 30\n" fine. */
+            ASTNode *list = gv->init_node;
+            int arr_len = gv->full_type ? gv->full_type->length : list->child_count;
+            Type *elem_type = gv->full_type ? gv->full_type->base : NULL;
+            TypeKind elem_kind = elem_type ? elem_type->kind : TYPE_INT;
+            const char *dir = data_init_directive(elem_kind);
+            for (int j = 0; j < arr_len; j++) {
+                const char *label = (j == 0) ? gv->name : "";
+                if (j < list->child_count) {
+                    ASTNode *elem = list->children[j];
+                    if (elem->type == AST_STRING_LITERAL) {
+                        /* char *names[] element — add to pool, emit dq Lstr<N>. */
+                        if (cg->string_pool_count >= MAX_STRING_LITERALS) {
+                            fprintf(stderr, "error: too many string literals (max %d)\n",
+                                    MAX_STRING_LITERALS);
+                            exit(1);
+                        }
+                        int idx = cg->string_pool_count;
+                        cg->string_pool[idx] = elem;
+                        cg->string_pool_count++;
+                        fprintf(cg->output, "%s%s dq Lstr%d\n",
+                                label, *label ? ":" : "", idx);
+                    } else if (elem->type == AST_INT_LITERAL) {
+                        long v = strtol(elem->value, NULL, 10);
+                        fprintf(cg->output, "%s%s %s %ld\n",
+                                label, *label ? ":" : "", dir, v);
+                    } else if (elem->type == AST_CHAR_LITERAL) {
+                        long v = (long)(unsigned char)elem->value[0];
+                        fprintf(cg->output, "%s%s %s %ld\n",
+                                label, *label ? ":" : "", dir, v);
+                    } else {
+                        fprintf(stderr,
+                                "error: unsupported initializer element type in '%s'\n",
+                                gv->name);
+                        exit(1);
+                    }
+                } else {
+                    fprintf(cg->output, "%s%s %s 0\n",
+                            label, *label ? ":" : "", dir);
+                }
+            }
+        } else if (gv->is_label_init) {
+            /* Stage 25-02 / Stage 43: label-reference initializer. */
+            fprintf(cg->output, "%s: %s %s\n",
+                    gv->name, data_init_directive(gv->kind), gv->init_label);
+        } else {
+            fprintf(cg->output, "%s: %s %ld\n",
+                    gv->name, data_init_directive(gv->kind), gv->init_value);
         }
     }
 }
