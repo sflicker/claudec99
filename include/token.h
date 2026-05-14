@@ -88,6 +88,8 @@ typedef struct {
     int length;
     long long_value;
     TypeKind literal_type;
+    /* Stage 00-98: set when the integer literal has a U/u suffix. */
+    int is_unsigned;
 } Token;
 
 const char *token_display_name(TokenType type);

@@ -1174,6 +1174,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    mov eax, %s\n", node->value);
             node->result_type = TYPE_INT;
         }
+        /* node->is_unsigned was set by the parser from the U/u suffix. */
         return;
     }
     if (node->type == AST_CHAR_LITERAL) {
@@ -3154,6 +3155,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
+            cg->locals[cg->local_count - 1].is_unsigned = node->children[i]->is_unsigned;
             const char *reg;
             switch (sz) {
             case 1: reg = param_regs_8[i];  break;

@@ -876,6 +876,7 @@ static ASTNode *parse_primary(Parser *parser) {
         Token token = parser_expect(parser, TOKEN_INT_LITERAL);
         ASTNode *node = ast_new(AST_INT_LITERAL, token.value);
         node->decl_type = token.literal_type;
+        node->is_unsigned = token.is_unsigned;
         return node;
     }
     /* Stage 14-02: a string literal is a primary expression whose

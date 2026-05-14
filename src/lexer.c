@@ -296,9 +296,13 @@ Token lexer_next_token(Lexer *lexer) {
         }
         token.value[i] = '\0';
         int has_long_suffix = 0;
-        if (lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
-            has_long_suffix = 1;
-            lexer->pos++;
+        int has_unsigned_suffix = 0;
+        /* Stage 00-98: consume U/u and L/l suffixes in any order. */
+        while (lexer->source[lexer->pos] == 'U' || lexer->source[lexer->pos] == 'u' ||
+               lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
+            char sc = lexer->source[lexer->pos++];
+            if (sc == 'U' || sc == 'u') has_unsigned_suffix = 1;
+            else has_long_suffix = 1;
         }
         errno = 0;
         char *end = NULL;
@@ -310,8 +314,12 @@ Token lexer_next_token(Lexer *lexer) {
             exit(1);
         }
         token.long_value = (long)parsed;
+        token.is_unsigned = has_unsigned_suffix;
         if (has_long_suffix) {
             token.literal_type = TYPE_LONG;
+        } else if (has_unsigned_suffix) {
+            /* U without L: unsigned int if fits in uint32, else unsigned long. */
+            token.literal_type = (parsed <= 0xFFFFFFFFUL) ? TYPE_INT : TYPE_LONG;
         } else if (parsed <= (unsigned long)INT_MAX) {
             token.literal_type = TYPE_INT;
         } else {
