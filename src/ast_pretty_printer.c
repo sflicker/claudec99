@@ -251,6 +251,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_TYPEDEF_DECL:
         printf("TypedefDecl: %s\n", node->value);
         break;
+    case AST_MEMBER_ACCESS:
+        printf("MemberAccess: %s\n", node->value);
+        break;
+    case AST_ARROW_ACCESS:
+        printf("ArrowAccess: %s\n", node->value);
+        break;
     case AST_INITIALIZER_LIST:
         printf("InitializerList:\n");
         break;

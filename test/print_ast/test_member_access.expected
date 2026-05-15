@@ -1,0 +1,21 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: struct p
+      ExpressionStatement
+        Assignment:
+          MemberAccess: x
+            VariableExpression: p
+          IntLiteral: 3
+      ExpressionStatement
+        Assignment:
+          MemberAccess: y
+            VariableExpression: p
+          IntLiteral: 4
+      ReturnStmt:
+        Binary: ADD
+          MemberAccess: x
+            VariableExpression: p
+          MemberAccess: y
+            VariableExpression: p

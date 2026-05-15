@@ -35,6 +35,15 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_DEFAULT:       return "TOKEN_DEFAULT";
         case TOKEN_CASE:          return "TOKEN_CASE";
         case TOKEN_GOTO:          return "TOKEN_GOTO";
+        case TOKEN_SIZEOF:        return "TOKEN_SIZEOF";
+        case TOKEN_EXTERN:        return "TOKEN_EXTERN";
+        case TOKEN_STATIC:        return "TOKEN_STATIC";
+        case TOKEN_TYPEDEF:       return "TOKEN_TYPEDEF";
+        case TOKEN_ENUM:          return "TOKEN_ENUM";
+        case TOKEN_STRUCT:        return "TOKEN_STRUCT";
+        case TOKEN_VOID:          return "TOKEN_VOID";
+        case TOKEN_CONST:         return "TOKEN_CONST";
+        case TOKEN_UNSIGNED:      return "TOKEN_UNSIGNED";
         case TOKEN_IDENTIFIER:    return "TOKEN_IDENTIFIER";
         case TOKEN_INT_LITERAL:   return "TOKEN_INT_LITERAL";
         case TOKEN_STRING_LITERAL: return "TOKEN_STRING_LITERAL";
@@ -82,6 +91,8 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_CARET:         return "TOKEN_CARET";
         case TOKEN_PIPE:          return "TOKEN_PIPE";
         case TOKEN_QUESTION:      return "TOKEN_QUESTION";
+        case TOKEN_DOT:           return "TOKEN_DOT";
+        case TOKEN_ARROW:         return "TOKEN_ARROW";
         case TOKEN_UNKNOWN:       return "TOKEN_UNKNOWN";
     }
     return "TOKEN_UNKNOWN";

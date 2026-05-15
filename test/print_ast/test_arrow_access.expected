@@ -1,0 +1,26 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: struct p
+      VariableDeclaration: struct *q
+      ExpressionStatement
+        Assignment: q
+          AddressOf:
+            VariableExpression: p
+      ExpressionStatement
+        Assignment:
+          ArrowAccess: x
+            VariableExpression: q
+          IntLiteral: 5
+      ExpressionStatement
+        Assignment:
+          ArrowAccess: y
+            VariableExpression: q
+          IntLiteral: 6
+      ReturnStmt:
+        Binary: ADD
+          ArrowAccess: x
+            VariableExpression: q
+          ArrowAccess: y
+            VariableExpression: q
