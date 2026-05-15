@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 suites=(
     valid
     invalid
+    integration
     print_ast
     print_tokens
     print_asm

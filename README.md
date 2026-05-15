@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 44 (aggregate initializers):
+Through stage 45 (basic libc declarations and external calls):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -117,8 +117,9 @@ Through Stage 44 (aggregate initializers):
   matching between declarations and definitions), SysV AMD64 calls with up to
   6 arguments, typed parameter and return-type conversions at the call boundary,
   calls into libc via `extern` emission for declared-but-not-defined functions
-  (e.g. `int puts(char *s);`). `static` functions have internal linkage
-  (no `global` NASM directive emitted).
+  with support for void* parameters/returns (e.g., `malloc`, `free`), const char*
+  parameters (e.g., `puts`, `strcmp`, `strlen`), and typedef-based size_t.
+  `static` functions have internal linkage (no `global` NASM directive emitted).
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -254,12 +255,13 @@ The authoritative grammar for the supported language is in
 
 ## Tests
 
-The test harness consists of five suites under `test/`:
+The test harness consists of six suites under `test/`:
 
 | Suite          | What it checks                                                      |
 | -------------- | ------------------------------------------------------------------- |
 | `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
+| `integration`  | Compile, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.args`, `.input`, `.status`) drive expected stdout, link flags, argv, stdin, and exit code. |
 | `print_ast`    | `--print-ast` output must match `.expected`                         |
 | `print_tokens` | `--print-tokens` output must match `.expected`                      |
 | `print_asm`    | Generated `.asm` must match `.expected`                             |
@@ -271,9 +273,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 44 all
-tests pass (543 valid, 178 invalid, 39 print-AST, 99 print-tokens,
-21 print-asm; 880 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 45 all
+tests pass (537 valid, 178 invalid, 11 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 885 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

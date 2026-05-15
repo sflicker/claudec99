@@ -1999,8 +1999,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                                 node->value, param->value);
                         exit(1);
                     }
-                    if (!pointer_types_equal(node->children[i]->full_type,
-                                             param->full_type)) {
+                    /* Stage 45: argument-to-parameter pointer compatibility
+                     * follows assignment rules — void* is interchangeable
+                     * with any object pointer type. */
+                    if (!pointer_types_assignable(param->full_type,
+                                                  node->children[i]->full_type)) {
                         fprintf(stderr,
                                 "error: function '%s' parameter '%s' has incompatible pointer type\n",
                                 node->value, param->value);
