@@ -1,0 +1,14 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a
+        IntLiteral: 3
+      VariableDeclaration: int b
+        IntLiteral: 4
+      ReturnStmt:
+        Conditional:
+          Binary: LESSTHAN
+            VariableExpression: a
+            VariableExpression: b
+          VariableExpression: a
+          VariableExpression: b

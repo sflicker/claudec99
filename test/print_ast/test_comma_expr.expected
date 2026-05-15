@@ -1,0 +1,20 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a
+        IntLiteral: 0
+      VariableDeclaration: int b
+        IntLiteral: 0
+      ExpressionStatement
+        Assignment: a
+          CommaExpr:
+            CommaExpr:
+              Assignment: a
+                IntLiteral: 1
+              Assignment: b
+                IntLiteral: 2
+            Binary: ADD
+              VariableExpression: a
+              VariableExpression: b
+      ReturnStmt:
+        VariableExpression: a

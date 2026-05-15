@@ -1,0 +1,18 @@
+TranslationUnit:
+  FunctionDecl: int add
+    Parameter: int a
+    Parameter: int b
+    Block
+      ReturnStmt:
+        Binary: ADD
+          VariableExpression: a
+          VariableExpression: b
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: function *fp
+        VariableExpression: add
+      ReturnStmt:
+        IndirectCall:
+          VariableExpression: fp
+          IntLiteral: 3
+          IntLiteral: 4

@@ -1,0 +1,17 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 0
+      VariableDeclaration: long a
+        SizeofExpr:
+          VariableExpression: x
+      VariableDeclaration: long b
+        SizeofExpr:
+          Binary: ADD
+            VariableExpression: x
+            IntLiteral: 1
+      ReturnStmt:
+        Binary: ADD
+          VariableExpression: a
+          VariableExpression: b

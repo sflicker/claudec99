@@ -1,0 +1,20 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a[3]
+        InitializerList:
+          IntLiteral: 1
+          IntLiteral: 2
+          IntLiteral: 3
+      ReturnStmt:
+        Binary: ADD
+          Binary: ADD
+            ArrayIndex:
+              VariableExpression: a
+              IntLiteral: 0
+            ArrayIndex:
+              VariableExpression: a
+              IntLiteral: 1
+          ArrayIndex:
+            VariableExpression: a
+            IntLiteral: 2

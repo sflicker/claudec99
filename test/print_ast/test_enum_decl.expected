@@ -1,0 +1,8 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int c
+        IntLiteral: 1
+      ReturnStmt:
+        VariableExpression: c

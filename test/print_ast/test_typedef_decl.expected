@@ -1,0 +1,13 @@
+TranslationUnit:
+  TypedefDecl: Integer
+  TypedefDecl: IntPtr
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 5
+      VariableDeclaration: int *p
+        AddressOf:
+          VariableExpression: x
+      ReturnStmt:
+        Dereference:
+          VariableExpression: p

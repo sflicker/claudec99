@@ -1,0 +1,11 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: long a
+        SizeofType: int
+      VariableDeclaration: long b
+        SizeofType: long
+      ReturnStmt:
+        Binary: ADD
+          VariableExpression: a
+          VariableExpression: b

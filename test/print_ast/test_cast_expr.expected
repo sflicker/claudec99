@@ -1,0 +1,11 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        IntLiteral: 7
+      VariableDeclaration: long y
+        Cast: long
+          VariableExpression: x
+      ReturnStmt:
+        Cast: int
+          VariableExpression: y
