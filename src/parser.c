@@ -2145,7 +2145,31 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
         return param;
     }
 
+    /* Stage 45: C99 abstract pointer declarator in a prototype, e.g.
+     * `int puts(char *)`. Pre-consume leading stars so we can detect the
+     * unnamed-pointer-parameter form before delegating to parse_declarator,
+     * which requires an identifier. */
+    int leading_stars = 0;
+    while (parser->current.type == TOKEN_STAR) {
+        leading_stars++;
+        parser->current = lexer_next_token(parser->lexer);
+    }
+    if (leading_stars > 0 &&
+        (parser->current.type == TOKEN_COMMA ||
+         parser->current.type == TOKEN_RPAREN)) {
+        ASTNode *param = ast_new(AST_PARAM, "");
+        Type *full_type = base_type;
+        for (int i = 0; i < leading_stars; i++)
+            full_type = type_pointer(full_type);
+        param->decl_type = TYPE_POINTER;
+        param->full_type = full_type;
+        return param;
+    }
+
     ParsedDeclarator d = parse_declarator(parser);
+    /* Any stars we pre-consumed contribute to the declarator's pointer
+     * count. parse_declarator saw zero leading stars for this declarator. */
+    d.pointer_count += leading_stars;
     ASTNode *param = ast_new(AST_PARAM, d.name);
     if (d.is_func_pointer) {
         param->decl_type = TYPE_POINTER;
