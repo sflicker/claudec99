@@ -32,6 +32,19 @@ static void ast_print_indent(int depth) {
 }
 
 /*
+ * Render the modifiers carried directly on a declaration/parameter
+ * AST node: storage class (extern/static), const, unsigned. Order
+ * matches typical C source order so the printed declaration reads
+ * left-to-right as written.
+ */
+static void ast_print_decl_qualifiers(ASTNode *node) {
+    if (node->storage_class == SC_EXTERN) printf("extern ");
+    else if (node->storage_class == SC_STATIC) printf("static ");
+    if (node->is_const) printf("const ");
+    if (node->is_unsigned) printf("unsigned ");
+}
+
+/*
  * Stage 12-01: print a Type chain in C-style notation. The base
  * integer type prints with a trailing space; each pointer level
  * appends a '*' (no separating space), so `int **` reads as
@@ -57,22 +70,24 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("TranslationUnit:\n");
         break;
     case AST_FUNCTION_DECL:
+        printf("FunctionDecl: ");
+        ast_print_decl_qualifiers(node);
         if (node->decl_type == TYPE_POINTER && node->full_type) {
-            printf("FunctionDecl: ");
             ast_print_type(node->full_type);
             printf("%s\n", node->value);
         } else {
-            printf("FunctionDecl: %s %s\n",
+            printf("%s %s\n",
                    type_kind_name(node->decl_type), node->value);
         }
         break;
     case AST_PARAM:
+        printf("Parameter: ");
+        ast_print_decl_qualifiers(node);
         if (node->decl_type == TYPE_POINTER && node->full_type) {
-            printf("Parameter: ");
             ast_print_type(node->full_type);
             printf("%s\n", node->value);
         } else {
-            printf("Parameter: %s %s\n",
+            printf("%s %s\n",
                    type_kind_name(node->decl_type), node->value);
         }
         break;
@@ -83,19 +98,19 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("DeclList:\n");
         break;
     case AST_DECLARATION:
+        printf("VariableDeclaration: ");
+        ast_print_decl_qualifiers(node);
         if (node->decl_type == TYPE_ARRAY && node->full_type) {
             /* Stage 13-01: render `<element-type> <name>[<length>]`.
              * The element type prints with its trailing space (or
              * pointer asterisks) via ast_print_type. */
-            printf("VariableDeclaration: ");
             ast_print_type(node->full_type->base);
             printf("%s[%d]\n", node->value, node->full_type->length);
         } else if (node->decl_type == TYPE_POINTER && node->full_type) {
-            printf("VariableDeclaration: ");
             ast_print_type(node->full_type);
             printf("%s\n", node->value);
         } else {
-            printf("VariableDeclaration: %s %s\n",
+            printf("%s %s\n",
                    type_kind_name(node->decl_type), node->value);
         }
         break;

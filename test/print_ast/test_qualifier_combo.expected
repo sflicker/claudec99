@@ -1,0 +1,7 @@
+TranslationUnit:
+  VariableDeclaration: static const unsigned int w
+    IntLiteral: 42
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        VariableExpression: w

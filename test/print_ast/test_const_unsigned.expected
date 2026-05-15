@@ -1,0 +1,23 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: const int x
+        IntLiteral: 5
+      VariableDeclaration: unsigned char c
+        IntLiteral: 1
+      VariableDeclaration: unsigned short s
+        IntLiteral: 2
+      VariableDeclaration: unsigned int y
+        IntLiteral: 7
+      VariableDeclaration: unsigned long z
+        IntLiteral: 9
+      ReturnStmt:
+        Binary: ADD
+          Binary: ADD
+            Binary: ADD
+              Binary: ADD
+                VariableExpression: x
+                VariableExpression: c
+              VariableExpression: s
+            VariableExpression: y
+          VariableExpression: z

@@ -1,0 +1,12 @@
+TranslationUnit:
+  VariableDeclaration: extern int g
+  VariableDeclaration: static int h
+    IntLiteral: 5
+  FunctionDecl: static int helper
+    Block
+      ReturnStmt:
+        VariableExpression: h
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        FunctionCall: helper
