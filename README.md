@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through Stage 43 (file-scope array initializers):
+Through Stage 44 (aggregate initializers):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -167,9 +167,15 @@ Through Stage 43 (file-scope array initializers):
   `struct Tag;` can appear before the body is defined; pointer-to-incomplete-struct fields
   and self-referential structs via typedef (e.g., `typedef struct Node Node; struct Node { Node *next; };`) are supported.
   Validation: `sizeof` and variable declarations reject incomplete struct types with diagnostic errors.
+  File-scope struct initialization from brace-enclosed lists (`struct Point p = {3, 4};`).
+  File-scope arrays of structs with per-element brace lists (`struct Point pts[] = {{1,2},{10,20}};`).
+  Struct fields of type `char *` initialized from string literals in file-scope contexts.
+  Field-level type checking for aggregate initializers: string literal for non-pointer field
+  and non-null integer for pointer field are rejected.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
-  string-literal initialization for pointer globals, and brace-list initialization for array globals,
+  string-literal initialization for pointer globals, brace-list initialization for array globals,
+  and aggregate-initializer support for struct globals and arrays of structs,
   emitted to `.data` and `.rodata`) and uninitialized (with zero-initialization, emitted to
   `.bss`). Duplicate declarations and type mismatches are rejected. Function
   and object names do not collide in the ordinary identifier namespace.
@@ -265,9 +271,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 43 all
-tests pass (538 valid, 174 invalid, 24 print-AST, 88 print-tokens,
-21 print-asm; 845 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 44 all
+tests pass (543 valid, 178 invalid, 24 print-AST, 88 print-tokens,
+21 print-asm; 854 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

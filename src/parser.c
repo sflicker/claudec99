@@ -2460,6 +2460,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     if (!has_size) {
                         length = init_node->child_count;
                         has_size = 1;
+                    } else if (init_node->child_count > length) {
+                        /* Stage 44: too many initializers for explicitly-sized array. */
+                        fprintf(stderr,
+                                "error: too many initializers for array '%s'\n", d.name);
+                        exit(1);
                     }
                 } else if (parser->current.type == TOKEN_STRING_LITERAL) {
                     if (full_type->kind != TYPE_CHAR) {
@@ -2515,20 +2520,33 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             decl->is_unsigned = !base_type->is_signed;
         }
         /* Stage 22-02: optional constant initializer.
-         * Stage 43: also accept string literals for pointer globals. */
+         * Stage 43: also accept string literals for pointer globals.
+         * Stage 44: accept brace-list initializers for struct globals. */
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
-            ASTNode *init = parse_primary(parser);
-            if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
-                init->type != AST_STRING_LITERAL) {
-                fprintf(stderr,
-                        "error: non-constant initializer for global '%s'\n", d.name);
-                exit(1);
-            }
-            if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
-                fprintf(stderr,
-                        "error: string literal can only initialize a pointer\n");
-                exit(1);
+            ASTNode *init;
+            if (parser->current.type == TOKEN_LBRACE) {
+                /* Stage 44: struct global initialized with brace list. */
+                if (decl->decl_type != TYPE_STRUCT) {
+                    fprintf(stderr,
+                            "error: brace initializer not valid for non-struct global '%s'\n",
+                            d.name);
+                    exit(1);
+                }
+                init = parse_initializer(parser);
+            } else {
+                init = parse_primary(parser);
+                if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
+                    init->type != AST_STRING_LITERAL) {
+                    fprintf(stderr,
+                            "error: non-constant initializer for global '%s'\n", d.name);
+                    exit(1);
+                }
+                if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
+                    fprintf(stderr,
+                            "error: string literal can only initialize a pointer\n");
+                    exit(1);
+                }
             }
             ast_add_child(decl, init);
         }

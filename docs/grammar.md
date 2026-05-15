@@ -230,6 +230,8 @@
 #   - Block-scope array initializers support brace-enclosed lists (stage 32)
 #     with partial initialization zero-filling remaining elements.
 #   - Array declarators in multi-declarator lists are not currently supported.
+#   - Too-many-elements errors are now reported for explicitly-sized arrays with excess initializers
+#     (both local and file scope).
 #
 # Initializers:
 #   - File-scope object initializers support: integer and character literals (scalar types),
@@ -238,6 +240,10 @@
 #     Full constant expressions are not yet supported.
 #   - Struct initializers support brace-enclosed lists (stage 32) and
 #     whole-struct copy from a variable of the same type (stage 33).
+#   - Struct aggregate initializers (brace-enclosed lists) are now supported at both block scope
+#     and file scope (stage 44), including nested aggregate initializers for struct-typed fields.
+#     Type checking: string literals are rejected for non-pointer fields; non-null integers are
+#     rejected for pointer fields.
 #   - Struct assignment (`d = c`) copies all bytes when both operands share
 #     the same struct type; mismatched struct types are rejected (stage 33).
 #
