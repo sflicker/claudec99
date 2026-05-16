@@ -89,9 +89,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 50 (object-like macros):
+Through stage 51 (function-like macros):
 
-- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), and directive recognition (unsupported directives rejected with diagnostic error).
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, and directive recognition (unsupported directives rejected with diagnostic error).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
@@ -248,7 +248,7 @@ Through stage 50 (object-like macros):
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
-variadics; function-like macros; conditional compilation (`#if`/`#ifdef`/`#else`/`#endif`); pointer-to-function-pointer and function-returning-function-pointer;
+variadics; conditional compilation (`#if`/`#ifdef`/`#else`/`#endif`); pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 50 all
-tests pass (542 valid, 181 invalid, 25 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 907 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 51 all
+tests pass (547 valid, 182 invalid, 25 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 913 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
