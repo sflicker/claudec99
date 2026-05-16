@@ -89,11 +89,11 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 47 (multi-file integration test support):
+Through stage 48 (preprocessor foundation):
 
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), and directive recognition (unsupported directives rejected with diagnostic error).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
-  `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
-  `/* */` comments.
+  `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
   `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
@@ -248,7 +248,7 @@ Through stage 47 (multi-file integration test support):
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
-variadics; preprocessor; pointer-to-function-pointer and function-returning-function-pointer;
+variadics; preprocessor macros, `#include`, and conditional compilation (`#if`/`#ifdef`/`#else`/`#endif`); pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 47 all
-tests pass (537 valid, 178 invalid, 13 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 887 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 48 all
+tests pass (537 valid, 182 invalid, 20 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 898 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

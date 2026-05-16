@@ -1,7 +1,7 @@
 /*
  * ccompiler - A minimal C compiler
  *
- * Pipeline: Source -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
+ * Pipeline: Source -> Preprocessor -> Lexer -> Parser (AST) -> Code Generator (x86_64 NASM)
  */
 
 #include <stdio.h>
@@ -13,6 +13,7 @@
 #include "codegen.h"
 #include "lexer.h"
 #include "parser.h"
+#include "preprocessor.h"
 #include "token.h"
 #include "util.h"
 
@@ -254,18 +255,20 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Read source */
+    /* Read source and preprocess */
     char *source = read_file(source_file);
+    char *preprocessed = preprocess(source);
+    free(source);
 
     if (print_tokens) {
-        print_tokens_mode(source);
-        free(source);
+        print_tokens_mode(preprocessed);
+        free(preprocessed);
         return 0;
     }
 
     /* Lex + Parse */
     Lexer lexer;
-    lexer_init(&lexer, source);
+    lexer_init(&lexer, preprocessed);
 
     Parser parser;
     parser_init(&parser, &lexer);
@@ -275,7 +278,7 @@ int main(int argc, char *argv[]) {
     if (print_ast) {
         ast_pretty_print(ast, 0);
         ast_free(ast);
-        free(source);
+        free(preprocessed);
         return 0;
     }
 
@@ -286,7 +289,7 @@ int main(int argc, char *argv[]) {
     FILE *out = fopen(output_path, "w");
     if (!out) {
         fprintf(stderr, "error: could not create '%s'\n", output_path);
-        free(source);
+        free(preprocessed);
         ast_free(ast);
         return 1;
     }
@@ -297,7 +300,7 @@ int main(int argc, char *argv[]) {
 
     fclose(out);
     ast_free(ast);
-    free(source);
+    free(preprocessed);
 
     printf("compiled: %s -> %s\n", source_file, output_path);
     return 0;
