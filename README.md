@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 45 (basic libc declarations and external calls):
+Through stage 46 (command-line arguments):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -120,6 +120,8 @@ Through stage 45 (basic libc declarations and external calls):
   with support for void* parameters/returns (e.g., `malloc`, `free`), const char*
   parameters (e.g., `puts`, `strcmp`, `strlen`), and typedef-based size_t.
   `static` functions have internal linkage (no `global` NASM directive emitted).
+  Command-line argument support: `int main(int argc, char **argv)` signature with
+  argc and argv[i] access for string arguments passed at program invocation.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -273,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 45 all
-tests pass (537 valid, 178 invalid, 11 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 885 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 46 all
+tests pass (537 valid, 178 invalid, 12 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 886 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
