@@ -5,6 +5,13 @@
 #include "preprocessor.h"
 
 #define MAX_INCLUDE_DEPTH 64
+#define MAX_COND_DEPTH 64
+
+typedef struct {
+    int emitting;        /* current branch is active? */
+    int parent_emitting; /* were we emitting before this conditional? */
+    int seen_else;       /* has #else been seen? */
+} CondFrame;
 
 /* ---- Growable output buffer ------------------------------------------ */
 
@@ -456,6 +463,10 @@ static char *preprocess_internal(const char *source, const char *source_path,
     GrowBuf out;
     gbuf_init(&out, slen + 1);
 
+    CondFrame cond_stack[MAX_COND_DEPTH];
+    int cond_depth = 0;
+    int emitting = 1;
+
     size_t in = 0;
     int line_has_content = 0;
 
@@ -471,7 +482,8 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
         /* Whitespace: pass through, does not count as content. */
         if (isspace((unsigned char)c)) {
-            gbuf_push(&out, s[in++]);
+            if (emitting) gbuf_push(&out, s[in]);
+            in++;
             continue;
         }
 
@@ -494,7 +506,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 exit(1);
             }
             in += 2;
-            gbuf_push(&out, ' ');
+            if (emitting) gbuf_push(&out, ' ');
             continue;
         }
 
@@ -502,6 +514,93 @@ static char *preprocess_internal(const char *source, const char *source_path,
         if (c == '#' && !line_has_content) {
             in++; /* skip '#' */
             while (s[in] == ' ' || s[in] == '\t') in++;
+
+            /* #ifdef NAME */
+            if (strncmp(s + in, "ifdef", 5) == 0 &&
+                !isalnum((unsigned char)s[in + 5]) && s[in + 5] != '_') {
+                in += 5;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                size_t name_start = in;
+                while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                    in++;
+                size_t name_len = in - name_start;
+                while (s[in] && s[in] != '\n') in++;
+                if (cond_depth >= MAX_COND_DEPTH) {
+                    fprintf(stderr, "error: conditional nesting too deep\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int is_defined = macro_find(macros, s + name_start, name_len) != NULL;
+                cond_stack[cond_depth].parent_emitting = emitting;
+                cond_stack[cond_depth].emitting = emitting && is_defined;
+                cond_stack[cond_depth].seen_else = 0;
+                cond_depth++;
+                emitting = cond_stack[cond_depth - 1].emitting;
+                continue;
+            }
+
+            /* #ifndef NAME */
+            if (strncmp(s + in, "ifndef", 6) == 0 &&
+                !isalnum((unsigned char)s[in + 6]) && s[in + 6] != '_') {
+                in += 6;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                size_t name_start = in;
+                while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                    in++;
+                size_t name_len = in - name_start;
+                while (s[in] && s[in] != '\n') in++;
+                if (cond_depth >= MAX_COND_DEPTH) {
+                    fprintf(stderr, "error: conditional nesting too deep\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int is_defined = macro_find(macros, s + name_start, name_len) != NULL;
+                cond_stack[cond_depth].parent_emitting = emitting;
+                cond_stack[cond_depth].emitting = emitting && !is_defined;
+                cond_stack[cond_depth].seen_else = 0;
+                cond_depth++;
+                emitting = cond_stack[cond_depth - 1].emitting;
+                continue;
+            }
+
+            /* #else */
+            if (strncmp(s + in, "else", 4) == 0 &&
+                !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {
+                in += 4;
+                while (s[in] && s[in] != '\n') in++;
+                if (cond_depth == 0) {
+                    fprintf(stderr, "error: #else without conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                CondFrame *top = &cond_stack[cond_depth - 1];
+                if (top->seen_else) {
+                    fprintf(stderr, "error: duplicate else in conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                top->seen_else = 1;
+                if (top->parent_emitting)
+                    top->emitting = !top->emitting;
+                emitting = top->emitting;
+                continue;
+            }
+
+            /* #endif */
+            if (strncmp(s + in, "endif", 5) == 0 &&
+                !isalnum((unsigned char)s[in + 5]) && s[in + 5] != '_') {
+                in += 5;
+                while (s[in] && s[in] != '\n') in++;
+                if (cond_depth == 0) {
+                    fprintf(stderr, "error: #endif without conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                cond_depth--;
+                emitting = cond_depth > 0 ? cond_stack[cond_depth - 1].emitting : 1;
+                continue;
+            }
+
+            /* In inactive regions, skip all remaining directives without error. */
+            if (!emitting) {
+                while (s[in] && s[in] != '\n') in++;
+                continue;
+            }
 
             /* #include "filename" */
             if (strncmp(s + in, "include", 7) == 0 &&
@@ -656,28 +755,40 @@ static char *preprocess_internal(const char *source, const char *source_path,
         /* String literal: pass through unchanged. */
         if (c == '"') {
             line_has_content = 1;
-            gbuf_push(&out, s[in++]);
+            if (emitting) gbuf_push(&out, s[in]);
+            in++;
             while (s[in] && s[in] != '"' && s[in] != '\n') {
                 if (s[in] == '\\' && s[in + 1]) {
-                    gbuf_push(&out, s[in++]);
+                    if (emitting) gbuf_push(&out, s[in]);
+                    in++;
                 }
-                gbuf_push(&out, s[in++]);
+                if (emitting) gbuf_push(&out, s[in]);
+                in++;
             }
-            if (s[in] == '"') gbuf_push(&out, s[in++]);
+            if (s[in] == '"') {
+                if (emitting) gbuf_push(&out, s[in]);
+                in++;
+            }
             continue;
         }
 
         /* Character literal: pass through unchanged. */
         if (c == '\'') {
             line_has_content = 1;
-            gbuf_push(&out, s[in++]);
+            if (emitting) gbuf_push(&out, s[in]);
+            in++;
             while (s[in] && s[in] != '\'' && s[in] != '\n') {
                 if (s[in] == '\\' && s[in + 1]) {
-                    gbuf_push(&out, s[in++]);
+                    if (emitting) gbuf_push(&out, s[in]);
+                    in++;
                 }
-                gbuf_push(&out, s[in++]);
+                if (emitting) gbuf_push(&out, s[in]);
+                in++;
             }
-            if (s[in] == '\'') gbuf_push(&out, s[in++]);
+            if (s[in] == '\'') {
+                if (emitting) gbuf_push(&out, s[in]);
+                in++;
+            }
             continue;
         }
 
@@ -687,53 +798,55 @@ static char *preprocess_internal(const char *source, const char *source_path,
             while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
                 in++;
             size_t id_len = in - id_start;
-            MacroDef *def = macro_find(macros, s + id_start, id_len);
-            if (def && def->param_count == -1) {
-                /* object-like macro: expand replacement directly */
-                gbuf_append(&out, def->replacement, strlen(def->replacement));
-            } else if (def && def->param_count >= 0) {
-                /* function-like macro: look ahead for '(' */
-                size_t peek = in;
-                while (s[peek] == ' ' || s[peek] == '\t') peek++;
-                if (s[peek] == '(') {
-                    in = peek + 1; /* skip optional whitespace and '(' */
-                    char  **args      = NULL;
-                    size_t *arg_lens  = NULL;
-                    int     arg_count = 0;
-                    collect_args(s, &in, &args, &arg_lens, &arg_count);
-                    if (arg_count != def->param_count) {
-                        fprintf(stderr,
-                                "error: argument count mismatch for macro '%.*s':"
-                                " expected %d, got %d\n",
-                                (int)id_len, s + id_start,
-                                def->param_count, arg_count);
+            if (emitting) {
+                MacroDef *def = macro_find(macros, s + id_start, id_len);
+                if (def && def->param_count == -1) {
+                    /* object-like macro: expand replacement directly */
+                    gbuf_append(&out, def->replacement, strlen(def->replacement));
+                } else if (def && def->param_count >= 0) {
+                    /* function-like macro: look ahead for '(' */
+                    size_t peek = in;
+                    while (s[peek] == ' ' || s[peek] == '\t') peek++;
+                    if (s[peek] == '(') {
+                        in = peek + 1; /* skip optional whitespace and '(' */
+                        char  **args      = NULL;
+                        size_t *arg_lens  = NULL;
+                        int     arg_count = 0;
+                        collect_args(s, &in, &args, &arg_lens, &arg_count);
+                        if (arg_count != def->param_count) {
+                            fprintf(stderr,
+                                    "error: argument count mismatch for macro '%.*s':"
+                                    " expected %d, got %d\n",
+                                    (int)id_len, s + id_start,
+                                    def->param_count, arg_count);
+                            for (int i = 0; i < arg_count; i++) free(args[i]);
+                            free(args); free(arg_lens);
+                            free(out.data); free(spliced);
+                            exit(1);
+                        }
+                        /* pre-expand each argument */
+                        for (int i = 0; i < arg_count; i++) {
+                            char *ea = expand_macros_text(args[i], macros);
+                            free(args[i]);
+                            args[i]     = ea;
+                            arg_lens[i] = strlen(ea);
+                        }
+                        /* substitute into replacement, then rescan */
+                        char *subst     = substitute_args(def->replacement,
+                                                           def->params, def->param_count,
+                                                           args, arg_lens);
+                        char *rescanned = expand_macros_text(subst, macros);
+                        gbuf_append(&out, rescanned, strlen(rescanned));
+                        free(rescanned); free(subst);
                         for (int i = 0; i < arg_count; i++) free(args[i]);
                         free(args); free(arg_lens);
-                        free(out.data); free(spliced);
-                        exit(1);
+                    } else {
+                        /* function-like macro not followed by '(' — pass through */
+                        gbuf_append(&out, s + id_start, id_len);
                     }
-                    /* pre-expand each argument */
-                    for (int i = 0; i < arg_count; i++) {
-                        char *ea = expand_macros_text(args[i], macros);
-                        free(args[i]);
-                        args[i]     = ea;
-                        arg_lens[i] = strlen(ea);
-                    }
-                    /* substitute into replacement, then rescan */
-                    char *subst     = substitute_args(def->replacement,
-                                                       def->params, def->param_count,
-                                                       args, arg_lens);
-                    char *rescanned = expand_macros_text(subst, macros);
-                    gbuf_append(&out, rescanned, strlen(rescanned));
-                    free(rescanned); free(subst);
-                    for (int i = 0; i < arg_count; i++) free(args[i]);
-                    free(args); free(arg_lens);
                 } else {
-                    /* function-like macro not followed by '(' — pass through */
                     gbuf_append(&out, s + id_start, id_len);
                 }
-            } else {
-                gbuf_append(&out, s + id_start, id_len);
             }
             line_has_content = 1;
             continue;
@@ -741,9 +854,16 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
         /* Regular character. */
         line_has_content = 1;
-        gbuf_push(&out, s[in++]);
+        if (emitting) gbuf_push(&out, s[in]);
+        in++;
     }
 
+    if (cond_depth > 0) {
+        fprintf(stderr, "error: missing endif\n");
+        free(out.data);
+        free(spliced);
+        exit(1);
+    }
     gbuf_push(&out, '\0');
     free(spliced);
     return out.data;

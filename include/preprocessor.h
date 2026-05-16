@@ -6,10 +6,12 @@
  * relative #include paths).  Pass NULL if there is no filesystem context.
  * Returns a heap-allocated string the caller must free.
  * Performs line splicing, comment stripping, #include "file" expansion,
- * and object-like #define macro substitution.
+ * object-like and function-like #define macro substitution, and
+ * #ifdef/#ifndef/#else/#endif conditional compilation.
  * Exits with an error message on unsupported directives, unterminated
- * comments, missing include files, exceeded include depth, or incompatible
- * macro redefinition. */
+ * comments, missing include files, exceeded include depth, incompatible
+ * macro redefinition, unmatched #else/#endif, duplicate #else, or
+ * missing #endif. */
 char *preprocess(const char *source, const char *source_path);
 
 #endif

@@ -192,6 +192,37 @@
 <character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
                               | "\\" | "\'" | "\"" | "\?" | "\0"
 
+# Preprocessor Directives (preprocessing phase, before parsing):
+
+<preprocessor_directive> ::= <object_like_macro_directive>
+                           | <function_like_macro_directive>
+                           | <include_directive>
+                           | <conditional_directive>
+
+<object_like_macro_directive> ::= "#" "define" <identifier> [ <replacement_list> ]
+
+<function_like_macro_directive> ::= "#" "define" <identifier> "(" [ <parameter_list> ] ")" <replacement_list>
+
+<include_directive> ::= "#" "include" "<filename>"
+                      | "#" "include" "\"" <filename> "\""
+
+<conditional_directive> ::= <ifdef_directive>
+                          | <ifndef_directive>
+                          | <else_directive>
+                          | <endif_directive>
+
+<ifdef_directive> ::= "#" "ifdef" <identifier>
+
+<ifndef_directive> ::= "#" "ifndef" <identifier>
+
+<else_directive> ::= "#" "else"
+
+<endif_directive> ::= "#" "endif"
+
+<replacement_list> ::= any sequence of tokens
+
+<parameter_list> ::= <identifier> { "," <identifier> }
+
 # Current Restrictions:
 #
 # Declarations:
@@ -299,7 +330,7 @@
 #   - Pointer arithmetic on void * is rejected.
 #   - Pointer arithmetic on function pointers is rejected.
 #
-# Preprocessing (stage 50):
+# Preprocessing (stages 50–52):
 #   - Object-like `#define NAME replacement-list` defines a macro that expands
 #     to the replacement text whenever the macro name appears as an identifier
 #     in ordinary source text outside string and character literals.
@@ -312,8 +343,15 @@
 #     produces a fatal error containing "incompatible replacement".
 #   - Macro expansion outputs the replacement text verbatim with no re-scanning
 #     or token re-parsing.
+#   - Conditional directives (`#ifdef`, `#ifndef`, `#else`, `#endif`) control whether
+#     source code regions are included in the preprocessed output. The condition is based
+#     on whether a macro name is currently defined. Inactive regions are suppressed from
+#     output; directives and macro definitions in inactive regions are not processed.
+#     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
+#     duplicate `#else`, and unmatched directives.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
-#     token pasting (`##`), and recursive macro expansion beyond simple guarding
+#     token pasting (`##`), recursive macro expansion beyond simple guarding,
+#     `#if` with expression evaluation, the `defined()` operator, and `#elif`
 #     are not yet supported.
 
 ```
