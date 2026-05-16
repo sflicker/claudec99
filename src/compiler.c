@@ -257,7 +257,7 @@ int main(int argc, char *argv[]) {
 
     /* Read source and preprocess */
     char *source = read_file(source_file);
-    char *preprocessed = preprocess(source);
+    char *preprocessed = preprocess(source, source_file);
     free(source);
 
     if (print_tokens) {

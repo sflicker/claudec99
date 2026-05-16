@@ -12,6 +12,8 @@
 #   .args      runtime argv
 #   .input     stdin
 #   .status    expected exit code (default 0)
+#   .error     if present, test expects a compile error; file content is an
+#              expected substring of the compiler's stderr output
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -39,6 +41,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     input_file="$test_dir/${name}.input"
     status_file="$test_dir/${name}.status"
     expected_file="$test_dir/${name}.expected"
+    error_file="$test_dir/${name}.error"
 
     if [ -f "$libs_file" ]; then
         extra_libs=($(cat "$libs_file"))
@@ -54,6 +57,29 @@ for test_dir in "$SCRIPT_DIR"/*/; do
         expected_status="$(cat "$status_file")"
     else
         expected_status=0
+    fi
+
+    # Error test: expect the compiler to fail on the main source file.
+    if [ -f "$error_file" ]; then
+        expected_error="$(cat "$error_file")"
+        compile_exit=0
+        "$COMPILER" "$test_dir/${name}.c" >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        if [ "$compile_exit" -eq 0 ]; then
+            echo "FAIL  $name  (expected compile error, but succeeded)"
+            fail=$((fail + 1))
+            continue
+        fi
+        actual_error="$(cat "$test_work/${name}.stderr")"
+        if [ -n "$expected_error" ] && ! echo "$actual_error" | grep -qF "$expected_error"; then
+            echo "FAIL  $name  (error message mismatch)"
+            echo "  expected substring: $expected_error"
+            echo "  actual: $actual_error"
+            fail=$((fail + 1))
+            continue
+        fi
+        echo "PASS  $name  (expected compile error)"
+        pass=$((pass + 1))
+        continue
     fi
 
     obj_files=()
