@@ -1,6 +1,32 @@
 {
    "permissions" : {
-       "defaultMode": "acceptEdits"
+       "defaultMode": "acceptEdits",
+       "allow": [
+         "Bash(git status *)",
+         "Bash(git diff *)",
+         "Bash(git log *)",
+         "Bash(git branch *)",
+         "Bash(cmake --build *)",
+         "Bash(cmake *)",
+         "Bash(make *)",
+         "Bash(ninja *)",
+         "Bash(./test/run_all_tests.sh)",
+         "Bash(python3 *)"
+       ],
+       "ask": [
+         "Bash(git commit *)",
+         "Bash(git checkout *)",
+         "Bash(git reset *)"
+       ],
+       "deny": [
+         "Bash(git push *)",
+         "Bash("rm -rf *)",
+         "Bash("curl *)",
+         "Bash("wget *)",
+         "Read(./.env)",
+         "Read(./.env.*)",
+         "Read(./secrets/**)"
+
    }
 }
 
