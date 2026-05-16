@@ -298,5 +298,22 @@
 #   - p[n]: subscript; equivalent to *(p + n). Supported for both arrays and pointers.
 #   - Pointer arithmetic on void * is rejected.
 #   - Pointer arithmetic on function pointers is rejected.
+#
+# Preprocessing (stage 50):
+#   - Object-like `#define NAME replacement-list` defines a macro that expands
+#     to the replacement text whenever the macro name appears as an identifier
+#     in ordinary source text outside string and character literals.
+#   - Empty replacement macros are supported (e.g., `#define EMPTY`).
+#   - Macros are stored in a table shared across all preprocessing passes,
+#     so macros defined in `#include "header.h"` are visible to the including file.
+#   - Compatible redefinition (`#define NAME` with the same replacement text)
+#     is allowed silently.
+#   - Incompatible redefinition (`#define NAME` with different replacement text)
+#     produces a fatal error containing "incompatible replacement".
+#   - Macro expansion outputs the replacement text verbatim with no re-scanning
+#     or token re-parsing.
+#   - Function-like macros (`#define NAME(...)`), stringification (`#`),
+#     token pasting (`##`), and recursive macro expansion beyond simple guarding
+#     are not yet supported.
 
 ```
