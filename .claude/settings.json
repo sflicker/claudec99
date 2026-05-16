@@ -11,6 +11,7 @@
          "Bash(make *)",
          "Bash(ninja *)",
          "Bash(./test/run_all_tests.sh)",
+         "Bash(./build/ccompiler *)",
          "Bash(python3 *)"
        ],
        "ask": [
@@ -20,13 +21,12 @@
        ],
        "deny": [
          "Bash(git push *)",
-         "Bash("rm -rf *)",
-         "Bash("curl *)",
-         "Bash("wget *)",
+         "Bash(rm -rf *)",
+         "Bash(curl *)",
+         "Bash(wget *)",
          "Read(./.env)",
          "Read(./.env.*)",
          "Read(./secrets/**)"
-
+       ]
    }
 }
-
