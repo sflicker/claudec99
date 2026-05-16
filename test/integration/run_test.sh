@@ -1,10 +1,12 @@
 #!/bin/bash
 #
-# Single-test driver for the integration suite. Unlike test/valid, these
-# tests link against libc (puts, strcmp, malloc, etc.), so the build step
-# uses `cc -no-pie` and the linker pulls in crt0 + libc.
+# Single-test driver for the integration suite. Compiles all .c files in the
+# test directory, assembles and links them with cc -no-pie, then runs.
 #
-# Companion files (all optional, sharing the source's basename):
+# Each test lives in its own subdirectory: test/integration/<name>/
+# Pass the main .c file: run_test.sh <name>/<name>.c
+#
+# Companion files (all optional, sharing the directory's basename):
 #   BASENAME.expected  expected stdout (byte-for-byte compare)
 #   BASENAME.libs      extra -l flags, one per token (e.g. "-lm")
 #   BASENAME.args      command-line arguments passed when running
@@ -50,19 +52,25 @@ else
     EXPECTED_STATUS=0
 fi
 
-# Compile C -> ASM
-echo "compiling: $SOURCE"
-"$COMPILER" "$SOURCE"
+# Compile and assemble all .c files in the test directory
+OBJ_FILES=()
+for src in "$SOURCE_DIR"/*.c; do
+    [ -f "$src" ] || continue
+    src_name=$(basename "$src" .c)
+    echo "compiling: $src"
+    "$COMPILER" "$src"
 
-# Assemble ASM -> object
-echo "assembling: ${BASENAME}.asm"
-nasm -f elf64 "${BASENAME}.asm" -o "${BASENAME}.o"
+    echo "assembling: ${src_name}.asm"
+    nasm -f elf64 "${src_name}.asm" -o "${src_name}.o"
 
-# Link object -> executable. cc -no-pie pulls in crt0 + libc.
-echo "linking: ${BASENAME}"
-cc -no-pie "${BASENAME}.o" -o "${BASENAME}" "${EXTRA_LIBS[@]}"
+    OBJ_FILES+=("${src_name}.o")
+done
 
-# Run with optional stdin redirection.
+# Link all objects -> executable
+echo "linking: $BASENAME"
+cc -no-pie "${OBJ_FILES[@]}" -o "$BASENAME" "${EXTRA_LIBS[@]}"
+
+# Run with optional stdin redirection
 echo "running: ./${BASENAME}"
 STDOUT_FILE="${BASENAME}.stdout"
 set +e
@@ -93,5 +101,10 @@ if [ -f "$EXPECTED_FILE" ]; then
     fi
 fi
 
-# Clean up
-rm -f "${BASENAME}.asm" "${BASENAME}.o" "${BASENAME}" "$STDOUT_FILE"
+# Clean up all generated files
+for src in "$SOURCE_DIR"/*.c; do
+    [ -f "$src" ] || continue
+    src_name=$(basename "$src" .c)
+    rm -f "${src_name}.asm" "${src_name}.o"
+done
+rm -f "$BASENAME" "$STDOUT_FILE"

@@ -1,9 +1,12 @@
 #!/bin/bash
 #
-# Integration test runner. Compiles each test, assembles, links against
-# libc via `cc -no-pie`, runs, and checks exit code + stdout.
+# Integration test runner. For each test subdirectory, compiles every .c file,
+# assembles to objects, links them together with cc -no-pie, runs, and checks
+# exit code + stdout.
 #
-# Companion files (per BASENAME):
+# Each test lives in its own subdirectory: test/integration/<name>/
+# Main file: <name>.c
+# Companion files (per directory basename):
 #   .expected  expected stdout
 #   .libs      extra -l flags
 #   .args      runtime argv
@@ -22,16 +25,20 @@ pass=0
 fail=0
 total=0
 
-for src in "$SCRIPT_DIR"/*.c; do
-    [ -f "$src" ] || continue
-    name=$(basename "$src" .c)
+for test_dir in "$SCRIPT_DIR"/*/; do
+    [ -d "$test_dir" ] || continue
+    name=$(basename "$test_dir")
+    [ -f "$test_dir/${name}.c" ] || continue
     total=$((total + 1))
 
-    libs_file="$SCRIPT_DIR/${name}.libs"
-    args_file="$SCRIPT_DIR/${name}.args"
-    input_file="$SCRIPT_DIR/${name}.input"
-    status_file="$SCRIPT_DIR/${name}.status"
-    expected_file="$SCRIPT_DIR/${name}.expected"
+    test_work="$WORK_DIR/$name"
+    mkdir -p "$test_work"
+
+    libs_file="$test_dir/${name}.libs"
+    args_file="$test_dir/${name}.args"
+    input_file="$test_dir/${name}.input"
+    status_file="$test_dir/${name}.status"
+    expected_file="$test_dir/${name}.expected"
 
     if [ -f "$libs_file" ]; then
         extra_libs=($(cat "$libs_file"))
@@ -49,36 +56,50 @@ for src in "$SCRIPT_DIR"/*.c; do
         expected_status=0
     fi
 
-    # Compile .c -> .asm
-    if ! "$COMPILER" "$src" 2>/dev/null; then
-        echo "FAIL  $name  (compiler error)"
-        fail=$((fail + 1))
-        continue
-    fi
+    obj_files=()
+    compile_failed=0
 
-    asm_file="${name}.asm"
-    mv "$asm_file" "$WORK_DIR/" 2>/dev/null
+    for src in "$test_dir"*.c; do
+        [ -f "$src" ] || continue
+        src_name=$(basename "$src" .c)
 
-    # Assemble
-    if ! nasm -f elf64 "$WORK_DIR/${name}.asm" -o "$WORK_DIR/${name}.o" 2>/dev/null; then
-        echo "FAIL  $name  (nasm error)"
-        fail=$((fail + 1))
-        continue
-    fi
+        if ! "$COMPILER" "$src" 2>/dev/null; then
+            echo "FAIL  $name  (compiler error: $src_name.c)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
+        fi
 
-    # Link with libc via cc -no-pie.
-    if ! cc -no-pie "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" "${extra_libs[@]}" 2>/dev/null; then
+        if ! mv "${src_name}.asm" "$test_work/" 2>/dev/null; then
+            echo "FAIL  $name  (asm output missing: ${src_name}.asm)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
+        fi
+
+        if ! nasm -f elf64 "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
+            echo "FAIL  $name  (nasm error: $src_name)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
+        fi
+
+        obj_files+=("$test_work/${src_name}.o")
+    done
+
+    [ "$compile_failed" -eq 1 ] && continue
+
+    if ! cc -no-pie "${obj_files[@]}" -o "$test_work/$name" "${extra_libs[@]}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue
     fi
 
-    # Run with optional stdin redirection and argv.
-    stdout_file="$WORK_DIR/${name}.stdout"
+    stdout_file="$test_work/${name}.stdout"
     if [ -f "$input_file" ]; then
-        "$WORK_DIR/${name}" "${extra_args[@]}" <"$input_file" >"$stdout_file"
+        "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file"
     else
-        "$WORK_DIR/${name}" "${extra_args[@]}" >"$stdout_file"
+        "$test_work/$name" "${extra_args[@]}" >"$stdout_file"
     fi
     actual=$?
 

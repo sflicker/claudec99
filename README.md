@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 46 (command-line arguments):
+Through stage 47 (multi-file integration test support):
 
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing, `//` and
@@ -263,7 +263,7 @@ The test harness consists of six suites under `test/`:
 | -------------- | ------------------------------------------------------------------- |
 | `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
-| `integration`  | Compile, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.args`, `.input`, `.status`) drive expected stdout, link flags, argv, stdin, and exit code. |
+| `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.args`, `.input`, `.status`) drive expected stdout, link flags, argv, stdin, and exit code. |
 | `print_ast`    | `--print-ast` output must match `.expected`                         |
 | `print_tokens` | `--print-tokens` output must match `.expected`                      |
 | `print_asm`    | Generated `.asm` must match `.expected`                             |
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 46 all
-tests pass (537 valid, 178 invalid, 12 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 886 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 47 all
+tests pass (537 valid, 178 invalid, 13 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 887 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
