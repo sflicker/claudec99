@@ -56,6 +56,76 @@ static char *get_dir(const char *path) {
     return dir;
 }
 
+/* ---- Macro table ----------------------------------------------------- */
+
+typedef struct {
+    char *name;
+    char *replacement;
+} MacroDef;
+
+typedef struct {
+    MacroDef *defs;
+    size_t    count;
+    size_t    cap;
+} MacroTable;
+
+static void macro_table_init(MacroTable *t) {
+    t->defs  = NULL;
+    t->count = 0;
+    t->cap   = 0;
+}
+
+static void macro_table_free(MacroTable *t) {
+    for (size_t i = 0; i < t->count; i++) {
+        free(t->defs[i].name);
+        free(t->defs[i].replacement);
+    }
+    free(t->defs);
+}
+
+static MacroDef *macro_find(MacroTable *t, const char *name, size_t len) {
+    for (size_t i = 0; i < t->count; i++) {
+        if (strlen(t->defs[i].name) == len &&
+            strncmp(t->defs[i].name, name, len) == 0)
+            return &t->defs[i];
+    }
+    return NULL;
+}
+
+static void macro_define(MacroTable *t, const char *name, size_t nlen,
+                          const char *repl, size_t rlen) {
+    MacroDef *existing = macro_find(t, name, nlen);
+    if (existing) {
+        if (strlen(existing->replacement) == rlen &&
+            strncmp(existing->replacement, repl, rlen) == 0)
+            return;
+        char tmp[256];
+        size_t copy = nlen < sizeof(tmp) - 1 ? nlen : sizeof(tmp) - 1;
+        memcpy(tmp, name, copy);
+        tmp[copy] = '\0';
+        fprintf(stderr, "error: macro '%s' redefined with incompatible replacement\n", tmp);
+        exit(1);
+    }
+
+    if (t->count == t->cap) {
+        t->cap = t->cap * 2 + 8;
+        t->defs = realloc(t->defs, t->cap * sizeof(MacroDef));
+        if (!t->defs) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+    }
+
+    char *nname = malloc(nlen + 1);
+    char *nrepl = malloc(rlen + 1);
+    if (!nname || !nrepl) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+    memcpy(nname, name, nlen);
+    nname[nlen] = '\0';
+    memcpy(nrepl, repl, rlen);
+    nrepl[rlen] = '\0';
+
+    t->defs[t->count].name        = nname;
+    t->defs[t->count].replacement = nrepl;
+    t->count++;
+}
+
 /* ---- Phase 1: line splicing ------------------------------------------ */
 
 static char *splice_lines(const char *source) {
@@ -76,11 +146,12 @@ static char *splice_lines(const char *source) {
 
 /* ---- Forward declaration for mutual recursion ------------------------- */
 
-static char *preprocess_internal(const char *source, const char *source_path, int depth);
+static char *preprocess_internal(const char *source, const char *source_path,
+                                  int depth, MacroTable *macros);
 
 /* ---- Read and recursively preprocess an included file ---------------- */
 
-static char *preprocess_file(const char *path, int depth) {
+static char *preprocess_file(const char *path, int depth, MacroTable *macros) {
     FILE *f = fopen(path, "r");
     if (!f) {
         fprintf(stderr, "error: cannot open include file '%s'\n", path);
@@ -94,14 +165,15 @@ static char *preprocess_file(const char *path, int depth) {
     fread(buf, 1, flen, f);
     buf[flen] = '\0';
     fclose(f);
-    char *result = preprocess_internal(buf, path, depth);
+    char *result = preprocess_internal(buf, path, depth, macros);
     free(buf);
     return result;
 }
 
-/* ---- Phase 2: strip comments and expand #include directives ---------- */
+/* ---- Phase 2: strip comments, expand directives and macros ----------- */
 
-static char *preprocess_internal(const char *source, const char *source_path, int depth) {
+static char *preprocess_internal(const char *source, const char *source_path,
+                                  int depth, MacroTable *macros) {
     if (depth > MAX_INCLUDE_DEPTH) {
         fprintf(stderr, "error: maximum include depth exceeded (possible recursive include)\n");
         exit(1);
@@ -200,10 +272,53 @@ static char *preprocess_internal(const char *source, const char *source_path, in
                 include_path[dir_len + 1 + fname_len] = '\0';
                 free(dir);
 
-                char *included = preprocess_file(include_path, depth + 1);
+                char *included = preprocess_file(include_path, depth + 1, macros);
                 free(include_path);
                 gbuf_append(&out, included, strlen(included));
                 free(included);
+                continue;
+            }
+
+            /* #define NAME [replacement] */
+            if (strncmp(s + in, "define", 6) == 0 &&
+                !isalnum((unsigned char)s[in + 6]) && s[in + 6] != '_') {
+                in += 6;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+
+                if (!isalpha((unsigned char)s[in]) && s[in] != '_') {
+                    fprintf(stderr, "error: expected macro name after #define\n");
+                    free(out.data);
+                    free(spliced);
+                    exit(1);
+                }
+                size_t name_start = in;
+                while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                    in++;
+                size_t name_len = in - name_start;
+
+                /* Reject function-like macros. */
+                if (s[in] == '(') {
+                    fprintf(stderr, "error: function-like macros are not supported\n");
+                    free(out.data);
+                    free(spliced);
+                    exit(1);
+                }
+
+                /* Skip whitespace separating name from replacement. */
+                while (s[in] == ' ' || s[in] == '\t') in++;
+
+                /* Replacement: rest of line, trailing whitespace trimmed. */
+                size_t repl_start = in;
+                while (s[in] && s[in] != '\n') in++;
+                size_t repl_end = in;
+                while (repl_end > repl_start &&
+                       (s[repl_end - 1] == ' ' || s[repl_end - 1] == '\t'))
+                    repl_end--;
+
+                macro_define(macros,
+                             s + name_start, name_len,
+                             s + repl_start, repl_end - repl_start);
+                /* Directive line consumed; newline handled on next iteration. */
                 continue;
             }
 
@@ -242,6 +357,22 @@ static char *preprocess_internal(const char *source, const char *source_path, in
             continue;
         }
 
+        /* Identifier: expand if it names a macro, otherwise pass through. */
+        if (isalpha((unsigned char)c) || c == '_') {
+            size_t id_start = in;
+            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                in++;
+            size_t id_len = in - id_start;
+            MacroDef *def = macro_find(macros, s + id_start, id_len);
+            if (def) {
+                gbuf_append(&out, def->replacement, strlen(def->replacement));
+            } else {
+                gbuf_append(&out, s + id_start, id_len);
+            }
+            line_has_content = 1;
+            continue;
+        }
+
         /* Regular character. */
         line_has_content = 1;
         gbuf_push(&out, s[in++]);
@@ -253,5 +384,11 @@ static char *preprocess_internal(const char *source, const char *source_path, in
 }
 
 char *preprocess(const char *source, const char *source_path) {
-    return preprocess_internal(source, source_path ? source_path : ".", 0);
+    MacroTable macros;
+    macro_table_init(&macros);
+    char *result = preprocess_internal(source,
+                                       source_path ? source_path : ".",
+                                       0, &macros);
+    macro_table_free(&macros);
+    return result;
 }

@@ -31,6 +31,8 @@ Before beginning, read these supporting files when relevant:
   - `${CLAUDE_SKILL_DIR}/reference/generated-artifacts.md`
   - `${CLAUDE_SKILL_DIR}/notes.md`
 
+Also always read the `README.md` file in the project root
+
 Then do the following:
 
 1. Read and summarize the stage spec.
@@ -88,6 +90,7 @@ Grammar file in docs:
 
 README.md
 * Update `README.md` only where the completed stage changes the user-visible compiler capability, project status, or test totals.
+* Assume coding agents will always read the `README.me` as the first step towards understanding the current stage of the project.
 * Delegate this task to `haiku-stage-artifact-writer`
 * Preserve the existing README structure and writing style.
 * Usually update:
