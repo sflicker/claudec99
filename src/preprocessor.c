@@ -561,6 +561,40 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 continue;
             }
 
+            /* #if <integer> */
+            if (strncmp(s + in, "if", 2) == 0 &&
+                !isalnum((unsigned char)s[in + 2]) && s[in + 2] != '_') {
+                in += 2;
+                if (cond_depth >= MAX_COND_DEPTH) {
+                    fprintf(stderr, "error: conditional nesting too deep\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int cond_val = 0;
+                if (emitting) {
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (!isdigit((unsigned char)s[in])) {
+                        fprintf(stderr, "error: #if requires an integer constant\n");
+                        free(out.data); free(spliced); exit(1);
+                    }
+                    long value = 0;
+                    while (isdigit((unsigned char)s[in]))
+                        value = value * 10 + (s[in++] - '0');
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != '\n' && s[in] != '\0') {
+                        fprintf(stderr, "error: extra tokens after #if constant\n");
+                        free(out.data); free(spliced); exit(1);
+                    }
+                    cond_val = (value != 0);
+                }
+                while (s[in] && s[in] != '\n') in++;
+                cond_stack[cond_depth].parent_emitting = emitting;
+                cond_stack[cond_depth].emitting = emitting && cond_val;
+                cond_stack[cond_depth].seen_else = 0;
+                cond_depth++;
+                emitting = cond_stack[cond_depth - 1].emitting;
+                continue;
+            }
+
             /* #else */
             if (strncmp(s + in, "else", 4) == 0 &&
                 !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {

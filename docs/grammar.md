@@ -208,12 +208,15 @@
 
 <conditional_directive> ::= <ifdef_directive>
                           | <ifndef_directive>
+                          | <if_constant_directive>
                           | <else_directive>
                           | <endif_directive>
 
 <ifdef_directive> ::= "#" "ifdef" <identifier>
 
 <ifndef_directive> ::= "#" "ifndef" <identifier>
+
+<if_constant_directive> ::= "#" "if" <integer-literal>
 
 <else_directive> ::= "#" "else"
 
@@ -351,7 +354,7 @@
 #     duplicate `#else`, and unmatched directives.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` with expression evaluation, the `defined()` operator, and `#elif`
-#     are not yet supported.
+#     `#if` with expression evaluation (only single integer constants are supported),
+#     the `defined()` operator, and `#elif` are not yet supported.
 
 ```
