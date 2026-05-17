@@ -89,9 +89,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 52-04 (`#elif` integer-constant conditionals):
+Through stage 53 (predefined macros `__FILE__` and `__LINE__`):
 
-- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if <integer>` with integer-constant conditions (`0` = false, nonzero = true), and `#elif <integer>` with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`.
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if <integer>` with integer-constant conditions (`0` = false, nonzero = true), and `#elif <integer>` with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 52-04 all
-tests pass (562 valid, 193 invalid, 26 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 940 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 53 all
+tests pass (564 valid, 193 invalid, 27 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 943 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

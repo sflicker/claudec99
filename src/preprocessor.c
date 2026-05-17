@@ -470,12 +470,14 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
     size_t in = 0;
     int line_has_content = 0;
+    int current_line = 1;
 
     while (s[in]) {
         char c = s[in];
 
         /* Newline: reset line tracking. */
         if (c == '\n') {
+            current_line++;
             line_has_content = 0;
             gbuf_push(&out, s[in++]);
             continue;
@@ -880,53 +882,66 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 in++;
             size_t id_len = in - id_start;
             if (emitting) {
-                MacroDef *def = macro_find(macros, s + id_start, id_len);
-                if (def && def->param_count == -1) {
-                    /* object-like macro: expand replacement directly */
-                    gbuf_append(&out, def->replacement, strlen(def->replacement));
-                } else if (def && def->param_count >= 0) {
-                    /* function-like macro: look ahead for '(' */
-                    size_t peek = in;
-                    while (s[peek] == ' ' || s[peek] == '\t') peek++;
-                    if (s[peek] == '(') {
-                        in = peek + 1; /* skip optional whitespace and '(' */
-                        char  **args      = NULL;
-                        size_t *arg_lens  = NULL;
-                        int     arg_count = 0;
-                        collect_args(s, &in, &args, &arg_lens, &arg_count);
-                        if (arg_count != def->param_count) {
-                            fprintf(stderr,
-                                    "error: argument count mismatch for macro '%.*s':"
-                                    " expected %d, got %d\n",
-                                    (int)id_len, s + id_start,
-                                    def->param_count, arg_count);
+                if (id_len == 8 && strncmp(s + id_start, "__FILE__", 8) == 0) {
+                    gbuf_push(&out, '"');
+                    for (const char *fp = source_path; fp && *fp; fp++) {
+                        if (*fp == '"' || *fp == '\\') gbuf_push(&out, '\\');
+                        gbuf_push(&out, *fp);
+                    }
+                    gbuf_push(&out, '"');
+                } else if (id_len == 8 && strncmp(s + id_start, "__LINE__", 8) == 0) {
+                    char lbuf[32];
+                    int llen = snprintf(lbuf, sizeof(lbuf), "%d", current_line);
+                    gbuf_append(&out, lbuf, (size_t)llen);
+                } else {
+                    MacroDef *def = macro_find(macros, s + id_start, id_len);
+                    if (def && def->param_count == -1) {
+                        /* object-like macro: expand replacement directly */
+                        gbuf_append(&out, def->replacement, strlen(def->replacement));
+                    } else if (def && def->param_count >= 0) {
+                        /* function-like macro: look ahead for '(' */
+                        size_t peek = in;
+                        while (s[peek] == ' ' || s[peek] == '\t') peek++;
+                        if (s[peek] == '(') {
+                            in = peek + 1; /* skip optional whitespace and '(' */
+                            char  **args      = NULL;
+                            size_t *arg_lens  = NULL;
+                            int     arg_count = 0;
+                            collect_args(s, &in, &args, &arg_lens, &arg_count);
+                            if (arg_count != def->param_count) {
+                                fprintf(stderr,
+                                        "error: argument count mismatch for macro '%.*s':"
+                                        " expected %d, got %d\n",
+                                        (int)id_len, s + id_start,
+                                        def->param_count, arg_count);
+                                for (int i = 0; i < arg_count; i++) free(args[i]);
+                                free(args); free(arg_lens);
+                                free(out.data); free(spliced);
+                                exit(1);
+                            }
+                            /* pre-expand each argument */
+                            for (int i = 0; i < arg_count; i++) {
+                                char *ea = expand_macros_text(args[i], macros);
+                                free(args[i]);
+                                args[i]     = ea;
+                                arg_lens[i] = strlen(ea);
+                            }
+                            /* substitute into replacement, then rescan */
+                            char *subst     = substitute_args(def->replacement,
+                                                               def->params, def->param_count,
+                                                               args, arg_lens);
+                            char *rescanned = expand_macros_text(subst, macros);
+                            gbuf_append(&out, rescanned, strlen(rescanned));
+                            free(rescanned); free(subst);
                             for (int i = 0; i < arg_count; i++) free(args[i]);
                             free(args); free(arg_lens);
-                            free(out.data); free(spliced);
-                            exit(1);
+                        } else {
+                            /* function-like macro not followed by '(' — pass through */
+                            gbuf_append(&out, s + id_start, id_len);
                         }
-                        /* pre-expand each argument */
-                        for (int i = 0; i < arg_count; i++) {
-                            char *ea = expand_macros_text(args[i], macros);
-                            free(args[i]);
-                            args[i]     = ea;
-                            arg_lens[i] = strlen(ea);
-                        }
-                        /* substitute into replacement, then rescan */
-                        char *subst     = substitute_args(def->replacement,
-                                                           def->params, def->param_count,
-                                                           args, arg_lens);
-                        char *rescanned = expand_macros_text(subst, macros);
-                        gbuf_append(&out, rescanned, strlen(rescanned));
-                        free(rescanned); free(subst);
-                        for (int i = 0; i < arg_count; i++) free(args[i]);
-                        free(args); free(arg_lens);
                     } else {
-                        /* function-like macro not followed by '(' — pass through */
                         gbuf_append(&out, s + id_start, id_len);
                     }
-                } else {
-                    gbuf_append(&out, s + id_start, id_len);
                 }
             }
             line_has_content = 1;
