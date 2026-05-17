@@ -1,21 +1,21 @@
-# stage 52-02 usage
+# Stage 52-01 usage
 
   Session
 
-  Total cost:            $1.11
-  Total duration (API):  6m 15s
-  Total duration (wall): 11m 46s
-  Total code changes:    248 lines added, 4 lines removed
+  Total cost:            $1.95
+  Total duration (API):  12m 6s
+  Total duration (wall): 5h 22m 42s
+  Total code changes:    524 lines added, 67 lines removed
   Usage by model:             
-     claude-sonnet-4-6:  38 input, 17.9k output, 1.9m cache read, 55.1k cache write ($1.04)
-      claude-haiku-4-5:  54 input, 4.5k output, 121.5k cache read, 24.9k cache write ($0.0660)
+     claude-sonnet-4-6:  393 input, 40.0k output, 3.3m cache read, 74.8k cache write ($1.86)
+      claude-haiku-4-5:  43 input, 6.6k output, 149.7k cache read, 34.9k cache write ($0.0915)
 
   Current session
-  ████████████                                       24% used
+  ████████                                           16% used
   Resets 12:30am (America/New_York)
 
   Current week (all models)
-  ████▌                                              9% used
+  ████                                               8% used
   Resets May 22, 10am (America/New_York)
 
   What's contributing to your limits usage?
@@ -27,12 +27,12 @@
    Each subagent runs its own requests. Be deliberate about spawning them — and 
    consider configuring a cheaper model for simpler subagents.
 
-  91% of your usage came from /implement-stage
+  90% of your usage came from /implement-stage
    Heavy skills can be scoped down or run with a cheaper model via skill
    frontmatter.
 
   Skills                  % of usage
-  /implement-stage               91%
+  /implement-stage               90%
 
   Subagents               % of usage
   implement-stage                 3%
@@ -43,6 +43,4 @@
   Extra usage
   ███████████▎                                       22% used
   $4.54 / $20.00 spent · Resets Jun 1 (America/New_York)
-
-  Esc to cancel
 
