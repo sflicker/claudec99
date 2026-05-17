@@ -209,6 +209,7 @@
 <conditional_directive> ::= <ifdef_directive>
                           | <ifndef_directive>
                           | <if_constant_directive>
+                          | <elif_constant_directive>
                           | <else_directive>
                           | <endif_directive>
 
@@ -217,6 +218,8 @@
 <ifndef_directive> ::= "#" "ifndef" <identifier>
 
 <if_constant_directive> ::= "#" "if" <integer-literal>
+
+<elif_constant_directive> ::= "#" "elif" <integer-literal>
 
 <else_directive> ::= "#" "else"
 
@@ -348,13 +351,14 @@
 #     or token re-parsing.
 #   - Conditional directives (`#ifdef`, `#ifndef`, `#else`, `#endif`) control whether
 #     source code regions are included in the preprocessed output. The condition is based
-#     on whether a macro name is currently defined. Inactive regions are suppressed from
+#     on whether a macro name is currently defined. `#elif <integer>` provides additional
+#     branches with first-true-wins semantics. Inactive regions are suppressed from
 #     output; directives and macro definitions in inactive regions are not processed.
 #     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
-#     duplicate `#else`, and unmatched directives.
+#     duplicate `#else`, unmatched directives, and `#elif` without a conditional.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` with expression evaluation (only single integer constants are supported),
-#     the `defined()` operator, and `#elif` are not yet supported.
+#     `#if` and `#elif` with expression evaluation (only single integer constants are supported),
+#     `#elifdef`/`#elifndef`, and the `defined()` operator are not yet supported.
 
 ```

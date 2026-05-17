@@ -11,6 +11,7 @@ typedef struct {
     int emitting;        /* current branch is active? */
     int parent_emitting; /* were we emitting before this conditional? */
     int seen_else;       /* has #else been seen? */
+    int branch_taken;    /* has any branch been selected? */
 } CondFrame;
 
 /* ---- Growable output buffer ------------------------------------------ */
@@ -533,6 +534,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 cond_stack[cond_depth].parent_emitting = emitting;
                 cond_stack[cond_depth].emitting = emitting && is_defined;
                 cond_stack[cond_depth].seen_else = 0;
+                cond_stack[cond_depth].branch_taken = emitting && is_defined;
                 cond_depth++;
                 emitting = cond_stack[cond_depth - 1].emitting;
                 continue;
@@ -556,6 +558,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 cond_stack[cond_depth].parent_emitting = emitting;
                 cond_stack[cond_depth].emitting = emitting && !is_defined;
                 cond_stack[cond_depth].seen_else = 0;
+                cond_stack[cond_depth].branch_taken = emitting && !is_defined;
                 cond_depth++;
                 emitting = cond_stack[cond_depth - 1].emitting;
                 continue;
@@ -590,8 +593,52 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 cond_stack[cond_depth].parent_emitting = emitting;
                 cond_stack[cond_depth].emitting = emitting && cond_val;
                 cond_stack[cond_depth].seen_else = 0;
+                cond_stack[cond_depth].branch_taken = emitting && cond_val;
                 cond_depth++;
                 emitting = cond_stack[cond_depth - 1].emitting;
+                continue;
+            }
+
+            /* #elif <integer> */
+            if (strncmp(s + in, "elif", 4) == 0 &&
+                !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {
+                in += 4;
+                if (cond_depth == 0) {
+                    fprintf(stderr, "error: #elif without conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                CondFrame *top = &cond_stack[cond_depth - 1];
+                if (top->seen_else) {
+                    fprintf(stderr, "error: #elif after else\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int cond_val = 0;
+                if (top->parent_emitting && !top->branch_taken) {
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (!isdigit((unsigned char)s[in])) {
+                        fprintf(stderr, "error: #elif requires an integer constant\n");
+                        free(out.data); free(spliced); exit(1);
+                    }
+                    long value = 0;
+                    while (isdigit((unsigned char)s[in]))
+                        value = value * 10 + (s[in++] - '0');
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != '\n' && s[in] != '\0') {
+                        fprintf(stderr, "error: extra tokens after #elif constant\n");
+                        free(out.data); free(spliced); exit(1);
+                    }
+                    cond_val = (value != 0);
+                }
+                while (s[in] && s[in] != '\n') in++;
+                if (top->parent_emitting) {
+                    if (!top->branch_taken && cond_val) {
+                        top->emitting = 1;
+                        top->branch_taken = 1;
+                    } else {
+                        top->emitting = 0;
+                    }
+                }
+                emitting = top->emitting;
                 continue;
             }
 
@@ -611,7 +658,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 }
                 top->seen_else = 1;
                 if (top->parent_emitting)
-                    top->emitting = !top->emitting;
+                    top->emitting = !top->branch_taken;
                 emitting = top->emitting;
                 continue;
             }

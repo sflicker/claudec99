@@ -89,9 +89,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 52-03 (`#if` integer-constant conditionals):
+Through stage 52-04 (`#elif` integer-constant conditionals):
 
-- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks and `#if <integer>` with integer-constant conditions (`0` = false, nonzero = true); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, and duplicate `#else`.
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if <integer>` with integer-constant conditions (`0` = false, nonzero = true), and `#elif <integer>` with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`.
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
@@ -248,7 +248,7 @@ Through stage 52-03 (`#if` integer-constant conditionals):
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
-variadics; `#elif`, `defined(NAME)`, expression evaluation in `#if` (only single integer constants are supported); pointer-to-function-pointer and function-returning-function-pointer;
+variadics; `defined(NAME)`, expression evaluation in `#if`/`#elif` (only single integer constants are supported), `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 52-03 all
-tests pass (558 valid, 191 invalid, 26 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 934 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 52-04 all
+tests pass (562 valid, 193 invalid, 26 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 940 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
