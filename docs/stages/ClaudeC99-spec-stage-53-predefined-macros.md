@@ -11,6 +11,10 @@
   - reasonable values inside include files
   - values should reflect preprocessed source location as closely as possible
 
+## Rules
+  - `__FILE__` expands to a string literal for the current source file.
+  - `__LINE__` expands to an integer literal for the current source line.
+
 ## Out-of-scope
   - `__DATE__`
   - `__TIME__`
@@ -22,16 +26,21 @@
 ## Tests
 ```C
 ---- helper.h ----
+#ifndef __HELPER_H__
+#define __HELPER_H__
+#define NULL 0
 int fileTest();
+#endif
 ------------------
 ---- helper.c ____
 #include "helper.h"
 int puts(char *);
+char * strchr(const char *, const char *);
+
 
 int fileTest() {
     puts(__FILE__);
-    puts(__LINE__);
-    return strcmp(__FILE__, "helper.c");
+    return strcmp(strchr(__FILE__, "helper.c"), NULL) ;
 }
 -----------------
 ---- main .c test file ____
