@@ -595,19 +595,41 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (emitting) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (!isdigit((unsigned char)s[in])) {
-                        fprintf(stderr, "error: #if requires an integer constant\n");
+                    if (strncmp(s + in, "defined", 7) == 0 &&
+                        !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
+                        in += 7;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != '(') {
+                            fprintf(stderr, "error: expected '(' after defined\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        in++;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        size_t name_start = in;
+                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                            in++;
+                        size_t name_len = in - name_start;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != ')') {
+                            fprintf(stderr, "error: expected ')' in defined(...)\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        in++;
+                        cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                    } else if (!isdigit((unsigned char)s[in])) {
+                        fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
                         free(out.data); free(spliced); exit(1);
+                    } else {
+                        long value = 0;
+                        while (isdigit((unsigned char)s[in]))
+                            value = value * 10 + (s[in++] - '0');
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != '\n' && s[in] != '\0') {
+                            fprintf(stderr, "error: extra tokens after #if constant\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        cond_val = (value != 0);
                     }
-                    long value = 0;
-                    while (isdigit((unsigned char)s[in]))
-                        value = value * 10 + (s[in++] - '0');
-                    while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (s[in] != '\n' && s[in] != '\0') {
-                        fprintf(stderr, "error: extra tokens after #if constant\n");
-                        free(out.data); free(spliced); exit(1);
-                    }
-                    cond_val = (value != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;
                 cond_stack[cond_depth].parent_emitting = emitting;
@@ -635,19 +657,41 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (top->parent_emitting && !top->branch_taken) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (!isdigit((unsigned char)s[in])) {
-                        fprintf(stderr, "error: #elif requires an integer constant\n");
+                    if (strncmp(s + in, "defined", 7) == 0 &&
+                        !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
+                        in += 7;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != '(') {
+                            fprintf(stderr, "error: expected '(' after defined\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        in++;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        size_t name_start = in;
+                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                            in++;
+                        size_t name_len = in - name_start;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != ')') {
+                            fprintf(stderr, "error: expected ')' in defined(...)\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        in++;
+                        cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                    } else if (!isdigit((unsigned char)s[in])) {
+                        fprintf(stderr, "error: #elif requires an integer constant or defined(...)\n");
                         free(out.data); free(spliced); exit(1);
+                    } else {
+                        long value = 0;
+                        while (isdigit((unsigned char)s[in]))
+                            value = value * 10 + (s[in++] - '0');
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != '\n' && s[in] != '\0') {
+                            fprintf(stderr, "error: extra tokens after #elif constant\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        cond_val = (value != 0);
                     }
-                    long value = 0;
-                    while (isdigit((unsigned char)s[in]))
-                        value = value * 10 + (s[in++] - '0');
-                    while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (s[in] != '\n' && s[in] != '\0') {
-                        fprintf(stderr, "error: extra tokens after #elif constant\n");
-                        free(out.data); free(spliced); exit(1);
-                    }
-                    cond_val = (value != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;
                 if (top->parent_emitting) {
