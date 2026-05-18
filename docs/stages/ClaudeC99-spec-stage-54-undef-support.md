@@ -38,8 +38,8 @@ Make sure macro is used before it's undef
 #define VALUE 42
 int main() {
     int x = VALUE;
-#undef X
-#ifdef X
+#undef VALUE
+#ifdef VALUE
     x += 10;
 #endif
     return x;     // expected return value: 42
