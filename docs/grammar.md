@@ -220,9 +220,14 @@
 
 <ifndef_directive> ::= "#" "ifndef" <identifier>
 
-<if_constant_directive> ::= "#" "if" <integer-literal>
+<if_constant_directive> ::= "#" "if" <if-condition>
 
-<elif_constant_directive> ::= "#" "elif" <integer-literal>
+<elif_constant_directive> ::= "#" "elif" <if-condition>
+
+<if-condition> ::= <integer-literal>
+                | "defined" "(" <identifier> ")"
+                | "defined" <identifier>
+                | <object-like-macro-identifier>
 
 <else_directive> ::= "#" "else"
 
@@ -339,7 +344,7 @@
 #   - Pointer arithmetic on void * is rejected.
 #   - Pointer arithmetic on function pointers is rejected.
 #
-# Preprocessing (stages 50–52):
+# Preprocessing (stages 50–55):
 #   - Object-like `#define NAME replacement-list` defines a macro that expands
 #     to the replacement text whenever the macro name appears as an identifier
 #     in ordinary source text outside string and character literals.
@@ -359,9 +364,14 @@
 #     output; directives and macro definitions in inactive regions are not processed.
 #     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
 #     duplicate `#else`, unmatched directives, and `#elif` without a conditional.
+#   - `#if` and `#elif` directives support three forms of conditions:
+#     integer literals (e.g., `#if 1`), the `defined()` operator with or without
+#     parentheses (e.g., `#if defined(NAME)` or `#if defined NAME`), and object-like
+#     macro identifiers that expand to integer literals (e.g., `#define DEBUG 1; #if DEBUG`).
+#     The condition value is determined as: nonzero or defined = true, zero or undefined = false.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` and `#elif` with expression evaluation (only single integer constants are supported),
-#     `#elifdef`/`#elifndef`, and the `defined()` operator are not yet supported.
+#     `#if` and `#elif` with arithmetic/comparison/boolean expression evaluation,
+#     `#elifdef`/`#elifndef` are not yet supported.
 
 ```

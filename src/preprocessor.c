@@ -599,27 +599,31 @@ static char *preprocess_internal(const char *source, const char *source_path,
                         !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
                         in += 7;
                         while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != '(') {
-                            fprintf(stderr, "error: expected '(' after defined\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        in++;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        size_t name_start = in;
-                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                        if (s[in] == '(') {
                             in++;
-                        size_t name_len = in - name_start;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != ')') {
-                            fprintf(stderr, "error: expected ')' in defined(...)\n");
+                            while (s[in] == ' ' || s[in] == '\t') in++;
+                            size_t name_start = in;
+                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                                in++;
+                            size_t name_len = in - name_start;
+                            while (s[in] == ' ' || s[in] == '\t') in++;
+                            if (s[in] != ')') {
+                                fprintf(stderr, "error: expected ')' in defined(...)\n");
+                                free(out.data); free(spliced); exit(1);
+                            }
+                            in++;
+                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                        } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
+                            size_t name_start = in;
+                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                                in++;
+                            size_t name_len = in - name_start;
+                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                        } else {
+                            fprintf(stderr, "error: expected identifier after defined\n");
                             free(out.data); free(spliced); exit(1);
                         }
-                        in++;
-                        cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                    } else if (!isdigit((unsigned char)s[in])) {
-                        fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
-                        free(out.data); free(spliced); exit(1);
-                    } else {
+                    } else if (isdigit((unsigned char)s[in])) {
                         long value = 0;
                         while (isdigit((unsigned char)s[in]))
                             value = value * 10 + (s[in++] - '0');
@@ -629,6 +633,29 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             free(out.data); free(spliced); exit(1);
                         }
                         cond_val = (value != 0);
+                    } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
+                        size_t name_start = in;
+                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                            in++;
+                        size_t name_len = in - name_start;
+                        MacroDef *m = macro_find(macros, s + name_start, name_len);
+                        if (!m || m->param_count != -1) {
+                            fprintf(stderr, "error: #if identifier is not a defined object-like macro\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        const char *repl = m->replacement;
+                        while (*repl == ' ' || *repl == '\t') repl++;
+                        if (!isdigit((unsigned char)*repl)) {
+                            fprintf(stderr, "error: macro in #if does not expand to an integer\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        long value = 0;
+                        while (isdigit((unsigned char)*repl))
+                            value = value * 10 + (*repl++ - '0');
+                        cond_val = (value != 0);
+                    } else {
+                        fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
+                        free(out.data); free(spliced); exit(1);
                     }
                 }
                 while (s[in] && s[in] != '\n') in++;
@@ -661,27 +688,31 @@ static char *preprocess_internal(const char *source, const char *source_path,
                         !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
                         in += 7;
                         while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != '(') {
-                            fprintf(stderr, "error: expected '(' after defined\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        in++;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        size_t name_start = in;
-                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                        if (s[in] == '(') {
                             in++;
-                        size_t name_len = in - name_start;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != ')') {
-                            fprintf(stderr, "error: expected ')' in defined(...)\n");
+                            while (s[in] == ' ' || s[in] == '\t') in++;
+                            size_t name_start = in;
+                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                                in++;
+                            size_t name_len = in - name_start;
+                            while (s[in] == ' ' || s[in] == '\t') in++;
+                            if (s[in] != ')') {
+                                fprintf(stderr, "error: expected ')' in defined(...)\n");
+                                free(out.data); free(spliced); exit(1);
+                            }
+                            in++;
+                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                        } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
+                            size_t name_start = in;
+                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                                in++;
+                            size_t name_len = in - name_start;
+                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
+                        } else {
+                            fprintf(stderr, "error: expected identifier after defined\n");
                             free(out.data); free(spliced); exit(1);
                         }
-                        in++;
-                        cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                    } else if (!isdigit((unsigned char)s[in])) {
-                        fprintf(stderr, "error: #elif requires an integer constant or defined(...)\n");
-                        free(out.data); free(spliced); exit(1);
-                    } else {
+                    } else if (isdigit((unsigned char)s[in])) {
                         long value = 0;
                         while (isdigit((unsigned char)s[in]))
                             value = value * 10 + (s[in++] - '0');
@@ -691,6 +722,29 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             free(out.data); free(spliced); exit(1);
                         }
                         cond_val = (value != 0);
+                    } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
+                        size_t name_start = in;
+                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                            in++;
+                        size_t name_len = in - name_start;
+                        MacroDef *m = macro_find(macros, s + name_start, name_len);
+                        if (!m || m->param_count != -1) {
+                            fprintf(stderr, "error: #elif identifier is not a defined object-like macro\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        const char *repl = m->replacement;
+                        while (*repl == ' ' || *repl == '\t') repl++;
+                        if (!isdigit((unsigned char)*repl)) {
+                            fprintf(stderr, "error: macro in #elif does not expand to an integer\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        long value = 0;
+                        while (isdigit((unsigned char)*repl))
+                            value = value * 10 + (*repl++ - '0');
+                        cond_val = (value != 0);
+                    } else {
+                        fprintf(stderr, "error: #elif requires an integer constant or defined(...)\n");
+                        free(out.data); free(spliced); exit(1);
                     }
                 }
                 while (s[in] && s[in] != '\n') in++;
