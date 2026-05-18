@@ -153,6 +153,24 @@ static void macro_define(MacroTable *t, const char *name, size_t nlen,
     t->count++;
 }
 
+static void macro_undef(MacroTable *t, const char *name, size_t len) {
+    for (size_t i = 0; i < t->count; i++) {
+        if (strlen(t->defs[i].name) == len &&
+            strncmp(t->defs[i].name, name, len) == 0) {
+            free(t->defs[i].name);
+            free(t->defs[i].replacement);
+            if (t->defs[i].params) {
+                for (int j = 0; j < t->defs[i].param_count; j++)
+                    free(t->defs[i].params[j]);
+                free(t->defs[i].params);
+            }
+            t->defs[i] = t->defs[--t->count];
+            return;
+        }
+    }
+    /* no-op if macro is not defined */
+}
+
 /* ---- Phase 1: line splicing ------------------------------------------ */
 
 static char *splice_lines(const char *source) {
@@ -825,6 +843,21 @@ static char *preprocess_internal(const char *source, const char *source_path,
                              params, param_count,
                              s + repl_start, repl_end - repl_start);
                 /* Directive line consumed; newline handled on next iteration. */
+                continue;
+            }
+
+            /* #undef NAME */
+            if (strncmp(s + in, "undef", 5) == 0 &&
+                !isalnum((unsigned char)s[in + 5]) && s[in + 5] != '_') {
+                in += 5;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                size_t name_start = in;
+                while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                    in++;
+                size_t name_len = in - name_start;
+                while (s[in] && s[in] != '\n') in++;
+                if (name_len > 0)
+                    macro_undef(macros, s + name_start, name_len);
                 continue;
             }
 

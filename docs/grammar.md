@@ -197,6 +197,7 @@
 <preprocessor_directive> ::= <object_like_macro_directive>
                            | <function_like_macro_directive>
                            | <include_directive>
+                           | <undef_directive>
                            | <conditional_directive>
 
 <object_like_macro_directive> ::= "#" "define" <identifier> [ <replacement_list> ]
@@ -205,6 +206,8 @@
 
 <include_directive> ::= "#" "include" "<filename>"
                       | "#" "include" "\"" <filename> "\""
+
+<undef_directive> ::= "#" "undef" <identifier>
 
 <conditional_directive> ::= <ifdef_directive>
                           | <ifndef_directive>
