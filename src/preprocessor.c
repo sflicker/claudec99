@@ -468,6 +468,9 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
 
 /* ---- Preprocessor condition expression evaluator --------------------- */
 
+static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
+                            char *out_data, char *spliced_buf);
+
 /* Evaluate the primary of a preprocessor condition: defined(...), an integer
  * literal, or an object-like macro identifier that expands to one.
  * Advances *in past the consumed tokens.  Frees out_data and spliced_buf
@@ -533,6 +536,19 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
         long value = 0;
         while (isdigit((unsigned char)*repl))
             value = value * 10 + (*repl++ - '0');
+        return value;
+    }
+
+    if (s[*in] == '(') {
+        (*in)++;
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        long value = eval_cond_expr(s, in, macros, out_data, spliced_buf);
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] != ')') {
+            fprintf(stderr, "error: expected ')' in preprocessor expression\n");
+            free(out_data); free(spliced_buf); exit(1);
+        }
+        (*in)++;
         return value;
     }
 

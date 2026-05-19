@@ -235,6 +235,7 @@
                | "defined" "(" <identifier> ")"
                | "defined" <identifier>
                | <object-like-macro-identifier>
+               | "(" <pp-unary-expression> ")"
 
 <else_directive> ::= "#" "else"
 
