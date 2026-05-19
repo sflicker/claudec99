@@ -236,11 +236,20 @@
                             | <pp-equality-expression> "==" <pp-relational-expression>
                             | <pp-equality-expression> "!=" <pp-relational-expression>
 
-<pp-relational-expression> ::= <pp-unary-expression>
-                              | <pp-relational-expression> "<"  <pp-unary-expression>
-                              | <pp-relational-expression> "<=" <pp-unary-expression>
-                              | <pp-relational-expression> ">"  <pp-unary-expression>
-                              | <pp-relational-expression> ">=" <pp-unary-expression>
+<pp-relational-expression> ::= <pp-additive-expression>
+                              | <pp-relational-expression> "<"  <pp-additive-expression>
+                              | <pp-relational-expression> "<=" <pp-additive-expression>
+                              | <pp-relational-expression> ">"  <pp-additive-expression>
+                              | <pp-relational-expression> ">=" <pp-additive-expression>
+
+<pp-additive-expression> ::= <pp-multiplicative-expression>
+                            | <pp-additive-expression> "+" <pp-multiplicative-expression>
+                            | <pp-additive-expression> "-" <pp-multiplicative-expression>
+
+<pp-multiplicative-expression> ::= <pp-unary-expression>
+                                  | <pp-multiplicative-expression> "*" <pp-unary-expression>
+                                  | <pp-multiplicative-expression> "/" <pp-unary-expression>
+                                  | <pp-multiplicative-expression> "%" <pp-unary-expression>
 
 <pp-unary-expression> ::= <pp-primary>
                          | <pp-unary-op> <pp-unary-expression>
@@ -400,7 +409,7 @@
 #     `&&` and `||` produce 0 or 1.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` and `#elif` with arithmetic, bitwise, or shift expression evaluation,
+#     `#if` and `#elif` with bitwise or shift expression evaluation,
 #     `#elifdef`/`#elifndef` are not yet supported.
 
 ```

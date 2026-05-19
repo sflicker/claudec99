@@ -472,6 +472,10 @@ static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
                             char *out_data, char *spliced_buf);
 static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
                              char *out_data, char *spliced_buf);
+static long eval_cond_multiplicative(const char *s, size_t *in, MacroTable *macros,
+                                      char *out_data, char *spliced_buf);
+static long eval_cond_additive(const char *s, size_t *in, MacroTable *macros,
+                                char *out_data, char *spliced_buf);
 
 /* Evaluate the primary of a preprocessor condition: defined(...), an integer
  * literal, or an object-like macro identifier that expands to one.
@@ -579,32 +583,95 @@ static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
     return value;
 }
 
-/* Relational expression: unary (<, <=, >, >=) unary, left-associative. */
+/* Multiplicative expression: unary { ("*" | "/" | "%") unary }, left-associative. */
+static long eval_cond_multiplicative(const char *s, size_t *in, MacroTable *macros,
+                                      char *out_data, char *spliced_buf) {
+    long value = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '*') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            value = value * rhs;
+        } else if (s[*in] == '/') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            if (rhs == 0) {
+                fprintf(stderr, "error: division by zero in preprocessor expression\n");
+                free(out_data); free(spliced_buf); exit(1);
+            }
+            value = value / rhs;
+        } else if (s[*in] == '%') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            if (rhs == 0) {
+                fprintf(stderr, "error: modulo by zero in preprocessor expression\n");
+                free(out_data); free(spliced_buf); exit(1);
+            }
+            value = value % rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Additive expression: multiplicative { ("+" | "-") multiplicative }, left-associative. */
+static long eval_cond_additive(const char *s, size_t *in, MacroTable *macros,
+                                char *out_data, char *spliced_buf) {
+    long value = eval_cond_multiplicative(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '+') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_multiplicative(s, in, macros, out_data, spliced_buf);
+            value = value + rhs;
+        } else if (s[*in] == '-') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_multiplicative(s, in, macros, out_data, spliced_buf);
+            value = value - rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Relational expression: additive (<, <=, >, >=) additive, left-associative. */
 static long eval_cond_relational(const char *s, size_t *in, MacroTable *macros,
                                   char *out_data, char *spliced_buf) {
-    long value = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+    long value = eval_cond_additive(s, in, macros, out_data, spliced_buf);
 
     for (;;) {
         while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
         if (s[*in] == '<' && s[*in + 1] == '=') {
             *in += 2;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
             value = (value <= rhs) ? 1L : 0L;
         } else if (s[*in] == '>' && s[*in + 1] == '=') {
             *in += 2;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
             value = (value >= rhs) ? 1L : 0L;
         } else if (s[*in] == '<' && s[*in + 1] != '<') {
             (*in)++;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
             value = (value < rhs) ? 1L : 0L;
         } else if (s[*in] == '>' && s[*in + 1] != '>') {
             (*in)++;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
             value = (value > rhs) ? 1L : 0L;
         } else {
             break;
