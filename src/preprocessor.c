@@ -639,20 +639,23 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             in++;
                         size_t name_len = in - name_start;
                         MacroDef *m = macro_find(macros, s + name_start, name_len);
-                        if (!m || m->param_count != -1) {
-                            fprintf(stderr, "error: #if identifier is not a defined object-like macro\n");
+                        if (!m) {
+                            cond_val = 0;
+                        } else if (m->param_count != -1) {
+                            fprintf(stderr, "error: unsupported #if expression\n");
                             free(out.data); free(spliced); exit(1);
+                        } else {
+                            const char *repl = m->replacement;
+                            while (*repl == ' ' || *repl == '\t') repl++;
+                            if (!isdigit((unsigned char)*repl)) {
+                                fprintf(stderr, "error: macro in #if does not expand to an integer\n");
+                                free(out.data); free(spliced); exit(1);
+                            }
+                            long value = 0;
+                            while (isdigit((unsigned char)*repl))
+                                value = value * 10 + (*repl++ - '0');
+                            cond_val = (value != 0);
                         }
-                        const char *repl = m->replacement;
-                        while (*repl == ' ' || *repl == '\t') repl++;
-                        if (!isdigit((unsigned char)*repl)) {
-                            fprintf(stderr, "error: macro in #if does not expand to an integer\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        long value = 0;
-                        while (isdigit((unsigned char)*repl))
-                            value = value * 10 + (*repl++ - '0');
-                        cond_val = (value != 0);
                     } else {
                         fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
                         free(out.data); free(spliced); exit(1);
@@ -728,20 +731,23 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             in++;
                         size_t name_len = in - name_start;
                         MacroDef *m = macro_find(macros, s + name_start, name_len);
-                        if (!m || m->param_count != -1) {
-                            fprintf(stderr, "error: #elif identifier is not a defined object-like macro\n");
+                        if (!m) {
+                            cond_val = 0;
+                        } else if (m->param_count != -1) {
+                            fprintf(stderr, "error: unsupported #elif expression\n");
                             free(out.data); free(spliced); exit(1);
+                        } else {
+                            const char *repl = m->replacement;
+                            while (*repl == ' ' || *repl == '\t') repl++;
+                            if (!isdigit((unsigned char)*repl)) {
+                                fprintf(stderr, "error: macro in #elif does not expand to an integer\n");
+                                free(out.data); free(spliced); exit(1);
+                            }
+                            long value = 0;
+                            while (isdigit((unsigned char)*repl))
+                                value = value * 10 + (*repl++ - '0');
+                            cond_val = (value != 0);
                         }
-                        const char *repl = m->replacement;
-                        while (*repl == ' ' || *repl == '\t') repl++;
-                        if (!isdigit((unsigned char)*repl)) {
-                            fprintf(stderr, "error: macro in #elif does not expand to an integer\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        long value = 0;
-                        while (isdigit((unsigned char)*repl))
-                            value = value * 10 + (*repl++ - '0');
-                        cond_val = (value != 0);
                     } else {
                         fprintf(stderr, "error: #elif requires an integer constant or defined(...)\n");
                         free(out.data); free(spliced); exit(1);

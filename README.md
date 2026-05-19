@@ -89,9 +89,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 55-02 (macro expansion in #if/#elif):
+Through stage 55-03 (undefined identifiers in #if/#elif):
 
-- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if` and `#elif` conditions supporting integer literals, `defined(NAME)` and `defined NAME` operator forms (with or without parentheses), and object-like macro identifiers that expand to integer literals (`0` = false, nonzero or defined = true), with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line); `#undef NAME` removes a macro from the macro table (`#undef` of an undefined name is a no-op).
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if` and `#elif` conditions supporting integer literals, `defined(NAME)` and `defined NAME` operator forms (with or without parentheses), object-like macro identifiers that expand to integer literals (`0` = false, nonzero = true), and bare undefined identifiers (evaluate to 0), with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line); `#undef NAME` removes a macro from the macro table (`#undef` of an undefined name is a no-op).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 55-02 all
-tests pass (574 valid, 193 invalid, 27 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 953 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 55-03 all
+tests pass (577 valid, 192 invalid, 27 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 955 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
