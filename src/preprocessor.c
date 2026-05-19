@@ -470,6 +470,8 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
 
 static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
                             char *out_data, char *spliced_buf);
+static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
+                             char *out_data, char *spliced_buf);
 
 /* Evaluate the primary of a preprocessor condition: defined(...), an integer
  * literal, or an object-like macro identifier that expands to one.
@@ -556,11 +558,9 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
     free(out_data); free(spliced_buf); exit(1);
 }
 
-/* Evaluate a preprocessor condition expression.
- * Handles optional leading unary operators (!, -, +) — possibly chained —
- * followed by a primary.  Applies the operators innermost-first. */
-static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
-                            char *out_data, char *spliced_buf) {
+/* Unary expression: optional leading !, -, + (chained) then primary. */
+static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
+                             char *out_data, char *spliced_buf) {
     char ops[32];
     int  nops = 0;
 
@@ -571,14 +571,78 @@ static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
 
     long value = eval_cond_primary(s, in, macros, out_data, spliced_buf);
 
-    /* apply collected operators innermost-first (reverse of collection order) */
     for (int i = nops - 1; i >= 0; i--) {
         if      (ops[i] == '!') value = (value == 0) ? 1L : 0L;
         else if (ops[i] == '-') value = -value;
-        /* '+' is arithmetic identity; nothing to do */
     }
 
     return value;
+}
+
+/* Relational expression: unary (<, <=, >, >=) unary, left-associative. */
+static long eval_cond_relational(const char *s, size_t *in, MacroTable *macros,
+                                  char *out_data, char *spliced_buf) {
+    long value = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '<' && s[*in + 1] == '=') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            value = (value <= rhs) ? 1L : 0L;
+        } else if (s[*in] == '>' && s[*in + 1] == '=') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            value = (value >= rhs) ? 1L : 0L;
+        } else if (s[*in] == '<' && s[*in + 1] != '<') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            value = (value < rhs) ? 1L : 0L;
+        } else if (s[*in] == '>' && s[*in + 1] != '>') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_unary(s, in, macros, out_data, spliced_buf);
+            value = (value > rhs) ? 1L : 0L;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Equality expression: relational (==, !=) relational, left-associative. */
+static long eval_cond_equality(const char *s, size_t *in, MacroTable *macros,
+                                char *out_data, char *spliced_buf) {
+    long value = eval_cond_relational(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '=' && s[*in + 1] == '=') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_relational(s, in, macros, out_data, spliced_buf);
+            value = (value == rhs) ? 1L : 0L;
+        } else if (s[*in] == '!' && s[*in + 1] == '=') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_relational(s, in, macros, out_data, spliced_buf);
+            value = (value != rhs) ? 1L : 0L;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Top-level preprocessor condition expression evaluator. */
+static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
+                            char *out_data, char *spliced_buf) {
+    return eval_cond_equality(s, in, macros, out_data, spliced_buf);
 }
 
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */

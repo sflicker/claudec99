@@ -224,7 +224,17 @@
 
 <elif_constant_directive> ::= "#" "elif" <if-condition>
 
-<if-condition> ::= <pp-unary-expression>
+<if-condition> ::= <pp-equality-expression>
+
+<pp-equality-expression> ::= <pp-relational-expression>
+                            | <pp-equality-expression> "==" <pp-relational-expression>
+                            | <pp-equality-expression> "!=" <pp-relational-expression>
+
+<pp-relational-expression> ::= <pp-unary-expression>
+                              | <pp-relational-expression> "<"  <pp-unary-expression>
+                              | <pp-relational-expression> "<=" <pp-unary-expression>
+                              | <pp-relational-expression> ">"  <pp-unary-expression>
+                              | <pp-relational-expression> ">=" <pp-unary-expression>
 
 <pp-unary-expression> ::= <pp-primary>
                          | <pp-unary-op> <pp-unary-expression>
@@ -235,7 +245,7 @@
                | "defined" "(" <identifier> ")"
                | "defined" <identifier>
                | <object-like-macro-identifier>
-               | "(" <pp-unary-expression> ")"
+               | "(" <pp-equality-expression> ")"
 
 <else_directive> ::= "#" "else"
 
@@ -373,14 +383,16 @@
 #     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
 #     duplicate `#else`, unmatched directives, and `#elif` without a conditional.
 #   - `#if` and `#elif` directives support unary operators `!`, `-`, and `+` applied to
-#     integer values. Conditions may include integer literals (e.g., `#if 1`), the `defined()`
+#     integer values, as well as binary equality and relational operators (`==`, `!=`, `<`,
+#     `<=`, `>`, `>=`). Conditions may include integer literals (e.g., `#if 1`), the `defined()`
 #     operator with or without parentheses (e.g., `#if defined(NAME)` or `#if defined NAME`),
 #     object-like macro identifiers that expand to integer literals (e.g., `#define DEBUG 1; #if DEBUG`),
-#     and unary operators chainable on these (e.g., `#if !-DEBUG` or `#if +-1`).
+#     unary operators chainable on these (e.g., `#if !-DEBUG` or `#if +-1`), and binary comparisons
+#     (e.g., `#if VERSION >= 2` or `#if VALUE != 0`).
 #     The condition value is determined as: nonzero or defined = true, zero or undefined = false.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` and `#elif` with arithmetic/comparison/boolean expression evaluation,
+#     `#if` and `#elif` with arithmetic, bitwise, shift, or boolean (`&&`, `||`) expression evaluation,
 #     `#elifdef`/`#elifndef` are not yet supported.
 
 ```
