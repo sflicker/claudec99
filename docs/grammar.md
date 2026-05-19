@@ -224,7 +224,13 @@
 
 <elif_constant_directive> ::= "#" "elif" <if-condition>
 
-<if-condition> ::= <pp-equality-expression>
+<if-condition> ::= <pp-logical-or-expression>
+
+<pp-logical-or-expression> ::= <pp-logical-and-expression>
+                              | <pp-logical-or-expression> "||" <pp-logical-and-expression>
+
+<pp-logical-and-expression> ::= <pp-equality-expression>
+                               | <pp-logical-and-expression> "&&" <pp-equality-expression>
 
 <pp-equality-expression> ::= <pp-relational-expression>
                             | <pp-equality-expression> "==" <pp-relational-expression>
@@ -245,7 +251,7 @@
                | "defined" "(" <identifier> ")"
                | "defined" <identifier>
                | <object-like-macro-identifier>
-               | "(" <pp-equality-expression> ")"
+               | "(" <pp-logical-or-expression> ")"
 
 <else_directive> ::= "#" "else"
 
@@ -382,17 +388,19 @@
 #     output; directives and macro definitions in inactive regions are not processed.
 #     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
 #     duplicate `#else`, unmatched directives, and `#elif` without a conditional.
-#   - `#if` and `#elif` directives support unary operators `!`, `-`, and `+` applied to
-#     integer values, as well as binary equality and relational operators (`==`, `!=`, `<`,
-#     `<=`, `>`, `>=`). Conditions may include integer literals (e.g., `#if 1`), the `defined()`
-#     operator with or without parentheses (e.g., `#if defined(NAME)` or `#if defined NAME`),
-#     object-like macro identifiers that expand to integer literals (e.g., `#define DEBUG 1; #if DEBUG`),
-#     unary operators chainable on these (e.g., `#if !-DEBUG` or `#if +-1`), and binary comparisons
-#     (e.g., `#if VERSION >= 2` or `#if VALUE != 0`).
-#     The condition value is determined as: nonzero or defined = true, zero or undefined = false.
+#   - `#if` and `#elif` directives support unary operators `!`, `-`, and `+`, binary
+#     equality and relational operators (`==`, `!=`, `<`, `<=`, `>`, `>=`), and logical
+#     operators `&&` and `||` with C-like precedence (`&&` binds tighter than `||`, both
+#     lower than relational/equality). Conditions may include integer literals (e.g., `#if 1`),
+#     the `defined()` operator with or without parentheses (e.g., `#if defined(NAME)` or
+#     `#if defined NAME`), object-like macro identifiers that expand to integer literals
+#     (e.g., `#define DEBUG 1; #if DEBUG`), and combinations thereof
+#     (e.g., `#if VERSION >= 2 && ENABLED`, `#if defined(A) || defined(B)`).
+#     The condition value is determined as: nonzero or defined = true, zero or undefined = false;
+#     `&&` and `||` produce 0 or 1.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` and `#elif` with arithmetic, bitwise, shift, or boolean (`&&`, `||`) expression evaluation,
+#     `#if` and `#elif` with arithmetic, bitwise, or shift expression evaluation,
 #     `#elifdef`/`#elifndef` are not yet supported.
 
 ```

@@ -639,10 +639,50 @@ static long eval_cond_equality(const char *s, size_t *in, MacroTable *macros,
     return value;
 }
 
+/* Logical AND expression: equality { "&&" equality }, left-associative. */
+static long eval_cond_logical_and(const char *s, size_t *in, MacroTable *macros,
+                                   char *out_data, char *spliced_buf) {
+    long value = eval_cond_equality(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '&' && s[*in + 1] == '&') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_equality(s, in, macros, out_data, spliced_buf);
+            value = (value && rhs) ? 1L : 0L;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Logical OR expression: logical_and { "||" logical_and }, left-associative. */
+static long eval_cond_logical_or(const char *s, size_t *in, MacroTable *macros,
+                                  char *out_data, char *spliced_buf) {
+    long value = eval_cond_logical_and(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '|' && s[*in + 1] == '|') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_logical_and(s, in, macros, out_data, spliced_buf);
+            value = (value || rhs) ? 1L : 0L;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
 /* Top-level preprocessor condition expression evaluator. */
 static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
                             char *out_data, char *spliced_buf) {
-    return eval_cond_equality(s, in, macros, out_data, spliced_buf);
+    return eval_cond_logical_or(s, in, macros, out_data, spliced_buf);
 }
 
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */
