@@ -224,10 +224,17 @@
 
 <elif_constant_directive> ::= "#" "elif" <if-condition>
 
-<if-condition> ::= <integer-literal>
-                | "defined" "(" <identifier> ")"
-                | "defined" <identifier>
-                | <object-like-macro-identifier>
+<if-condition> ::= <pp-unary-expression>
+
+<pp-unary-expression> ::= <pp-primary>
+                         | <pp-unary-op> <pp-unary-expression>
+
+<pp-unary-op> ::= "!" | "-" | "+"
+
+<pp-primary> ::= <integer-literal>
+               | "defined" "(" <identifier> ")"
+               | "defined" <identifier>
+               | <object-like-macro-identifier>
 
 <else_directive> ::= "#" "else"
 
@@ -364,10 +371,11 @@
 #     output; directives and macro definitions in inactive regions are not processed.
 #     Nesting is supported up to depth 64. Errors are produced for missing `#endif`,
 #     duplicate `#else`, unmatched directives, and `#elif` without a conditional.
-#   - `#if` and `#elif` directives support three forms of conditions:
-#     integer literals (e.g., `#if 1`), the `defined()` operator with or without
-#     parentheses (e.g., `#if defined(NAME)` or `#if defined NAME`), and object-like
-#     macro identifiers that expand to integer literals (e.g., `#define DEBUG 1; #if DEBUG`).
+#   - `#if` and `#elif` directives support unary operators `!`, `-`, and `+` applied to
+#     integer values. Conditions may include integer literals (e.g., `#if 1`), the `defined()`
+#     operator with or without parentheses (e.g., `#if defined(NAME)` or `#if defined NAME`),
+#     object-like macro identifiers that expand to integer literals (e.g., `#define DEBUG 1; #if DEBUG`),
+#     and unary operators chainable on these (e.g., `#if !-DEBUG` or `#if +-1`).
 #     The condition value is determined as: nonzero or defined = true, zero or undefined = false.
 #   - Function-like macros (`#define NAME(...)`), stringification (`#`),
 #     token pasting (`##`), recursive macro expansion beyond simple guarding,

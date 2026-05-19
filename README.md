@@ -89,9 +89,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 55-03 (undefined identifiers in #if/#elif):
+Through stage 55-04 (unary operators in #if/#elif):
 
-- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if` and `#elif` conditions supporting integer literals, `defined(NAME)` and `defined NAME` operator forms (with or without parentheses), object-like macro identifiers that expand to integer literals (`0` = false, nonzero = true), and bare undefined identifiers (evaluate to 0), with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line); `#undef NAME` removes a macro from the macro table (`#undef` of an undefined name is a no-op).
+- **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if` and `#elif` conditions supporting integer literals, `defined(NAME)` and `defined NAME` operator forms (with or without parentheses), object-like macro identifiers that expand to integer literals (`0` = false, nonzero = true), bare undefined identifiers (evaluate to 0), unary operators `!`, `-`, and `+` applied to integer values in `#if`/`#elif` conditions (chainable, e.g. `!-1`), with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line); `#undef NAME` removes a macro from the macro table (`#undef` of an undefined name is a no-op).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
@@ -248,7 +248,7 @@ Through stage 55-03 (undefined identifiers in #if/#elif):
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
-variadics; expression evaluation in `#if`/`#elif` (integer constants, `defined(NAME)`, `defined NAME`, and object-like macro identifiers expanding to integers are supported, but boolean operators, comparisons, and arithmetic are not), `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
+variadics; expression evaluation in `#if`/`#elif` (integer constants, `defined(NAME)`, `defined NAME`, object-like macro identifiers expanding to integers, and unary operators are supported, but boolean operators, comparisons, and binary arithmetic are not), `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
@@ -275,9 +275,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 55-03 all
-tests pass (577 valid, 192 invalid, 27 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 955 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 55-04 all
+tests pass (588 valid, 192 invalid, 27 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 966 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

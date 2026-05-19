@@ -466,6 +466,105 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
     return out.data;
 }
 
+/* ---- Preprocessor condition expression evaluator --------------------- */
+
+/* Evaluate the primary of a preprocessor condition: defined(...), an integer
+ * literal, or an object-like macro identifier that expands to one.
+ * Advances *in past the consumed tokens.  Frees out_data and spliced_buf
+ * before calling exit(1) on error (matching the caller's cleanup pattern). */
+static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
+                               char *out_data, char *spliced_buf) {
+    while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+
+    if (strncmp(s + *in, "defined", 7) == 0 &&
+        !isalnum((unsigned char)s[*in + 7]) && s[*in + 7] != '_') {
+        *in += 7;
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '(') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            size_t name_start = *in;
+            while (s[*in] && (isalnum((unsigned char)s[*in]) || s[*in] == '_'))
+                (*in)++;
+            size_t name_len = *in - name_start;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            if (s[*in] != ')') {
+                fprintf(stderr, "error: expected ')' in defined(...)\n");
+                free(out_data); free(spliced_buf); exit(1);
+            }
+            (*in)++;
+            return macro_find(macros, s + name_start, name_len) != NULL ? 1L : 0L;
+        } else if (isalpha((unsigned char)s[*in]) || s[*in] == '_') {
+            size_t name_start = *in;
+            while (s[*in] && (isalnum((unsigned char)s[*in]) || s[*in] == '_'))
+                (*in)++;
+            size_t name_len = *in - name_start;
+            return macro_find(macros, s + name_start, name_len) != NULL ? 1L : 0L;
+        } else {
+            fprintf(stderr, "error: expected identifier after defined\n");
+            free(out_data); free(spliced_buf); exit(1);
+        }
+    }
+
+    if (isdigit((unsigned char)s[*in])) {
+        long value = 0;
+        while (isdigit((unsigned char)s[*in]))
+            value = value * 10 + (s[(*in)++] - '0');
+        return value;
+    }
+
+    if (isalpha((unsigned char)s[*in]) || s[*in] == '_') {
+        size_t name_start = *in;
+        while (s[*in] && (isalnum((unsigned char)s[*in]) || s[*in] == '_'))
+            (*in)++;
+        size_t name_len = *in - name_start;
+        MacroDef *m = macro_find(macros, s + name_start, name_len);
+        if (!m) return 0L;  /* undefined identifier evaluates to 0 */
+        if (m->param_count != -1) {
+            fprintf(stderr, "error: unsupported #if expression\n");
+            free(out_data); free(spliced_buf); exit(1);
+        }
+        const char *repl = m->replacement;
+        while (*repl == ' ' || *repl == '\t') repl++;
+        if (!isdigit((unsigned char)*repl)) {
+            fprintf(stderr, "error: macro in #if does not expand to an integer\n");
+            free(out_data); free(spliced_buf); exit(1);
+        }
+        long value = 0;
+        while (isdigit((unsigned char)*repl))
+            value = value * 10 + (*repl++ - '0');
+        return value;
+    }
+
+    fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
+    free(out_data); free(spliced_buf); exit(1);
+}
+
+/* Evaluate a preprocessor condition expression.
+ * Handles optional leading unary operators (!, -, +) — possibly chained —
+ * followed by a primary.  Applies the operators innermost-first. */
+static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
+                            char *out_data, char *spliced_buf) {
+    char ops[32];
+    int  nops = 0;
+
+    while (s[*in] == '!' || s[*in] == '-' || s[*in] == '+') {
+        ops[nops++] = s[(*in)++];
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+    }
+
+    long value = eval_cond_primary(s, in, macros, out_data, spliced_buf);
+
+    /* apply collected operators innermost-first (reverse of collection order) */
+    for (int i = nops - 1; i >= 0; i--) {
+        if      (ops[i] == '!') value = (value == 0) ? 1L : 0L;
+        else if (ops[i] == '-') value = -value;
+        /* '+' is arithmetic identity; nothing to do */
+    }
+
+    return value;
+}
+
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */
 
 static char *preprocess_internal(const char *source, const char *source_path,
@@ -595,71 +694,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (emitting) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (strncmp(s + in, "defined", 7) == 0 &&
-                        !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
-                        in += 7;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] == '(') {
-                            in++;
-                            while (s[in] == ' ' || s[in] == '\t') in++;
-                            size_t name_start = in;
-                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                                in++;
-                            size_t name_len = in - name_start;
-                            while (s[in] == ' ' || s[in] == '\t') in++;
-                            if (s[in] != ')') {
-                                fprintf(stderr, "error: expected ')' in defined(...)\n");
-                                free(out.data); free(spliced); exit(1);
-                            }
-                            in++;
-                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                        } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
-                            size_t name_start = in;
-                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                                in++;
-                            size_t name_len = in - name_start;
-                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                        } else {
-                            fprintf(stderr, "error: expected identifier after defined\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                    } else if (isdigit((unsigned char)s[in])) {
-                        long value = 0;
-                        while (isdigit((unsigned char)s[in]))
-                            value = value * 10 + (s[in++] - '0');
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != '\n' && s[in] != '\0') {
-                            fprintf(stderr, "error: extra tokens after #if constant\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        cond_val = (value != 0);
-                    } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
-                        size_t name_start = in;
-                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                            in++;
-                        size_t name_len = in - name_start;
-                        MacroDef *m = macro_find(macros, s + name_start, name_len);
-                        if (!m) {
-                            cond_val = 0;
-                        } else if (m->param_count != -1) {
-                            fprintf(stderr, "error: unsupported #if expression\n");
-                            free(out.data); free(spliced); exit(1);
-                        } else {
-                            const char *repl = m->replacement;
-                            while (*repl == ' ' || *repl == '\t') repl++;
-                            if (!isdigit((unsigned char)*repl)) {
-                                fprintf(stderr, "error: macro in #if does not expand to an integer\n");
-                                free(out.data); free(spliced); exit(1);
-                            }
-                            long value = 0;
-                            while (isdigit((unsigned char)*repl))
-                                value = value * 10 + (*repl++ - '0');
-                            cond_val = (value != 0);
-                        }
-                    } else {
-                        fprintf(stderr, "error: #if requires an integer constant or defined(...)\n");
+                    long ifval = eval_cond_expr(s, &in, macros, out.data, spliced);
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != '\n' && s[in] != '\0') {
+                        fprintf(stderr, "error: extra tokens after #if expression\n");
                         free(out.data); free(spliced); exit(1);
                     }
+                    cond_val = (ifval != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;
                 cond_stack[cond_depth].parent_emitting = emitting;
@@ -687,71 +728,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (top->parent_emitting && !top->branch_taken) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (strncmp(s + in, "defined", 7) == 0 &&
-                        !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
-                        in += 7;
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] == '(') {
-                            in++;
-                            while (s[in] == ' ' || s[in] == '\t') in++;
-                            size_t name_start = in;
-                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                                in++;
-                            size_t name_len = in - name_start;
-                            while (s[in] == ' ' || s[in] == '\t') in++;
-                            if (s[in] != ')') {
-                                fprintf(stderr, "error: expected ')' in defined(...)\n");
-                                free(out.data); free(spliced); exit(1);
-                            }
-                            in++;
-                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                        } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
-                            size_t name_start = in;
-                            while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                                in++;
-                            size_t name_len = in - name_start;
-                            cond_val = macro_find(macros, s + name_start, name_len) != NULL ? 1 : 0;
-                        } else {
-                            fprintf(stderr, "error: expected identifier after defined\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                    } else if (isdigit((unsigned char)s[in])) {
-                        long value = 0;
-                        while (isdigit((unsigned char)s[in]))
-                            value = value * 10 + (s[in++] - '0');
-                        while (s[in] == ' ' || s[in] == '\t') in++;
-                        if (s[in] != '\n' && s[in] != '\0') {
-                            fprintf(stderr, "error: extra tokens after #elif constant\n");
-                            free(out.data); free(spliced); exit(1);
-                        }
-                        cond_val = (value != 0);
-                    } else if (isalpha((unsigned char)s[in]) || s[in] == '_') {
-                        size_t name_start = in;
-                        while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
-                            in++;
-                        size_t name_len = in - name_start;
-                        MacroDef *m = macro_find(macros, s + name_start, name_len);
-                        if (!m) {
-                            cond_val = 0;
-                        } else if (m->param_count != -1) {
-                            fprintf(stderr, "error: unsupported #elif expression\n");
-                            free(out.data); free(spliced); exit(1);
-                        } else {
-                            const char *repl = m->replacement;
-                            while (*repl == ' ' || *repl == '\t') repl++;
-                            if (!isdigit((unsigned char)*repl)) {
-                                fprintf(stderr, "error: macro in #elif does not expand to an integer\n");
-                                free(out.data); free(spliced); exit(1);
-                            }
-                            long value = 0;
-                            while (isdigit((unsigned char)*repl))
-                                value = value * 10 + (*repl++ - '0');
-                            cond_val = (value != 0);
-                        }
-                    } else {
-                        fprintf(stderr, "error: #elif requires an integer constant or defined(...)\n");
+                    long elifval = eval_cond_expr(s, &in, macros, out.data, spliced);
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != '\n' && s[in] != '\0') {
+                        fprintf(stderr, "error: extra tokens after #elif expression\n");
                         free(out.data); free(spliced); exit(1);
                     }
+                    cond_val = (elifval != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;
                 if (top->parent_emitting) {
