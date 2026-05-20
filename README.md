@@ -263,7 +263,7 @@ The test harness consists of six suites under `test/`:
 | -------------- | ------------------------------------------------------------------- |
 | `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
-| `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.args`, `.input`, `.status`) drive expected stdout, link flags, argv, stdin, and exit code. |
+| `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.cflags`, `.args`, `.input`, `.status`) drive expected stdout, link flags, compiler flags, runtime argv, stdin, and exit code. |
 | `print_ast`    | `--print-ast` output must match `.expected`                         |
 | `print_tokens` | `--print-tokens` output must match `.expected`                      |
 | `print_asm`    | Generated `.asm` must match `.expected`                             |
