@@ -229,18 +229,31 @@
 <pp-logical-or-expression> ::= <pp-logical-and-expression>
                               | <pp-logical-or-expression> "||" <pp-logical-and-expression>
 
-<pp-logical-and-expression> ::= <pp-equality-expression>
-                               | <pp-logical-and-expression> "&&" <pp-equality-expression>
+<pp-logical-and-expression> ::= <pp-bitwise-or-expression>
+                               | <pp-logical-and-expression> "&&" <pp-bitwise-or-expression>
+
+<pp-bitwise-or-expression> ::= <pp-bitwise-xor-expression>
+                              | <pp-bitwise-or-expression> "|" <pp-bitwise-xor-expression>
+
+<pp-bitwise-xor-expression> ::= <pp-bitwise-and-expression>
+                               | <pp-bitwise-xor-expression> "^" <pp-bitwise-and-expression>
+
+<pp-bitwise-and-expression> ::= <pp-equality-expression>
+                               | <pp-bitwise-and-expression> "&" <pp-equality-expression>
 
 <pp-equality-expression> ::= <pp-relational-expression>
                             | <pp-equality-expression> "==" <pp-relational-expression>
                             | <pp-equality-expression> "!=" <pp-relational-expression>
 
-<pp-relational-expression> ::= <pp-additive-expression>
-                              | <pp-relational-expression> "<"  <pp-additive-expression>
-                              | <pp-relational-expression> "<=" <pp-additive-expression>
-                              | <pp-relational-expression> ">"  <pp-additive-expression>
-                              | <pp-relational-expression> ">=" <pp-additive-expression>
+<pp-relational-expression> ::= <pp-shift-expression>
+                              | <pp-relational-expression> "<"  <pp-shift-expression>
+                              | <pp-relational-expression> "<=" <pp-shift-expression>
+                              | <pp-relational-expression> ">"  <pp-shift-expression>
+                              | <pp-relational-expression> ">=" <pp-shift-expression>
+
+<pp-shift-expression> ::= <pp-additive-expression>
+                         | <pp-shift-expression> "<<" <pp-additive-expression>
+                         | <pp-shift-expression> ">>" <pp-additive-expression>
 
 <pp-additive-expression> ::= <pp-multiplicative-expression>
                             | <pp-additive-expression> "+" <pp-multiplicative-expression>
@@ -254,7 +267,7 @@
 <pp-unary-expression> ::= <pp-primary>
                          | <pp-unary-op> <pp-unary-expression>
 
-<pp-unary-op> ::= "!" | "-" | "+"
+<pp-unary-op> ::= "!" | "-" | "+" | "~"
 
 <pp-primary> ::= <integer-literal>
                | "defined" "(" <identifier> ")"

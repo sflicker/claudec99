@@ -476,6 +476,14 @@ static long eval_cond_multiplicative(const char *s, size_t *in, MacroTable *macr
                                       char *out_data, char *spliced_buf);
 static long eval_cond_additive(const char *s, size_t *in, MacroTable *macros,
                                 char *out_data, char *spliced_buf);
+static long eval_cond_shift(const char *s, size_t *in, MacroTable *macros,
+                             char *out_data, char *spliced_buf);
+static long eval_cond_bitwise_and(const char *s, size_t *in, MacroTable *macros,
+                                   char *out_data, char *spliced_buf);
+static long eval_cond_bitwise_xor(const char *s, size_t *in, MacroTable *macros,
+                                   char *out_data, char *spliced_buf);
+static long eval_cond_bitwise_or(const char *s, size_t *in, MacroTable *macros,
+                                  char *out_data, char *spliced_buf);
 
 /* Evaluate the primary of a preprocessor condition: defined(...), an integer
  * literal, or an object-like macro identifier that expands to one.
@@ -535,6 +543,8 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
         }
         const char *repl = m->replacement;
         while (*repl == ' ' || *repl == '\t') repl++;
+        int neg = 0;
+        if (*repl == '-') { neg = 1; repl++; while (*repl == ' ' || *repl == '\t') repl++; }
         if (!isdigit((unsigned char)*repl)) {
             fprintf(stderr, "error: macro in #if does not expand to an integer\n");
             free(out_data); free(spliced_buf); exit(1);
@@ -542,7 +552,7 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
         long value = 0;
         while (isdigit((unsigned char)*repl))
             value = value * 10 + (*repl++ - '0');
-        return value;
+        return neg ? -value : value;
     }
 
     if (s[*in] == '(') {
@@ -562,13 +572,13 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
     free(out_data); free(spliced_buf); exit(1);
 }
 
-/* Unary expression: optional leading !, -, + (chained) then primary. */
+/* Unary expression: optional leading !, -, +, ~ (chained) then primary. */
 static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
                              char *out_data, char *spliced_buf) {
     char ops[32];
     int  nops = 0;
 
-    while (s[*in] == '!' || s[*in] == '-' || s[*in] == '+') {
+    while (s[*in] == '!' || s[*in] == '-' || s[*in] == '+' || s[*in] == '~') {
         ops[nops++] = s[(*in)++];
         while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
     }
@@ -578,6 +588,7 @@ static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
     for (int i = nops - 1; i >= 0; i--) {
         if      (ops[i] == '!') value = (value == 0) ? 1L : 0L;
         else if (ops[i] == '-') value = -value;
+        else if (ops[i] == '~') value = ~value;
     }
 
     return value;
@@ -646,32 +657,57 @@ static long eval_cond_additive(const char *s, size_t *in, MacroTable *macros,
     return value;
 }
 
-/* Relational expression: additive (<, <=, >, >=) additive, left-associative. */
+/* Shift expression: additive { ("<<" | ">>") additive }, left-associative. */
+static long eval_cond_shift(const char *s, size_t *in, MacroTable *macros,
+                             char *out_data, char *spliced_buf) {
+    long value = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '<' && s[*in + 1] == '<') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            value = value << rhs;
+        } else if (s[*in] == '>' && s[*in + 1] == '>') {
+            *in += 2;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            value = value >> rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Relational expression: shift (<, <=, >, >=) shift, left-associative. */
 static long eval_cond_relational(const char *s, size_t *in, MacroTable *macros,
                                   char *out_data, char *spliced_buf) {
-    long value = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+    long value = eval_cond_shift(s, in, macros, out_data, spliced_buf);
 
     for (;;) {
         while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
         if (s[*in] == '<' && s[*in + 1] == '=') {
             *in += 2;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_shift(s, in, macros, out_data, spliced_buf);
             value = (value <= rhs) ? 1L : 0L;
         } else if (s[*in] == '>' && s[*in + 1] == '=') {
             *in += 2;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_shift(s, in, macros, out_data, spliced_buf);
             value = (value >= rhs) ? 1L : 0L;
         } else if (s[*in] == '<' && s[*in + 1] != '<') {
             (*in)++;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_shift(s, in, macros, out_data, spliced_buf);
             value = (value < rhs) ? 1L : 0L;
         } else if (s[*in] == '>' && s[*in + 1] != '>') {
             (*in)++;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_additive(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_shift(s, in, macros, out_data, spliced_buf);
             value = (value > rhs) ? 1L : 0L;
         } else {
             break;
@@ -706,17 +742,77 @@ static long eval_cond_equality(const char *s, size_t *in, MacroTable *macros,
     return value;
 }
 
-/* Logical AND expression: equality { "&&" equality }, left-associative. */
-static long eval_cond_logical_and(const char *s, size_t *in, MacroTable *macros,
+/* Bitwise AND expression: equality { "&" equality }, left-associative. */
+static long eval_cond_bitwise_and(const char *s, size_t *in, MacroTable *macros,
                                    char *out_data, char *spliced_buf) {
     long value = eval_cond_equality(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '&' && s[*in + 1] != '&') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_equality(s, in, macros, out_data, spliced_buf);
+            value = value & rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Bitwise XOR expression: bitwise_and { "^" bitwise_and }, left-associative. */
+static long eval_cond_bitwise_xor(const char *s, size_t *in, MacroTable *macros,
+                                   char *out_data, char *spliced_buf) {
+    long value = eval_cond_bitwise_and(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '^') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_bitwise_and(s, in, macros, out_data, spliced_buf);
+            value = value ^ rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Bitwise OR expression: bitwise_xor { "|" bitwise_xor }, left-associative. */
+static long eval_cond_bitwise_or(const char *s, size_t *in, MacroTable *macros,
+                                  char *out_data, char *spliced_buf) {
+    long value = eval_cond_bitwise_xor(s, in, macros, out_data, spliced_buf);
+
+    for (;;) {
+        while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+        if (s[*in] == '|' && s[*in + 1] != '|') {
+            (*in)++;
+            while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+            long rhs = eval_cond_bitwise_xor(s, in, macros, out_data, spliced_buf);
+            value = value | rhs;
+        } else {
+            break;
+        }
+    }
+
+    return value;
+}
+
+/* Logical AND expression: bitwise_or { "&&" bitwise_or }, left-associative. */
+static long eval_cond_logical_and(const char *s, size_t *in, MacroTable *macros,
+                                   char *out_data, char *spliced_buf) {
+    long value = eval_cond_bitwise_or(s, in, macros, out_data, spliced_buf);
 
     for (;;) {
         while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
         if (s[*in] == '&' && s[*in + 1] == '&') {
             *in += 2;
             while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
-            long rhs = eval_cond_equality(s, in, macros, out_data, spliced_buf);
+            long rhs = eval_cond_bitwise_or(s, in, macros, out_data, spliced_buf);
             value = (value && rhs) ? 1L : 0L;
         } else {
             break;
