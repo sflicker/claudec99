@@ -1231,6 +1231,22 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 continue;
             }
 
+            /* #error message */
+            if (strncmp(s + in, "error", 5) == 0 &&
+                !isalnum((unsigned char)s[in + 5]) && s[in + 5] != '_') {
+                in += 5;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                size_t msg_start = in;
+                while (s[in] && s[in] != '\n') in++;
+                size_t msg_len = in - msg_start;
+                while (msg_len > 0 &&
+                       (s[msg_start + msg_len - 1] == ' ' ||
+                        s[msg_start + msg_len - 1] == '\t'))
+                    msg_len--;
+                fprintf(stderr, "error: #error %.*s\n", (int)msg_len, s + msg_start);
+                free(out.data); free(spliced); exit(1);
+            }
+
             /* All other directives are unsupported. */
             fprintf(stderr, "error: unsupported preprocessor directive\n");
             free(out.data);
