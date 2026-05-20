@@ -30,6 +30,7 @@ BASENAME="$(basename "$SOURCE" .c)"
 
 LIBS_FILE="$SOURCE_DIR/${BASENAME}.libs"
 ARGS_FILE="$SOURCE_DIR/${BASENAME}.args"
+CFLAGS_FILE="$SOURCE_DIR/${BASENAME}.cflags"
 INPUT_FILE="$SOURCE_DIR/${BASENAME}.input"
 STATUS_FILE="$SOURCE_DIR/${BASENAME}.status"
 EXPECTED_FILE="$SOURCE_DIR/${BASENAME}.expected"
@@ -46,6 +47,12 @@ else
     EXTRA_ARGS=()
 fi
 
+if [ -f "$CFLAGS_FILE" ]; then
+    COMPILER_FLAGS=($(cat "$CFLAGS_FILE"))
+else
+    COMPILER_FLAGS=()
+fi
+
 if [ -f "$STATUS_FILE" ]; then
     EXPECTED_STATUS="$(cat "$STATUS_FILE")"
 else
@@ -58,7 +65,7 @@ for src in "$SOURCE_DIR"/*.c; do
     [ -f "$src" ] || continue
     src_name=$(basename "$src" .c)
     echo "compiling: $src"
-    "$COMPILER" "$src"
+    "$COMPILER" "${COMPILER_FLAGS[@]}" "$src"
 
     echo "assembling: ${src_name}.asm"
     nasm -f elf64 "${src_name}.asm" -o "${src_name}.o"

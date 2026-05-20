@@ -1385,8 +1385,26 @@ static char *preprocess_internal(const char *source, const char *source_path,
 }
 
 char *preprocess(const char *source, const char *source_path) {
+    return preprocess_with_defines(source, source_path, NULL, 0);
+}
+
+char *preprocess_with_defines(const char *source, const char *source_path,
+                               const char **defines, int n_defines) {
     MacroTable macros;
     macro_table_init(&macros);
+
+    for (int i = 0; i < n_defines; i++) {
+        const char *def = defines[i];
+        const char *eq  = strchr(def, '=');
+        if (eq) {
+            size_t nlen = (size_t)(eq - def);
+            const char *val = eq + 1;
+            macro_define(&macros, def, nlen, NULL, -1, val, strlen(val));
+        } else {
+            macro_define(&macros, def, strlen(def), NULL, -1, "1", 1);
+        }
+    }
+
     char *result = preprocess_internal(source,
                                        source_path ? source_path : ".",
                                        0, &macros);

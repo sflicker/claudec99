@@ -10,6 +10,7 @@
 #   .expected  expected stdout
 #   .libs      extra -l flags
 #   .args      runtime argv
+#   .cflags    compiler flags (e.g. -DNAME=VAL)
 #   .input     stdin
 #   .status    expected exit code (default 0)
 #   .error     if present, test expects a compile error; file content is an
@@ -38,6 +39,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     libs_file="$test_dir/${name}.libs"
     args_file="$test_dir/${name}.args"
+    cflags_file="$test_dir/${name}.cflags"
     input_file="$test_dir/${name}.input"
     status_file="$test_dir/${name}.status"
     expected_file="$test_dir/${name}.expected"
@@ -53,6 +55,11 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     else
         extra_args=()
     fi
+    if [ -f "$cflags_file" ]; then
+        compiler_flags=($(cat "$cflags_file"))
+    else
+        compiler_flags=()
+    fi
     if [ -f "$status_file" ]; then
         expected_status="$(cat "$status_file")"
     else
@@ -63,7 +70,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     if [ -f "$error_file" ]; then
         expected_error="$(cat "$error_file")"
         compile_exit=0
-        "$COMPILER" "$test_dir/${name}.c" >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        "$COMPILER" "${compiler_flags[@]}" "$test_dir/${name}.c" >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
         if [ "$compile_exit" -eq 0 ]; then
             echo "FAIL  $name  (expected compile error, but succeeded)"
             fail=$((fail + 1))
@@ -89,7 +96,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
         [ -f "$src" ] || continue
         src_name=$(basename "$src" .c)
 
-        if ! "$COMPILER" "$src" 2>/dev/null; then
+        if ! "$COMPILER" "${compiler_flags[@]}" "$src" 2>/dev/null; then
             echo "FAIL  $name  (compiler error: $src_name.c)"
             fail=$((fail + 1))
             compile_failed=1

@@ -14,4 +14,11 @@
  * missing #endif. */
 char *preprocess(const char *source, const char *source_path);
 
+/* Like preprocess(), but pre-defines n_defines command-line macros before
+ * processing the source.  Each entry in defines[] is either "NAME" (which
+ * becomes #define NAME 1) or "NAME=VALUE" (which becomes #define NAME VALUE).
+ * defines may be NULL when n_defines is 0. */
+char *preprocess_with_defines(const char *source, const char *source_path,
+                               const char **defines, int n_defines);
+
 #endif

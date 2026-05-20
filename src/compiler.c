@@ -236,29 +236,46 @@ int main(int argc, char *argv[]) {
     int print_ast = 0;
     int print_tokens = 0;
     const char *source_file = NULL;
+    const char **defines = NULL;
+    int n_defines = 0;
+    int defines_cap = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--print-ast") == 0) {
             print_ast = 1;
         } else if (strcmp(argv[i], "--print-tokens") == 0) {
             print_tokens = 1;
+        } else if (strncmp(argv[i], "-D", 2) == 0) {
+            if (n_defines == defines_cap) {
+                defines_cap = defines_cap * 2 + 8;
+                defines = realloc(defines, (size_t)defines_cap * sizeof(const char *));
+                if (!defines) {
+                    fprintf(stderr, "error: out of memory\n");
+                    return 1;
+                }
+            }
+            defines[n_defines++] = argv[i] + 2; /* skip "-D" prefix */
         } else if (!source_file) {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] <source.c>\n");
+            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] <source.c>\n");
+            free(defines);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] <source.c>\n");
+        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] <source.c>\n");
+        free(defines);
         return 1;
     }
 
     /* Read source and preprocess */
     char *source = read_file(source_file);
-    char *preprocessed = preprocess(source, source_file);
+    char *preprocessed = preprocess_with_defines(source, source_file,
+                                                  defines, n_defines);
     free(source);
+    free(defines);
 
     if (print_tokens) {
         print_tokens_mode(preprocessed);
