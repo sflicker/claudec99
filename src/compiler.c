@@ -239,6 +239,9 @@ int main(int argc, char *argv[]) {
     const char **defines = NULL;
     int n_defines = 0;
     int defines_cap = 0;
+    const char **include_dirs = NULL;
+    int n_include_dirs = 0;
+    int include_dirs_cap = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--print-ast") == 0) {
@@ -255,27 +258,52 @@ int main(int argc, char *argv[]) {
                 }
             }
             defines[n_defines++] = argv[i] + 2; /* skip "-D" prefix */
+        } else if (strncmp(argv[i], "-I", 2) == 0) {
+            const char *ipath;
+            if (argv[i][2] != '\0') {
+                ipath = argv[i] + 2; /* -Ipath form */
+            } else {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "error: -I requires an argument\n");
+                    free(defines); free(include_dirs);
+                    return 1;
+                }
+                ipath = argv[++i]; /* -I path form */
+            }
+            if (n_include_dirs == include_dirs_cap) {
+                include_dirs_cap = include_dirs_cap * 2 + 8;
+                include_dirs = realloc(include_dirs,
+                                       (size_t)include_dirs_cap * sizeof(const char *));
+                if (!include_dirs) {
+                    fprintf(stderr, "error: out of memory\n");
+                    free(defines);
+                    return 1;
+                }
+            }
+            include_dirs[n_include_dirs++] = ipath;
         } else if (!source_file) {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] <source.c>\n");
-            free(defines);
+            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+            free(defines); free(include_dirs);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] <source.c>\n");
-        free(defines);
+        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+        free(defines); free(include_dirs);
         return 1;
     }
 
     /* Read source and preprocess */
     char *source = read_file(source_file);
-    char *preprocessed = preprocess_with_defines(source, source_file,
-                                                  defines, n_defines);
+    char *preprocessed = preprocess_with_defines_and_includes(source, source_file,
+                                                               defines, n_defines,
+                                                               include_dirs, n_include_dirs);
     free(source);
     free(defines);
+    free(include_dirs);
 
     if (print_tokens) {
         print_tokens_mode(preprocessed);

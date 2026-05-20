@@ -192,12 +192,14 @@ static char *splice_lines(const char *source) {
 /* ---- Forward declarations -------------------------------------------- */
 
 static char *preprocess_internal(const char *source, const char *source_path,
-                                  int depth, MacroTable *macros);
+                                  int depth, MacroTable *macros,
+                                  const char **include_dirs, int n_include_dirs);
 static char *expand_macros_text(const char *text, MacroTable *macros);
 
 /* ---- Read and recursively preprocess an included file ---------------- */
 
-static char *preprocess_file(const char *path, int depth, MacroTable *macros) {
+static char *preprocess_file(const char *path, int depth, MacroTable *macros,
+                              const char **include_dirs, int n_include_dirs) {
     FILE *f = fopen(path, "r");
     if (!f) {
         fprintf(stderr, "error: cannot open include file '%s'\n", path);
@@ -211,9 +213,48 @@ static char *preprocess_file(const char *path, int depth, MacroTable *macros) {
     fread(buf, 1, flen, f);
     buf[flen] = '\0';
     fclose(f);
-    char *result = preprocess_internal(buf, path, depth, macros);
+    char *result = preprocess_internal(buf, path, depth, macros,
+                                       include_dirs, n_include_dirs);
     free(buf);
     return result;
+}
+
+/* ---- Resolve a quoted include filename to an absolute path ----------- */
+
+/* Tries source file's directory first, then each -I directory in order.
+ * Returns a heap-allocated path on success, or NULL if not found. */
+static char *resolve_include_path(const char *fname, size_t fname_len,
+                                   const char *source_path,
+                                   const char **include_dirs, int n_include_dirs) {
+    /* 1. Directory of the including file. */
+    char *dir = get_dir(source_path);
+    size_t dir_len = strlen(dir);
+    char *path = malloc(dir_len + 1 + fname_len + 1);
+    if (!path) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+    memcpy(path, dir, dir_len);
+    path[dir_len] = '/';
+    memcpy(path + dir_len + 1, fname, fname_len);
+    path[dir_len + 1 + fname_len] = '\0';
+    free(dir);
+    FILE *f = fopen(path, "r");
+    if (f) { fclose(f); return path; }
+    free(path);
+
+    /* 2. -I directories in command-line order. */
+    for (int i = 0; i < n_include_dirs; i++) {
+        size_t idir_len = strlen(include_dirs[i]);
+        path = malloc(idir_len + 1 + fname_len + 1);
+        if (!path) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+        memcpy(path, include_dirs[i], idir_len);
+        path[idir_len] = '/';
+        memcpy(path + idir_len + 1, fname, fname_len);
+        path[idir_len + 1 + fname_len] = '\0';
+        f = fopen(path, "r");
+        if (f) { fclose(f); return path; }
+        free(path);
+    }
+
+    return NULL;
 }
 
 /* ---- Argument collection for function-like macro calls --------------- */
@@ -851,7 +892,8 @@ static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */
 
 static char *preprocess_internal(const char *source, const char *source_path,
-                                  int depth, MacroTable *macros) {
+                                  int depth, MacroTable *macros,
+                                  const char **include_dirs, int n_include_dirs) {
     if (depth > MAX_INCLUDE_DEPTH) {
         fprintf(stderr, "error: maximum include depth exceeded (possible recursive include)\n");
         exit(1);
@@ -1101,18 +1143,22 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 /* Discard rest of directive line. */
                 while (s[in] && s[in] != '\n') in++;
 
-                /* Build the include path relative to the current file's dir. */
-                char *dir = get_dir(source_path);
-                size_t dir_len = strlen(dir);
-                char *include_path = malloc(dir_len + 1 + fname_len + 1);
-                if (!include_path) { fprintf(stderr, "error: out of memory\n"); exit(1); }
-                memcpy(include_path, dir, dir_len);
-                include_path[dir_len] = '/';
-                memcpy(include_path + dir_len + 1, s + fname_start, fname_len);
-                include_path[dir_len + 1 + fname_len] = '\0';
-                free(dir);
+                /* Resolve the include path: current dir, then -I dirs. */
+                char *include_path = resolve_include_path(s + fname_start, fname_len,
+                                                           source_path,
+                                                           include_dirs, n_include_dirs);
+                if (!include_path) {
+                    char fname_buf[256];
+                    size_t copy = fname_len < sizeof(fname_buf) - 1
+                                  ? fname_len : sizeof(fname_buf) - 1;
+                    memcpy(fname_buf, s + fname_start, copy);
+                    fname_buf[copy] = '\0';
+                    fprintf(stderr, "error: include file not found: \"%s\"\n", fname_buf);
+                    free(out.data); free(spliced); exit(1);
+                }
 
-                char *included = preprocess_file(include_path, depth + 1, macros);
+                char *included = preprocess_file(include_path, depth + 1, macros,
+                                                  include_dirs, n_include_dirs);
                 free(include_path);
                 gbuf_append(&out, included, strlen(included));
                 free(included);
@@ -1390,6 +1436,15 @@ char *preprocess(const char *source, const char *source_path) {
 
 char *preprocess_with_defines(const char *source, const char *source_path,
                                const char **defines, int n_defines) {
+    return preprocess_with_defines_and_includes(source, source_path,
+                                                defines, n_defines, NULL, 0);
+}
+
+char *preprocess_with_defines_and_includes(const char *source,
+                                            const char *source_path,
+                                            const char **defines, int n_defines,
+                                            const char **include_dirs,
+                                            int n_include_dirs) {
     MacroTable macros;
     macro_table_init(&macros);
 
@@ -1407,7 +1462,7 @@ char *preprocess_with_defines(const char *source, const char *source_path,
 
     char *result = preprocess_internal(source,
                                        source_path ? source_path : ".",
-                                       0, &macros);
+                                       0, &macros, include_dirs, n_include_dirs);
     macro_table_free(&macros);
     return result;
 }

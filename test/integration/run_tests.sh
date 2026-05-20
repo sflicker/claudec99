@@ -70,7 +70,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     if [ -f "$error_file" ]; then
         expected_error="$(cat "$error_file")"
         compile_exit=0
-        "$COMPILER" "${compiler_flags[@]}" "$test_dir/${name}.c" >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        (cd "$test_dir" && "$COMPILER" "${compiler_flags[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
         if [ "$compile_exit" -eq 0 ]; then
             echo "FAIL  $name  (expected compile error, but succeeded)"
             fail=$((fail + 1))
@@ -96,14 +96,14 @@ for test_dir in "$SCRIPT_DIR"/*/; do
         [ -f "$src" ] || continue
         src_name=$(basename "$src" .c)
 
-        if ! "$COMPILER" "${compiler_flags[@]}" "$src" 2>/dev/null; then
+        if ! (cd "$test_dir" && "$COMPILER" "${compiler_flags[@]}" "$src") 2>/dev/null; then
             echo "FAIL  $name  (compiler error: $src_name.c)"
             fail=$((fail + 1))
             compile_failed=1
             break
         fi
 
-        if ! mv "${src_name}.asm" "$test_work/" 2>/dev/null; then
+        if ! mv "$test_dir/${src_name}.asm" "$test_work/" 2>/dev/null; then
             echo "FAIL  $name  (asm output missing: ${src_name}.asm)"
             fail=$((fail + 1))
             compile_failed=1
