@@ -22,8 +22,9 @@ char *preprocess_with_defines(const char *source, const char *source_path,
                                const char **defines, int n_defines);
 
 /* Like preprocess_with_defines(), but also accepts n_include_dirs extra
- * directories to search for quoted #include "file" directives.  Search order:
- * 1. directory of the including file, 2. include_dirs[] in order.
+ * directories to search for #include directives.  Quoted includes search
+ * the including file's directory first, then include_dirs[] in order.
+ * Angle-bracket includes search include_dirs[] only, in order.
  * include_dirs may be NULL when n_include_dirs is 0. */
 char *preprocess_with_defines_and_includes(const char *source,
                                             const char *source_path,

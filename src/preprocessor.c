@@ -219,7 +219,26 @@ static char *preprocess_file(const char *path, int depth, MacroTable *macros,
     return result;
 }
 
-/* ---- Resolve a quoted include filename to an absolute path ----------- */
+/* ---- Resolve include filenames to absolute paths --------------------- */
+
+/* Search only -I directories in order (angle-bracket includes).
+ * Returns a heap-allocated path on success, or NULL if not found. */
+static char *resolve_angle_include_path(const char *fname, size_t fname_len,
+                                         const char **include_dirs, int n_include_dirs) {
+    for (int i = 0; i < n_include_dirs; i++) {
+        size_t idir_len = strlen(include_dirs[i]);
+        char *path = malloc(idir_len + 1 + fname_len + 1);
+        if (!path) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+        memcpy(path, include_dirs[i], idir_len);
+        path[idir_len] = '/';
+        memcpy(path + idir_len + 1, fname, fname_len);
+        path[idir_len + 1 + fname_len] = '\0';
+        FILE *f = fopen(path, "r");
+        if (f) { fclose(f); return path; }
+        free(path);
+    }
+    return NULL;
+}
 
 /* Tries source file's directory first, then each -I directory in order.
  * Returns a heap-allocated path on success, or NULL if not found. */
@@ -1115,45 +1134,57 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 continue;
             }
 
-            /* #include "filename" */
+            /* #include "filename" or #include <filename> */
             if (strncmp(s + in, "include", 7) == 0 &&
                 !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
                 in += 7;
                 while (s[in] == ' ' || s[in] == '\t') in++;
 
-                if (s[in] != '"') {
-                    fprintf(stderr, "error: expected '\"' after #include\n");
+                int is_angle = (s[in] == '<');
+                if (s[in] != '"' && s[in] != '<') {
+                    fprintf(stderr, "error: expected '\"' or '<' after #include\n");
                     free(out.data);
                     free(spliced);
                     exit(1);
                 }
-                in++; /* skip opening '"' */
+                char close_delim = is_angle ? '>' : '"';
+                in++; /* skip opening delimiter */
 
                 size_t fname_start = in;
-                while (s[in] && s[in] != '"' && s[in] != '\n') in++;
-                if (s[in] != '"') {
+                while (s[in] && s[in] != close_delim && s[in] != '\n') in++;
+                if (s[in] != close_delim) {
                     fprintf(stderr, "error: unterminated filename in #include\n");
                     free(out.data);
                     free(spliced);
                     exit(1);
                 }
                 size_t fname_len = in - fname_start;
-                in++; /* skip closing '"' */
+                in++; /* skip closing delimiter */
 
                 /* Discard rest of directive line. */
                 while (s[in] && s[in] != '\n') in++;
 
-                /* Resolve the include path: current dir, then -I dirs. */
-                char *include_path = resolve_include_path(s + fname_start, fname_len,
-                                                           source_path,
-                                                           include_dirs, n_include_dirs);
+                char *include_path;
+                if (is_angle) {
+                    /* Angle includes: search only -I directories. */
+                    include_path = resolve_angle_include_path(s + fname_start, fname_len,
+                                                              include_dirs, n_include_dirs);
+                } else {
+                    /* Quoted includes: source dir first, then -I dirs. */
+                    include_path = resolve_include_path(s + fname_start, fname_len,
+                                                        source_path,
+                                                        include_dirs, n_include_dirs);
+                }
                 if (!include_path) {
                     char fname_buf[256];
                     size_t copy = fname_len < sizeof(fname_buf) - 1
                                   ? fname_len : sizeof(fname_buf) - 1;
                     memcpy(fname_buf, s + fname_start, copy);
                     fname_buf[copy] = '\0';
-                    fprintf(stderr, "error: include file not found: \"%s\"\n", fname_buf);
+                    if (is_angle)
+                        fprintf(stderr, "error: include file not found: <%s>\n", fname_buf);
+                    else
+                        fprintf(stderr, "error: include file not found: \"%s\"\n", fname_buf);
                     free(out.data); free(spliced); exit(1);
                 }
 
