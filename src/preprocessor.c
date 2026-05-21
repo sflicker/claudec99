@@ -440,7 +440,8 @@ static char *stringify_arg(const char *arg, size_t arg_len) {
 
 /* ---- Substitute parameters in replacement text ----------------------- */
 
-/* raw_args/raw_arg_lens hold the unexpanded argument text used by # stringification. */
+/* raw_args/raw_arg_lens hold the unexpanded argument text used by # stringification
+ * and ## token pasting (right operand uses unexpanded form per C99). */
 static char *substitute_args(const char *repl,
                               char **params, int param_count,
                               char **args, const size_t *arg_lens,
@@ -448,6 +449,7 @@ static char *substitute_args(const char *repl,
     GrowBuf out;
     gbuf_init(&out, strlen(repl) * 2 + 1);
     const char *r = repl;
+    int paste_next = 0; /* set after ##: next param uses raw (unexpanded) text */
     while (*r) {
         /* String literal in replacement: pass through verbatim. */
         if (*r == '"') {
@@ -457,6 +459,7 @@ static char *substitute_args(const char *repl,
                 gbuf_push(&out, *r++);
             }
             if (*r == '"') gbuf_push(&out, *r++);
+            paste_next = 0;
             continue;
         }
         /* Character literal in replacement: pass through verbatim. */
@@ -467,6 +470,18 @@ static char *substitute_args(const char *repl,
                 gbuf_push(&out, *r++);
             }
             if (*r == '\'') gbuf_push(&out, *r++);
+            paste_next = 0;
+            continue;
+        }
+        /* Token paste operator: ## */
+        if (*r == '#' && *(r + 1) == '#') {
+            /* Strip trailing whitespace from whatever has been emitted so far */
+            while (out.len > 0 &&
+                   (out.data[out.len - 1] == ' ' || out.data[out.len - 1] == '\t'))
+                out.len--;
+            r += 2;
+            while (*r == ' ' || *r == '\t') r++;
+            paste_next = 1;
             continue;
         }
         /* Stringification operator: #param */
@@ -491,6 +506,7 @@ static char *substitute_args(const char *repl,
                 fprintf(stderr, "error: '#' operand is not a macro parameter\n");
                 free(out.data); exit(1);
             }
+            paste_next = 0;
             continue;
         }
         if (isalpha((unsigned char)*r) || *r == '_') {
@@ -501,14 +517,19 @@ static char *substitute_args(const char *repl,
             for (int i = 0; i < param_count; i++) {
                 if (strlen(params[i]) == id_len &&
                     strncmp(params[i], id_start, id_len) == 0) {
-                    gbuf_append(&out, args[i], arg_lens[i]);
+                    /* Right operand of ## uses unexpanded (raw) argument text */
+                    const char *text = paste_next ? raw_args[i] : args[i];
+                    size_t      tlen = paste_next ? raw_arg_lens[i] : arg_lens[i];
+                    gbuf_append(&out, text, tlen);
                     found = 1;
                     break;
                 }
             }
             if (!found) gbuf_append(&out, id_start, id_len);
+            paste_next = 0;
         } else {
             gbuf_push(&out, *r++);
+            paste_next = 0;
         }
     }
     gbuf_push(&out, '\0');
@@ -1383,7 +1404,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                        (s[repl_end - 1] == ' ' || s[repl_end - 1] == '\t'))
                     repl_end--;
 
-                /* Validate '#' usage in replacement text. */
+                /* Validate '#' and '##' usage in replacement text. */
                 for (size_t k = repl_start; k < repl_end; k++) {
                     if (s[k] == '"') {
                         k++;
@@ -1399,6 +1420,30 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             if (s[k] == '\\' && k + 1 < repl_end) k++;
                             k++;
                         }
+                        continue;
+                    }
+                    if (s[k] == '#' && k + 1 < repl_end && s[k + 1] == '#') {
+                        /* Token paste operator: ## */
+                        if (param_count == -1) {
+                            fprintf(stderr,
+                                    "error: '##' in object-like macro is not permitted\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        if (k == repl_start) {
+                            fprintf(stderr,
+                                    "error: hash hash at start of replacement list is not permitted\n");
+                            for (int i = 0; i < param_count; i++) free(params[i]);
+                            free(params); free(out.data); free(spliced); exit(1);
+                        }
+                        size_t j = k + 2;
+                        while (j < repl_end && (s[j] == ' ' || s[j] == '\t')) j++;
+                        if (j >= repl_end) {
+                            fprintf(stderr,
+                                    "error: hash hash at end of replacement list is not permitted\n");
+                            for (int i = 0; i < param_count; i++) free(params[i]);
+                            free(params); free(out.data); free(spliced); exit(1);
+                        }
+                        k++; /* skip second '#'; outer loop increments past both */
                         continue;
                     }
                     if (s[k] == '#') {
