@@ -395,15 +395,104 @@ static void collect_args(const char *s, size_t *pos,
     *count_out = count;
 }
 
+/* ---- Stringify a raw argument (# operator) --------------------------- */
+
+static char *stringify_arg(const char *arg, size_t arg_len) {
+    GrowBuf inner;
+    gbuf_init(&inner, arg_len * 2 + 1);
+
+    int in_space = 1; /* start true to trim leading whitespace */
+    size_t last_non_space = 0;
+
+    for (size_t i = 0; i < arg_len; i++) {
+        char c = arg[i];
+        if (c == ' ' || c == '\t') {
+            if (!in_space) {
+                gbuf_push(&inner, ' ');
+                in_space = 1;
+            }
+        } else if (c == '"') {
+            gbuf_push(&inner, '\\');
+            gbuf_push(&inner, '"');
+            in_space = 0;
+            last_non_space = inner.len;
+        } else if (c == '\\') {
+            gbuf_push(&inner, '\\');
+            gbuf_push(&inner, '\\');
+            in_space = 0;
+            last_non_space = inner.len;
+        } else {
+            gbuf_push(&inner, c);
+            in_space = 0;
+            last_non_space = inner.len;
+        }
+    }
+
+    GrowBuf out;
+    gbuf_init(&out, last_non_space + 3);
+    gbuf_push(&out, '"');
+    gbuf_append(&out, inner.data, last_non_space);
+    free(inner.data);
+    gbuf_push(&out, '"');
+    gbuf_push(&out, '\0');
+    return out.data;
+}
+
 /* ---- Substitute parameters in replacement text ----------------------- */
 
+/* raw_args/raw_arg_lens hold the unexpanded argument text used by # stringification. */
 static char *substitute_args(const char *repl,
                               char **params, int param_count,
-                              char **args, const size_t *arg_lens) {
+                              char **args, const size_t *arg_lens,
+                              char **raw_args, const size_t *raw_arg_lens) {
     GrowBuf out;
     gbuf_init(&out, strlen(repl) * 2 + 1);
     const char *r = repl;
     while (*r) {
+        /* String literal in replacement: pass through verbatim. */
+        if (*r == '"') {
+            gbuf_push(&out, *r++);
+            while (*r && *r != '"' && *r != '\n') {
+                if (*r == '\\' && *(r + 1)) gbuf_push(&out, *r++);
+                gbuf_push(&out, *r++);
+            }
+            if (*r == '"') gbuf_push(&out, *r++);
+            continue;
+        }
+        /* Character literal in replacement: pass through verbatim. */
+        if (*r == '\'') {
+            gbuf_push(&out, *r++);
+            while (*r && *r != '\'' && *r != '\n') {
+                if (*r == '\\' && *(r + 1)) gbuf_push(&out, *r++);
+                gbuf_push(&out, *r++);
+            }
+            if (*r == '\'') gbuf_push(&out, *r++);
+            continue;
+        }
+        /* Stringification operator: #param */
+        if (*r == '#') {
+            r++;
+            while (*r == ' ' || *r == '\t') r++;
+            const char *id_start = r;
+            while (*r && (isalnum((unsigned char)*r) || *r == '_')) r++;
+            size_t id_len = (size_t)(r - id_start);
+            int found = 0;
+            for (int i = 0; i < param_count; i++) {
+                if (strlen(params[i]) == id_len &&
+                    strncmp(params[i], id_start, id_len) == 0) {
+                    char *str = stringify_arg(raw_args[i], raw_arg_lens[i]);
+                    gbuf_append(&out, str, strlen(str));
+                    free(str);
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "error: '#' operand is not a macro parameter\n");
+                free(out.data); exit(1);
+            }
+            continue;
+        }
         if (isalpha((unsigned char)*r) || *r == '_') {
             const char *id_start = r;
             while (*r && (isalnum((unsigned char)*r) || *r == '_')) r++;
@@ -492,6 +581,14 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                         free(args); free(arg_lens); free(out.data);
                         exit(1);
                     }
+                    /* save raw args before expansion (for # stringification) */
+                    char  **raw_args     = malloc(((size_t)arg_count + 1) * sizeof(char *));
+                    size_t *raw_arg_lens = malloc(((size_t)arg_count + 1) * sizeof(size_t));
+                    if (!raw_args || !raw_arg_lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+                    for (int i = 0; i < arg_count; i++) {
+                        raw_args[i]     = strdup(args[i]);
+                        raw_arg_lens[i] = arg_lens[i];
+                    }
                     /* pre-expand each argument before substitution */
                     for (int i = 0; i < arg_count; i++) {
                         char *ea = expand_macros_text(args[i], macros);
@@ -502,13 +599,14 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                     /* substitute args into replacement */
                     char *subst = substitute_args(def->replacement,
                                                    def->params, def->param_count,
-                                                   args, arg_lens);
+                                                   args, arg_lens,
+                                                   raw_args, raw_arg_lens);
                     /* rescan the substituted text */
                     char *rescanned = expand_macros_text(subst, macros);
                     gbuf_append(&out, rescanned, strlen(rescanned));
                     free(rescanned); free(subst);
-                    for (int i = 0; i < arg_count; i++) free(args[i]);
-                    free(args); free(arg_lens);
+                    for (int i = 0; i < arg_count; i++) { free(args[i]); free(raw_args[i]); }
+                    free(args); free(arg_lens); free(raw_args); free(raw_arg_lens);
                 } else {
                     /* not followed by '(' — emit name unchanged */
                     gbuf_append(&out, s + id_start, id_len);
@@ -1285,6 +1383,60 @@ static char *preprocess_internal(const char *source, const char *source_path,
                        (s[repl_end - 1] == ' ' || s[repl_end - 1] == '\t'))
                     repl_end--;
 
+                /* Validate '#' usage in replacement text. */
+                for (size_t k = repl_start; k < repl_end; k++) {
+                    if (s[k] == '"') {
+                        k++;
+                        while (k < repl_end && s[k] != '"' && s[k] != '\n') {
+                            if (s[k] == '\\' && k + 1 < repl_end) k++;
+                            k++;
+                        }
+                        continue;
+                    }
+                    if (s[k] == '\'') {
+                        k++;
+                        while (k < repl_end && s[k] != '\'' && s[k] != '\n') {
+                            if (s[k] == '\\' && k + 1 < repl_end) k++;
+                            k++;
+                        }
+                        continue;
+                    }
+                    if (s[k] == '#') {
+                        if (param_count == -1) {
+                            fprintf(stderr,
+                                    "error: hash in object like macro is not permitted\n");
+                            free(out.data); free(spliced); exit(1);
+                        }
+                        size_t j = k + 1;
+                        while (j < repl_end && (s[j] == ' ' || s[j] == '\t')) j++;
+                        if (!isalpha((unsigned char)s[j]) && s[j] != '_') {
+                            fprintf(stderr,
+                                    "error: bare hash in replacement list\n");
+                            for (int i = 0; i < param_count; i++) free(params[i]);
+                            free(params); free(out.data); free(spliced); exit(1);
+                        }
+                        size_t pstart = j;
+                        while (j < repl_end && (isalnum((unsigned char)s[j]) || s[j] == '_'))
+                            j++;
+                        size_t plen = j - pstart;
+                        int found_param = 0;
+                        for (int pi = 0; pi < param_count; pi++) {
+                            if (strlen(params[pi]) == plen &&
+                                strncmp(params[pi], s + pstart, plen) == 0) {
+                                found_param = 1;
+                                break;
+                            }
+                        }
+                        if (!found_param) {
+                            fprintf(stderr,
+                                    "error: hash not followed by param '%.*s'\n",
+                                    (int)plen, s + pstart);
+                            for (int i = 0; i < param_count; i++) free(params[i]);
+                            free(params); free(out.data); free(spliced); exit(1);
+                        }
+                    }
+                }
+
                 macro_define(macros,
                              s + name_start, name_len,
                              params, param_count,
@@ -1415,6 +1567,14 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                 free(out.data); free(spliced);
                                 exit(1);
                             }
+                            /* save raw args before expansion (for # stringification) */
+                            char  **raw_args     = malloc(((size_t)arg_count + 1) * sizeof(char *));
+                            size_t *raw_arg_lens = malloc(((size_t)arg_count + 1) * sizeof(size_t));
+                            if (!raw_args || !raw_arg_lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+                            for (int i = 0; i < arg_count; i++) {
+                                raw_args[i]     = strdup(args[i]);
+                                raw_arg_lens[i] = arg_lens[i];
+                            }
                             /* pre-expand each argument */
                             for (int i = 0; i < arg_count; i++) {
                                 char *ea = expand_macros_text(args[i], macros);
@@ -1425,12 +1585,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             /* substitute into replacement, then rescan */
                             char *subst     = substitute_args(def->replacement,
                                                                def->params, def->param_count,
-                                                               args, arg_lens);
+                                                               args, arg_lens,
+                                                               raw_args, raw_arg_lens);
                             char *rescanned = expand_macros_text(subst, macros);
                             gbuf_append(&out, rescanned, strlen(rescanned));
                             free(rescanned); free(subst);
-                            for (int i = 0; i < arg_count; i++) free(args[i]);
-                            free(args); free(arg_lens);
+                            for (int i = 0; i < arg_count; i++) { free(args[i]); free(raw_args[i]); }
+                            free(args); free(arg_lens); free(raw_args); free(raw_arg_lens);
                         } else {
                             /* function-like macro not followed by '(' — pass through */
                             gbuf_append(&out, s + id_start, id_len);

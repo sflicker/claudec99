@@ -420,9 +420,10 @@
 #     (e.g., `#if VERSION >= 2 && ENABLED`, `#if defined(A) || defined(B)`).
 #     The condition value is determined as: nonzero or defined = true, zero or undefined = false;
 #     `&&` and `||` produce 0 or 1.
-#   - Function-like macros (`#define NAME(...)`), stringification (`#`),
-#     token pasting (`##`), recursive macro expansion beyond simple guarding,
+#   - Function-like macros (`#define NAME(...)`), nested function-like macro invocations,
+#     and stringification (`#param` in function-like macro replacement lists) are supported (stage 57).
+#     Token pasting (`##`), recursive macro expansion beyond simple guarding,
 #     `#if` and `#elif` with bitwise or shift expression evaluation,
-#     `#elifdef`/`#elifndef` are not yet supported.
+#     `#elifdef`/`#elifndef`, and variadic macros are not yet supported.
 
 ```
