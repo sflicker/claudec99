@@ -2027,6 +2027,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (needs_pad) {
             fprintf(cg->output, "    sub rsp, 8\n");
         }
+        /* Stage 57-03: SysV AMD64 requires AL = number of vector registers used
+         * for variadic calls. We never pass FP arguments, so always zero. */
+        if (callee && callee->is_variadic) {
+            fprintf(cg->output, "    xor eax, eax\n");
+        }
         fprintf(cg->output, "    call %s\n", node->value);
         if (needs_pad) {
             fprintf(cg->output, "    add rsp, 8\n");

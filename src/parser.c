@@ -215,7 +215,7 @@ static void parser_register_function(Parser *parser, const char *name,
                                      int param_count, int is_definition,
                                      TypeKind return_type,
                                      const TypeKind *param_types,
-                                     StorageClass sc) {
+                                     StorageClass sc, int is_variadic) {
     /* Stage 22-02: reject function if a global object with the same name exists. */
     if (parser_find_global(parser, name)) {
         fprintf(stderr,
@@ -279,6 +279,7 @@ static void parser_register_function(Parser *parser, const char *name,
     sig->has_definition = is_definition;
     sig->return_type = return_type;
     sig->storage_class = sc;
+    sig->is_variadic = is_variadic;
     for (int i = 0; i < param_count; i++) {
         sig->param_types[i] = param_types[i];
     }
@@ -947,7 +948,16 @@ static ASTNode *parse_primary(Parser *parser) {
                     }
                 }
                 parser_expect(parser, TOKEN_RPAREN);
-                if (sig->param_count != call->child_count) {
+                /* Stage 57-03: variadic functions require at least the fixed
+                 * parameter count; non-variadic functions require an exact match. */
+                if (sig->is_variadic) {
+                    if (call->child_count < sig->param_count) {
+                        fprintf(stderr,
+                                "error: function '%s' expects at least %d arguments, got %d\n",
+                                token.value, sig->param_count, call->child_count);
+                        exit(1);
+                    }
+                } else if (sig->param_count != call->child_count) {
                     fprintf(stderr,
                             "error: function '%s' expects %d arguments, got %d\n",
                             token.value, sig->param_count, call->child_count);
@@ -2202,6 +2212,12 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
     ast_add_child(func, param);
     while (parser->current.type == TOKEN_COMMA) {
         parser->current = lexer_next_token(parser->lexer);
+        /* Stage 57-03: `...` at end of parameter list marks the function variadic. */
+        if (parser->current.type == TOKEN_ELLIPSIS) {
+            parser->current = lexer_next_token(parser->lexer);
+            func->is_variadic = 1;
+            break;
+        }
         ASTNode *next = parse_parameter_declaration(parser);
         if (next->value[0] != '\0') {
             for (int i = 0; i < func->child_count; i++) {
@@ -2691,7 +2707,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
     /* Register before parsing the body so self-calls resolve. */
     parser_register_function(parser, d.name, param_count, is_definition,
-                             return_kind, param_types, sc);
+                             return_kind, param_types, sc, func->is_variadic);
 
     if (is_definition) {
         ast_add_child(func, parse_block(parser));

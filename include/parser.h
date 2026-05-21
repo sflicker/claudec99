@@ -48,6 +48,8 @@ typedef struct {
     /* Stage 23: linkage of the first declaration. SC_NONE and SC_EXTERN
      * are both external; SC_STATIC is internal. */
     StorageClass storage_class;
+    /* Stage 57-03: set when the parameter list ends with `...`. */
+    int is_variadic;
 } FuncSig;
 
 /* Stage 22-02: tracks each file-scope object declaration so the parser

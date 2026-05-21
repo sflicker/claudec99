@@ -19,7 +19,7 @@
 <storage_class_specifier>   ::= "extern" | "static" | "typedef"
 
 <parameter_list> ::= "void"
-                   | <parameter_declarator> { "," <parameter_declarator> }
+                   | <parameter_declarator> { "," <parameter_declarator> } [ "," "..." ]
 
 <parameter_declarator> ::= <type_specifier> [ <declarator> ]
 

@@ -89,7 +89,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 57-02 (token pasting with ##):
+Through stage 57-03 (variadic function declarations and calls):
 
 - **Preprocessor**: Comment removal (`//` and `/* */`) with space replacement, line splicing (backslash-newline continuations), `#include "file.h"` local file inclusion (searched relative to the including file's directory, nested includes supported, recursive includes detected via depth limit), object-like `#define` macro definition and expansion (macros defined in headers visible to including files; compatible redefinitions allowed; incompatible redefinitions rejected), function-like `#define` macro definition and expansion with argument substitution, nested invocations, and exact argument-count checking, directive recognition (unsupported directives rejected with diagnostic error), conditional compilation (`#ifdef`/`#ifndef`/`#else`/`#endif`) with macro-defined checks, `#if` and `#elif` conditions supporting integer literals, `defined(NAME)` and `defined NAME` operator forms (with or without parentheses), object-like macro identifiers that expand to integer literals (`0` = false, nonzero = true), bare undefined identifiers (evaluate to 0), unary operators `!`, `-`, and `+` applied to integer values in `#if`/`#elif` conditions (chainable, e.g. `!-1`), parenthesized expressions `(expr)` with support for arbitrary nesting (e.g. `((expr))`), binary equality and relational operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) between integer values (e.g. `#if VERSION >= 2`, `#elif VALUE != 0`), logical operators (`&&`, `||`) with C-like precedence (e.g. `#if A && B`, `#if X || Y && Z`), binary arithmetic operators (`+`, `-`, `*`, `/`, `%`) with the usual multiplicative-over-additive precedence; division by zero and modulo by zero in `#if`/`#elif` conditions are fatal errors; shift operators (`<<`, `>>`) with lower precedence than additive and higher than relational; and bitwise operators — unary `~` (complement) and binary `&` (AND), `^` (XOR), `|` (OR) — with precedence between equality and logical-AND (tightest: `&`, then `^`, then `|`); macro replacements that expand to negative integer literals are supported (e.g. `#define VALUE -1`); with multiple branches (first-true-wins semantics); inactive regions are fully skipped (not emitted, not macro-expanded, `#define`/`#include` inside skipped blocks suppressed); nesting up to 64 levels deep; errors on missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a conditional, and `#elif` after `#else`; predefined macros (`__FILE__` expands to a string literal of the current source file; `__LINE__` expands to an integer literal of the current source line); `#undef NAME` removes a macro from the macro table (`#undef` of an undefined name is a no-op); `#error message` halts compilation with a diagnostic containing the message text (silently skipped inside inactive conditional regions); command-line macro definitions: `-DNAME` (defines `NAME` as `1`) and `-DNAME=VALUE` (defines `NAME` as `VALUE`), injected before source preprocessing begins; command-line include search paths: `-I<dir>` and `-I <dir>` forms accepted; multiple `-I` options allowed; quoted includes (`#include "file.h"`) are searched in directory-of-including-file order first, then `-I` directories in command-line order; angle-bracket includes (`#include <file.h>`) are searched in `-I` directories only, in command-line order; standard predefined macros (`__STDC__` expands to `1`, `__STDC_VERSION__` expands to `199901`, `__CLAUDEC99__` expands to `1`) are injected before preprocessing begins and are available in `#if`, `#ifdef`, and normal source macro expansion; they behave like ordinary object-like macros (`#undef` removes them; incompatible redefinitions are rejected); function-like macro stringification: `#param` in a function-like macro replacement list converts the actual argument tokens to a C string literal (whitespace normalized to single space, `"` escaped to `\"`, `\` escaped to `\\`; the argument is not macro-expanded before stringification; `#` in object-like macros and `#` not followed by a parameter name are rejected at `#define` time); token pasting: `##` in function-like macro replacement lists concatenates the adjacent tokens (surrounding whitespace discarded; `##` at the start or end of a replacement list and `##` in object-like macros are rejected at `#define` time).
 - **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
@@ -122,6 +122,9 @@ Through stage 57-02 (token pasting with ##):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
+  Variadic function declarations (e.g., `int printf(const char *, ...)`) and calls
+  to external variadic functions are supported; code generation emits `xor eax, eax`
+  before calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -248,7 +251,8 @@ Through stage 57-02 (token pasting with ##):
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
-variadics; `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
+defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
+`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 calls with more than 6 arguments.
 
 The authoritative grammar for the supported language is in
@@ -276,8 +280,8 @@ Run everything from the project root after building:
 
 The runner aggregates per-suite results and prints a final
 `Aggregate: P passed, F failed, T total` line. As of stage 57-02 all
-tests pass (635 valid, 201 invalid, 31 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 1026 total).
+tests pass (637 valid, 201 invalid, 31 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 1028 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

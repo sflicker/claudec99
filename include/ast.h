@@ -81,6 +81,9 @@ typedef struct ASTNode {
     /* Stage 40: on AST_DECLARATION, marks an unsigned-typed variable.
      * On expression nodes, marks the result as unsigned (set by codegen). */
     int is_unsigned;
+    /* Stage 57-03: set on AST_FUNCTION_DECL when the parameter list ends
+     * with `...`, marking the function as variadic. */
+    int is_variadic;
 } ASTNode;
 
 ASTNode *ast_new(ASTNodeType type, const char *value);
