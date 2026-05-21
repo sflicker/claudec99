@@ -1479,6 +1479,11 @@ char *preprocess_with_defines_and_includes(const char *source,
     MacroTable macros;
     macro_table_init(&macros);
 
+    /* Standard predefined macros — inserted before user -D definitions. */
+    macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, "1",      strlen("1"));
+    macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, "199901", strlen("199901"));
+    macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, "1",      strlen("1"));
+
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
         const char *eq  = strchr(def, '=');
