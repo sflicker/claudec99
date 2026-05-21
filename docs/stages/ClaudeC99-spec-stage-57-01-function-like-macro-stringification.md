@@ -56,6 +56,17 @@ int main(void) {
 ```
 The expression is not evaluated it is turned into a string
 
+Whitespace trimmed to one space
+```C
+#define STR(x) #x
+int strcmp(const char *, const char *);
+
+int main(void) {
+    return strcmp(STR(1     + 2), "1 + 2");  // expect 0
+}
+```
+
+
 Macro argument is not expanded before stringification
 ```C
 #define NAME Bob
