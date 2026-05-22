@@ -593,27 +593,265 @@
 - [x] codegen: AST_SIZEOF_TYPE rejects `sizeof(struct Tag)` when the struct is incomplete
 - [x] codegen: AST_DECLARATION struct path rejects variable declarations with incomplete struct type
 
+## Stage 38 - void Type and void Pointer
+
+- [x] Tokenizer: TOKEN_VOID keyword
+- [x] TYPE_VOID kind in type system; type_void() constructor
+- [x] void as return type for functions
+- [x] void parameter list: `int f(void)` = zero parameters
+- [x] bare `return;` in void functions (no expression)
+- [x] void functions emit implicit epilogue on fall-off-end
+- [x] void object declaration rejected (no void variables)
+- [x] sizeof(void) rejected at parse time
+- [x] void* pointer type
+	- [x] implicit conversion to/from any non-function pointer type in assignments, returns, and call arguments
+	- [x] dereferencing, arithmetic, and subscripting void* rejected
+
+## Stage 39 - Minimal const Qualifier
+
+- [x] Tokenizer: TOKEN_CONST keyword
+- [x] type_qualifier production in grammar
+- [x] `const` accepted in parse_declaration_specifiers, parse_statement, parse_parameter_declaration, parse_type_name, parse_declarator
+- [x] is_const field on ASTNode, LocalVar, GlobalVar
+- [x] is_const=1 set on AST_DECLARATION when no pointer depth and no array
+- [x] Assignment to const-qualified lvalue rejected at codegen (semantic check)
+- [x] Pointer-level const enforcement (writes through const pointers) deferred
+
+## Stage 40 - Unsigned Integer Types and size_t
+
+- [x] Tokenizer: TOKEN_UNSIGNED keyword
+- [x] parse_type_specifier handles `unsigned [ char | short | int | long ]` and plain `unsigned` (= unsigned int)
+- [x] is_unsigned flag on ASTNode, LocalVar, GlobalVar; propagated through all declaration contexts
+- [x] Unsigned variants of all scalar types via is_signed=0 in Type struct
+- [x] Usual Arithmetic Conversions for mixed signed/unsigned operands
+- [x] movzx (zero-extend) for unsigned loads vs movsx (sign-extend) for signed loads
+- [x] div vs idiv for unsigned vs signed division
+- [x] shr (logical) vs sar (arithmetic) for right shift
+- [x] Unsigned comparison instructions: setb/seta/setbe/setae vs setl/setg/setle/setge
+- [x] Integer literal U/u suffix: sets is_unsigned on token and AST_INT_LITERAL node
+
+## Stage 41 - Pointer Arithmetic Completion
+
+- [x] Pointer addition and subtraction scaled by element size (p ± n, n + p)
+- [x] Pointer prefix/postfix increment and decrement (++p, p++, --p, p--)
+- [x] Pointer compound assignment: p += n, p -= n
+- [x] Pointer difference (p1 - p2): signed division by element size, result type long
+	- [x] Both operands must have identical pointee types
+	- [x] void* and function pointer operands rejected
+- [x] Arrow access through computed pointer expressions (e.g., `(p + 1)->field`)
+
+## Stage 42 - Arrays of Pointers and Multi-level Subscript
+
+- [x] parse_postfix: AST_ARRAY_INDEX accepted as subscript base (enables a[i][j])
+- [x] codegen: emit_array_index_addr handles AST_ARRAY_INDEX base (loads pointer stored at inner element, then indexes)
+- [x] Pointer type compatibility enforced on array-element assignment (allows null constant 0, rejects incompatible pointer types)
+
+## Stage 43 - File-scope Array and String Initializers
+
+- [x] File-scope array declarations with brace-list initializers: `int a[] = {1, 2, 3};`
+- [x] File-scope array declarations with string-literal initializers: `char s[] = "hello";`
+- [x] File-scope pointer initialized from string literal: `char *p = "str";`
+- [x] Array size inference from initializer list for both block-scope and file-scope arrays
+- [x] Codegen: char array from string literal (.data with db bytes), char* from string literal (dq address), array of char* from list (dq addresses), integer array from list (dq values)
+
+## Stage 44 - Aggregate Initializers for Structs and Arrays of Structs
+
+- [x] Struct brace-list initializers at file scope: `struct S s = {1, 2};`
+- [x] Struct brace-list initializers in local declarations (block scope)
+- [x] Array of structs initializer with nested braces
+- [x] Explicit array size with more initializers than elements → compile-time error
+- [x] Field-level type checking in struct initializers (string literal for non-pointer field rejected, non-null integer for pointer field rejected)
+- [x] codegen: emit_local_struct_init and emit_global_struct helpers; recursive initialization with correct padding and offset tracking
+
+## Stage 45 - libc Prototypes and Integration Test Harness
+
+- [x] Integration test harness: test/integration/ subdirectories with companion files (.expected, .libs, .args, .input, .status, .cflags)
+- [x] Multi-file test support: all .c files in a test directory compiled and linked together
+- [x] void* argument/return compatibility at call sites (pointer_types_assignable replaces pointer_types_equal)
+- [x] Abstract pointer parameters in prototypes: `int puts(char *)` — unnamed pointer parameter with no identifier
+
+## Stage 46 - Command-line Arguments (main argc/argv)
+
+- [x] main(int argc, char **argv) pattern confirmed working (no new compiler changes needed)
+- [x] Integration test coverage for argv[1] access and argc return
+
+## Stage 47 - Multi-file Integration Test Infrastructure
+
+- [x] Integration tests restructured into per-test subdirectories
+- [x] Multiple .c files in one test directory compiled and linked together
+- [x] Test runner compiles each .c to .o, links all objects
+
+## Stage 48 - Preprocessor Foundation
+
+- [x] New preprocessor module (include/preprocessor.h, src/preprocessor.c)
+- [x] Phase 1: backslash-newline line splicing
+- [x] Phase 2: // and /* */ comment removal (replaced with single space; string/char literals protected)
+- [x] Preprocessor directives detected and rejected with error (foundation for future directives)
+- [x] Lexer simplified: comment handling moved out of lexer into preprocessor
+- [x] Compiler flow: preprocess() called before lexer initialization
+
+## Stage 49 - Local Quoted Includes
+
+- [x] `#include "file.h"` directive
+- [x] Include file resolved relative to the including file's directory
+- [x] Include recursion depth limit (64 levels) with error reporting
+- [x] Non-include unsupported directives produce diagnostic error
+
+## Stage 50 - Object-like Macros
+
+- [x] `#define NAME replacement` — object-like macro definition and storage
+- [x] MacroTable shared across all preprocessing calls (macros visible across included files)
+- [x] Identifier-level expansion in ordinary source text
+- [x] Compatible redefinitions silently accepted; incompatible redefinitions → fatal error
+
+## Stage 51 - Function-like Macros
+
+- [x] `#define NAME(params) replacement` — function-like macro with parameter substitution
+- [x] Exact argument-count validation
+- [x] Arguments may contain nested parentheses and arbitrary token sequences
+- [x] Arguments pre-expanded before substitution; nested macro invocations recursively expanded
+- [x] Zero-parameter function-like macros: `#define FOO() 42`
+
+## Stage 52-01 - Basic Conditional Preprocessing
+
+- [x] `#ifdef NAME` / `#ifndef NAME` / `#else` / `#endif` directives
+- [x] Nesting support (max depth 64) with stack-based CondFrame tracking
+- [x] Inactive regions suppress `#define` and `#include` processing
+- [x] Newlines preserved inside inactive regions (source line structure maintained)
+- [x] Diagnostic errors: missing #endif, duplicate #else, mismatched directives
+
+## Stage 52-02 - Nested Conditional Processing
+
+- [x] All nesting combinations of #ifdef / #ifndef / #else work correctly
+- [x] Include guard pattern supported (duplicate #include with guard macro)
+
+## Stage 52-03 - #if Constant Conditionals
+
+- [x] `#if <integer-literal>` directive: 0 → false, nonzero → true
+- [x] Nesting with existing #ifdef/#ifndef frame stack
+
+## Stage 52-04 - #elif Constant Conditionals
+
+- [x] `#elif <integer-literal>` directive with first-true-wins branch selection
+- [x] branch_taken field in CondFrame ensures later branches skipped after first true
+- [x] Chains with #ifdef, #ifndef, #if, and #else
+
+## Stage 53 - Predefined Macros __FILE__ and __LINE__
+
+- [x] `__FILE__` expands to a string literal of the current source file path
+- [x] `__LINE__` expands to a decimal integer literal of the current source line number
+- [x] Recognized before user-defined macro table lookup
+
+## Stage 54 - #undef Directive
+
+- [x] `#undef NAME` removes a macro from the macro table (no-op if undefined)
+- [x] #undef in inactive conditional regions is skipped
+
+## Stage 55-01 - defined() Operator in Preprocessor Conditionals
+
+- [x] `defined(NAME)` expression in `#if` and `#elif`: 1 if defined, 0 otherwise
+
+## Stage 55-02 - Macro Expansion in Preprocessor Conditionals
+
+- [x] Object-like macro identifiers expanded to integer values in `#if`/`#elif`
+- [x] `defined NAME` (without parentheses) accepted alongside `defined(NAME)`
+
+## Stage 55-03 - Undefined Identifiers Evaluate to 0
+
+- [x] Bare undefined identifiers in `#if`/`#elif` expressions evaluate to 0
+
+## Stage 55-04 - Unary Operators in Preprocessor Conditionals
+
+- [x] Unary `!`, `-`, `+` in `#if`/`#elif` expressions
+- [x] Chained unary operators (e.g., `!-1`)
+
+## Stage 55-05 - Parenthesized Preprocessor Expressions
+
+- [x] `(expr)` grouping in `#if`/`#elif` expressions; recursive evaluation
+
+## Stage 55-06 - Equality and Relational Operators in Preprocessor Conditionals
+
+- [x] `==`, `!=`, `<`, `<=`, `>`, `>=` in `#if`/`#elif` expressions (left-associative)
+
+## Stage 55-07 - Logical Operators in Preprocessor Conditionals
+
+- [x] `&&` and `||` in `#if`/`#elif` expressions with C-like precedence
+
+## Stage 55-08 - Arithmetic Operators in Preprocessor Conditionals
+
+- [x] `+`, `-`, `*`, `/`, `%` in `#if`/`#elif` expressions; division/modulo by zero → fatal error
+
+## Stage 55-09 - Bitwise and Shift Operators in Preprocessor Conditionals
+
+- [x] `~` (unary complement), `&`, `^`, `|`, `<<`, `>>` in `#if`/`#elif` expressions
+- [x] Correct precedence: shift > relational; bitwise AND > XOR > OR > logical AND
+
+## Stage 56-01 - #error Directive
+
+- [x] `#error message` halts compilation with the supplied message on stderr (exit 1)
+- [x] `#error` in inactive conditional regions is silently skipped
+
+## Stage 56-02 - Command-line -D Macro Definitions
+
+- [x] `-DNAME` defines NAME as 1; `-DNAME=VALUE` defines NAME as VALUE
+- [x] .cflags companion file for integration tests to pass compiler flags
+- [x] preprocess_with_defines() injects command-line macros before source processing
+
+## Stage 56-03 - Command-line -I Include Search Paths
+
+- [x] `-I<dir>` and `-I <dir>` add directories to the include search path for quoted includes
+- [x] resolve_include_path() searches in-directory first, then -I directories in order
+
+## Stage 56-04 - Angle-bracket Includes
+
+- [x] `#include <filename>` searches -I directories only (not the including file's directory)
+- [x] Error messages distinguish quoted vs angle-bracket forms
+
+## Stage 56-05 - Standard Predefined Macros
+
+- [x] `__STDC__` expands to 1
+- [x] `__STDC_VERSION__` expands to 199901
+- [x] `__CLAUDEC99__` expands to 1
+- [x] All three behave as ordinary object-like macros (can be #undef'd or compatibly redefined)
+
+## Stage 57-01 - Macro Stringification (#)
+
+- [x] `#param` inside function-like macro replacement list converts argument to string literal
+- [x] Whitespace normalized; `"` and `\` escaped in the produced string
+- [x] `#` in object-like macros, bare `#`, and `#` not followed by a parameter name → error
+
+## Stage 57-02 - Token Pasting (##)
+
+- [x] `##` inside function-like macro replacement list concatenates adjacent tokens
+- [x] `##` at start or end of replacement list → error
+- [x] `##` in object-like macros → error
+
+## Stage 57-03 - Variadic Function Declarations and Calls
+
+- [x] Tokenizer: TOKEN_ELLIPSIS (`...` as a single token)
+- [x] Grammar/Parser: optional trailing `...` in parameter lists sets is_variadic on AST_FUNCTION_DECL and FuncSig
+- [x] Call-site arity: variadic functions require at least the fixed parameter count (not exact)
+- [x] Codegen: emits `xor eax, eax` before call for variadic functions (SysV AMD64 AL = float arg count)
+- [x] Variadic function *definitions* (va_list, va_start, va_arg, va_end) not yet supported
+
+## Stage 57-04 - Variadic Macros (__VA_ARGS__)
+
+- [x] `#define M(...)` and `#define M(x, ...)` — variadic function-like macros
+- [x] `__VA_ARGS__` substituted with comma-separated extra arguments in the replacement list
+- [x] Variadic macros accept arg_count >= param_count (fixed args required, extra optional)
+- [x] Too few fixed arguments → compile-time error
+
 ---
 
 ## TODO
 
 ### Preprocessor
-- [ ] #include <file> and #include "file"
-- [ ] #define object-like macros
-- [ ] #define function-like macros with parameters
-- [ ] #undef
-- [ ] #if / #ifdef / #ifndef / #elif / #else / #endif
 - [ ] #pragma (at minimum #pragma once)
-- [ ] Macro stringification (#) and token pasting (##)
-- [ ] Predefined macros: __FILE__, __LINE__, __DATE__, __TIME__, __STDC__, __STDC_VERSION__
-- [ ] Line splicing (backslash-newline)
-- [ ] Multiline macros
+- [ ] __DATE__ and __TIME__ predefined macros
+- [ ] GNU extension: `__VA_OPT__` and named variadic args
 
 ### Types
-- [ ] unsigned integer types: unsigned char, unsigned short, unsigned int, unsigned long
-- [ ] unsigned arithmetic and comparisons (separate from signed)
-- [ ] Integer suffix tokens: U/u, UL/ul, LL/ll, ULL/ull
-- [ ] Type suffixes for all integer literal forms
+- [ ] Integer suffix tokens: UL/ul, LL/ll, ULL/ull (U/u already supported)
 - [ ] _Bool type
 - [ ] float and double types
 - [ ] Floating-point arithmetic and comparisons
@@ -621,14 +859,13 @@
 - [ ] Floating-point conversions (int ↔ float ↔ double)
 - [ ] long long type (64-bit on all platforms)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
-- [ ] void type (for void functions and void*)
-- [ ] void* pointer type and implicit conversion to/from typed pointers
 - [ ] Union types
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
 - [ ] Compound literals: (Type){ ... }
-- [ ] const and volatile qualifiers
+- [ ] volatile qualifier
 - [ ] restrict qualifier on pointers
+- [ ] Full pointer-level const enforcement (writes through const pointers, const-correctness on conversions)
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
@@ -648,13 +885,10 @@
 
 ### Expressions
 - [ ] sizeof with unsigned result type (size_t)
-- [ ] Pointer subtraction (ptrdiff_t result)
 - [ ] Pointer comparison operators (< <= > >= on pointers)
 - [ ] Pointer equality with non-null constants
 - [ ] Integer constant expressions (evaluated at compile time)
 - [ ] Floating-point constant expressions
-- [ ] Multi-dimensional arrays and indexing: a[i][j]
-- [ ] Implicit conversion from array of T to pointer to T in all expression contexts
 - [ ] Lvalue conversion rules for all expression contexts
 - [ ] Unary + on floating-point
 - [ ] Mixed integer/floating-point arithmetic (usual arithmetic conversions)
@@ -667,7 +901,7 @@
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions
-- [ ] Variadic functions: va_list, va_start, va_arg, va_end (<stdarg.h>)
+- [ ] Variadic function definitions: va_list, va_start, va_arg, va_end (<stdarg.h>)
 - [ ] Old-style (K&R) function definitions
 - [ ] Implicit return in void functions
 - [ ] Functions returning function pointers: int (*f())(int)
@@ -715,8 +949,6 @@
 - [ ] -o output file option
 - [ ] -c compile-only (emit object file) option
 - [ ] -S assembly output option (currently the only mode)
-- [ ] -I include path option
-- [ ] -D and -U macro definition flags
 - [ ] -O optimization level flags
 - [ ] Makefile / build system for the compiler itself
 - [ ] Comprehensive conformance test suite against C99 standard
