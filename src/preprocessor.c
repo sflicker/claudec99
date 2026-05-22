@@ -70,6 +70,7 @@ typedef struct {
     char  *name;
     char **params;      /* NULL for object-like; owned array of owned strings */
     int    param_count; /* -1 = object-like, >= 0 = function-like           */
+    int    is_variadic; /* 1 if last param is ..., 0 otherwise               */
     char  *replacement;
 } MacroDef;
 
@@ -110,9 +111,10 @@ static MacroDef *macro_find(MacroTable *t, const char *name, size_t len) {
 /* params and param_count describe the parameter list:
  *   param_count == -1, params == NULL  → object-like
  *   param_count >= 0                   → function-like (params owned)
+ * is_variadic == 1 means the macro accepts extra arguments via __VA_ARGS__.
  * On compatible redefinition, incoming params are freed. */
 static void macro_define(MacroTable *t, const char *name, size_t nlen,
-                          char **params, int param_count,
+                          char **params, int param_count, int is_variadic,
                           const char *repl, size_t rlen) {
     MacroDef *existing = macro_find(t, name, nlen);
     if (existing) {
@@ -122,7 +124,8 @@ static void macro_define(MacroTable *t, const char *name, size_t nlen,
             free(params);
         }
         if (strlen(existing->replacement) == rlen &&
-            strncmp(existing->replacement, repl, rlen) == 0)
+            strncmp(existing->replacement, repl, rlen) == 0 &&
+            existing->is_variadic == is_variadic)
             return; /* compatible redefinition */
         char tmp[256];
         size_t copy = nlen < sizeof(tmp) - 1 ? nlen : sizeof(tmp) - 1;
@@ -150,6 +153,7 @@ static void macro_define(MacroTable *t, const char *name, size_t nlen,
     t->defs[t->count].replacement = nrepl;
     t->defs[t->count].params      = params; /* takes ownership */
     t->defs[t->count].param_count = param_count;
+    t->defs[t->count].is_variadic = is_variadic;
     t->count++;
 }
 
@@ -592,11 +596,13 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                     size_t *arg_lens = NULL;
                     int     arg_count = 0;
                     collect_args(s, &in, &args, &arg_lens, &arg_count);
-                    if (arg_count != def->param_count) {
+                    if (def->is_variadic ? arg_count < def->param_count
+                                        : arg_count != def->param_count) {
                         fprintf(stderr,
                                 "error: argument count mismatch for macro '%.*s':"
-                                " expected %d, got %d\n",
+                                " expected %s%d, got %d\n",
                                 (int)id_len, s + id_start,
+                                def->is_variadic ? "at least " : "",
                                 def->param_count, arg_count);
                         for (int i = 0; i < arg_count; i++) free(args[i]);
                         free(args); free(arg_lens); free(out.data);
@@ -617,17 +623,72 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                         args[i]     = ea;
                         arg_lens[i] = strlen(ea);
                     }
+                    /* for variadic macros, build __VA_ARGS__ and extend param/arg arrays */
+                    char  **subst_params    = def->params;
+                    char  **subst_args      = args;
+                    size_t *subst_arg_lens  = arg_lens;
+                    char  **subst_raw       = raw_args;
+                    size_t *subst_raw_lens  = raw_arg_lens;
+                    int     subst_count     = def->param_count;
+                    char   *va_exp = NULL, *va_raw = NULL;
+                    char  **ext_params = NULL, **ext_args = NULL, **ext_raw = NULL;
+                    size_t *ext_lens = NULL, *ext_raw_lens = NULL;
+                    if (def->is_variadic) {
+                        GrowBuf vab; gbuf_init(&vab, 64);
+                        for (int i = def->param_count; i < arg_count; i++) {
+                            if (i > def->param_count) gbuf_append(&vab, ", ", 2);
+                            gbuf_append(&vab, args[i], arg_lens[i]);
+                        }
+                        gbuf_push(&vab, '\0');
+                        va_exp = vab.data;
+                        GrowBuf vrb; gbuf_init(&vrb, 64);
+                        for (int i = def->param_count; i < arg_count; i++) {
+                            if (i > def->param_count) gbuf_append(&vrb, ", ", 2);
+                            gbuf_append(&vrb, raw_args[i], raw_arg_lens[i]);
+                        }
+                        gbuf_push(&vrb, '\0');
+                        va_raw = vrb.data;
+                        subst_count = def->param_count + 1;
+                        ext_params   = malloc((size_t)subst_count * sizeof(char *));
+                        ext_args     = malloc((size_t)subst_count * sizeof(char *));
+                        ext_lens     = malloc((size_t)subst_count * sizeof(size_t));
+                        ext_raw      = malloc((size_t)subst_count * sizeof(char *));
+                        ext_raw_lens = malloc((size_t)subst_count * sizeof(size_t));
+                        if (!ext_params||!ext_args||!ext_lens||!ext_raw||!ext_raw_lens) {
+                            fprintf(stderr, "error: out of memory\n"); exit(1);
+                        }
+                        for (int i = 0; i < def->param_count; i++) {
+                            ext_params[i]   = def->params[i];
+                            ext_args[i]     = args[i];
+                            ext_lens[i]     = arg_lens[i];
+                            ext_raw[i]      = raw_args[i];
+                            ext_raw_lens[i] = raw_arg_lens[i];
+                        }
+                        ext_params[def->param_count]   = "__VA_ARGS__";
+                        ext_args[def->param_count]     = va_exp;
+                        ext_lens[def->param_count]     = strlen(va_exp);
+                        ext_raw[def->param_count]      = va_raw;
+                        ext_raw_lens[def->param_count] = strlen(va_raw);
+                        subst_params   = ext_params;
+                        subst_args     = ext_args;
+                        subst_arg_lens = ext_lens;
+                        subst_raw      = ext_raw;
+                        subst_raw_lens = ext_raw_lens;
+                    }
                     /* substitute args into replacement */
                     char *subst = substitute_args(def->replacement,
-                                                   def->params, def->param_count,
-                                                   args, arg_lens,
-                                                   raw_args, raw_arg_lens);
+                                                   subst_params, subst_count,
+                                                   subst_args, subst_arg_lens,
+                                                   subst_raw, subst_raw_lens);
                     /* rescan the substituted text */
                     char *rescanned = expand_macros_text(subst, macros);
                     gbuf_append(&out, rescanned, strlen(rescanned));
                     free(rescanned); free(subst);
                     for (int i = 0; i < arg_count; i++) { free(args[i]); free(raw_args[i]); }
                     free(args); free(arg_lens); free(raw_args); free(raw_arg_lens);
+                    free(va_exp); free(va_raw);
+                    free(ext_params); free(ext_args); free(ext_lens);
+                    free(ext_raw); free(ext_raw_lens);
                 } else {
                     /* not followed by '(' — emit name unchanged */
                     gbuf_append(&out, s + id_start, id_len);
@@ -1335,6 +1396,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 /* Determine if function-like: '(' immediately after name (no space). */
                 char  **params      = NULL;
                 int     param_count = -1; /* -1 = object-like */
+                int     is_variadic = 0;
 
                 if (s[in] == '(') {
                     in++; /* skip '(' */
@@ -1348,6 +1410,17 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
                     if (s[in] == ')') {
                         /* zero-parameter macro */
+                        in++;
+                    } else if (s[in] == '.' && s[in+1] == '.' && s[in+2] == '.') {
+                        /* #define M(...) — no fixed params, variadic only */
+                        in += 3;
+                        is_variadic = 1;
+                        while (s[in] == ' ' || s[in] == '\t') in++;
+                        if (s[in] != ')') {
+                            fprintf(stderr,
+                                    "error: expected ')' after '...' in macro parameter list\n");
+                            free(params); free(out.data); free(spliced); exit(1);
+                        }
                         in++;
                     } else {
                         /* parse parameter name list */
@@ -1381,6 +1454,20 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             if (s[in] == ',') {
                                 in++;
                                 while (s[in] == ' ' || s[in] == '\t') in++;
+                                /* check for '...' after comma */
+                                if (s[in] == '.' && s[in+1] == '.' && s[in+2] == '.') {
+                                    in += 3;
+                                    is_variadic = 1;
+                                    while (s[in] == ' ' || s[in] == '\t') in++;
+                                    if (s[in] != ')') {
+                                        fprintf(stderr,
+                                                "error: expected ')' after '...' in macro parameter list\n");
+                                        for (int i = 0; i < param_count; i++) free(params[i]);
+                                        free(params); free(out.data); free(spliced); exit(1);
+                                    }
+                                    in++;
+                                    break;
+                                }
                                 continue;
                             }
                             fprintf(stderr,
@@ -1472,6 +1559,10 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                 break;
                             }
                         }
+                        /* __VA_ARGS__ is valid in variadic macro replacement */
+                        if (!found_param && is_variadic &&
+                            plen == 11 && strncmp(s + pstart, "__VA_ARGS__", 11) == 0)
+                            found_param = 1;
                         if (!found_param) {
                             fprintf(stderr,
                                     "error: hash not followed by param '%.*s'\n",
@@ -1484,7 +1575,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
                 macro_define(macros,
                              s + name_start, name_len,
-                             params, param_count,
+                             params, param_count, is_variadic,
                              s + repl_start, repl_end - repl_start);
                 /* Directive line consumed; newline handled on next iteration. */
                 continue;
@@ -1601,11 +1692,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             size_t *arg_lens  = NULL;
                             int     arg_count = 0;
                             collect_args(s, &in, &args, &arg_lens, &arg_count);
-                            if (arg_count != def->param_count) {
+                            if (def->is_variadic ? arg_count < def->param_count
+                                                 : arg_count != def->param_count) {
                                 fprintf(stderr,
                                         "error: argument count mismatch for macro '%.*s':"
-                                        " expected %d, got %d\n",
+                                        " expected %s%d, got %d\n",
                                         (int)id_len, s + id_start,
+                                        def->is_variadic ? "at least " : "",
                                         def->param_count, arg_count);
                                 for (int i = 0; i < arg_count; i++) free(args[i]);
                                 free(args); free(arg_lens);
@@ -1627,16 +1720,71 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                 args[i]     = ea;
                                 arg_lens[i] = strlen(ea);
                             }
+                            /* for variadic macros, build __VA_ARGS__ and extend param/arg arrays */
+                            char  **subst_params    = def->params;
+                            char  **subst_args      = args;
+                            size_t *subst_arg_lens  = arg_lens;
+                            char  **subst_raw       = raw_args;
+                            size_t *subst_raw_lens  = raw_arg_lens;
+                            int     subst_count     = def->param_count;
+                            char   *va_exp = NULL, *va_raw = NULL;
+                            char  **ext_params = NULL, **ext_args = NULL, **ext_raw = NULL;
+                            size_t *ext_lens = NULL, *ext_raw_lens = NULL;
+                            if (def->is_variadic) {
+                                GrowBuf vab; gbuf_init(&vab, 64);
+                                for (int i = def->param_count; i < arg_count; i++) {
+                                    if (i > def->param_count) gbuf_append(&vab, ", ", 2);
+                                    gbuf_append(&vab, args[i], arg_lens[i]);
+                                }
+                                gbuf_push(&vab, '\0');
+                                va_exp = vab.data;
+                                GrowBuf vrb; gbuf_init(&vrb, 64);
+                                for (int i = def->param_count; i < arg_count; i++) {
+                                    if (i > def->param_count) gbuf_append(&vrb, ", ", 2);
+                                    gbuf_append(&vrb, raw_args[i], raw_arg_lens[i]);
+                                }
+                                gbuf_push(&vrb, '\0');
+                                va_raw = vrb.data;
+                                subst_count = def->param_count + 1;
+                                ext_params   = malloc((size_t)subst_count * sizeof(char *));
+                                ext_args     = malloc((size_t)subst_count * sizeof(char *));
+                                ext_lens     = malloc((size_t)subst_count * sizeof(size_t));
+                                ext_raw      = malloc((size_t)subst_count * sizeof(char *));
+                                ext_raw_lens = malloc((size_t)subst_count * sizeof(size_t));
+                                if (!ext_params||!ext_args||!ext_lens||!ext_raw||!ext_raw_lens) {
+                                    fprintf(stderr, "error: out of memory\n"); exit(1);
+                                }
+                                for (int i = 0; i < def->param_count; i++) {
+                                    ext_params[i]   = def->params[i];
+                                    ext_args[i]     = args[i];
+                                    ext_lens[i]     = arg_lens[i];
+                                    ext_raw[i]      = raw_args[i];
+                                    ext_raw_lens[i] = raw_arg_lens[i];
+                                }
+                                ext_params[def->param_count]   = "__VA_ARGS__";
+                                ext_args[def->param_count]     = va_exp;
+                                ext_lens[def->param_count]     = strlen(va_exp);
+                                ext_raw[def->param_count]      = va_raw;
+                                ext_raw_lens[def->param_count] = strlen(va_raw);
+                                subst_params   = ext_params;
+                                subst_args     = ext_args;
+                                subst_arg_lens = ext_lens;
+                                subst_raw      = ext_raw;
+                                subst_raw_lens = ext_raw_lens;
+                            }
                             /* substitute into replacement, then rescan */
                             char *subst     = substitute_args(def->replacement,
-                                                               def->params, def->param_count,
-                                                               args, arg_lens,
-                                                               raw_args, raw_arg_lens);
+                                                               subst_params, subst_count,
+                                                               subst_args, subst_arg_lens,
+                                                               subst_raw, subst_raw_lens);
                             char *rescanned = expand_macros_text(subst, macros);
                             gbuf_append(&out, rescanned, strlen(rescanned));
                             free(rescanned); free(subst);
                             for (int i = 0; i < arg_count; i++) { free(args[i]); free(raw_args[i]); }
                             free(args); free(arg_lens); free(raw_args); free(raw_arg_lens);
+                            free(va_exp); free(va_raw);
+                            free(ext_params); free(ext_args); free(ext_lens);
+                            free(ext_raw); free(ext_raw_lens);
                         } else {
                             /* function-like macro not followed by '(' — pass through */
                             gbuf_append(&out, s + id_start, id_len);
@@ -1686,9 +1834,9 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_table_init(&macros);
 
     /* Standard predefined macros — inserted before user -D definitions. */
-    macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, "1",      strlen("1"));
-    macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, "199901", strlen("199901"));
-    macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, "1",      strlen("1"));
+    macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, 0, "1",      strlen("1"));
+    macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, 0, "199901", strlen("199901"));
+    macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, 0, "1",      strlen("1"));
 
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
@@ -1696,9 +1844,9 @@ char *preprocess_with_defines_and_includes(const char *source,
         if (eq) {
             size_t nlen = (size_t)(eq - def);
             const char *val = eq + 1;
-            macro_define(&macros, def, nlen, NULL, -1, val, strlen(val));
+            macro_define(&macros, def, nlen, NULL, -1, 0, val, strlen(val));
         } else {
-            macro_define(&macros, def, strlen(def), NULL, -1, "1", 1);
+            macro_define(&macros, def, strlen(def), NULL, -1, 0, "1", 1);
         }
     }
 
