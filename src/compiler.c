@@ -236,6 +236,7 @@ int main(int argc, char *argv[]) {
     int print_ast = 0;
     int print_tokens = 0;
     const char *source_file = NULL;
+    const char *sysroot = NULL;
     const char **defines = NULL;
     int n_defines = 0;
     int defines_cap = 0;
@@ -248,6 +249,13 @@ int main(int argc, char *argv[]) {
             print_ast = 1;
         } else if (strcmp(argv[i], "--print-tokens") == 0) {
             print_tokens = 1;
+        } else if (strncmp(argv[i], "--sysroot=", 10) == 0) {
+            sysroot = argv[i] + 10;
+            if (*sysroot == '\0') {
+                fprintf(stderr, "error: --sysroot requires a non-empty directory\n");
+                free(defines); free(include_dirs);
+                return 1;
+            }
         } else if (strncmp(argv[i], "-D", 2) == 0) {
             if (n_defines == defines_cap) {
                 defines_cap = defines_cap * 2 + 8;
@@ -284,16 +292,48 @@ int main(int argc, char *argv[]) {
         } else if (!source_file) {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
             free(defines); free(include_dirs);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
         free(defines); free(include_dirs);
         return 1;
+    }
+
+    /* Apply sysroot: for each absolute -I path, prepend <sysroot>.
+     * The include path's own leading '/' serves as the separator, so
+     * --sysroot=root -I/include => root/include. */
+    char **sysroot_strs = NULL;
+    int n_sysroot_strs = 0;
+    if (sysroot && n_include_dirs > 0) {
+        size_t sroot_len = strlen(sysroot);
+        while (sroot_len > 1 && sysroot[sroot_len - 1] == '/') sroot_len--;
+
+        sysroot_strs = malloc((size_t)n_include_dirs * sizeof(char *));
+        if (!sysroot_strs) {
+            fprintf(stderr, "error: out of memory\n");
+            free(defines); free(include_dirs);
+            return 1;
+        }
+        for (int i = 0; i < n_include_dirs; i++) {
+            if (include_dirs[i][0] != '/') continue;
+            size_t idir_len = strlen(include_dirs[i]);
+            char *combined = malloc(sroot_len + idir_len + 1);
+            if (!combined) {
+                fprintf(stderr, "error: out of memory\n");
+                for (int j = 0; j < n_sysroot_strs; j++) free(sysroot_strs[j]);
+                free(sysroot_strs); free(defines); free(include_dirs);
+                return 1;
+            }
+            memcpy(combined, sysroot, sroot_len);
+            memcpy(combined + sroot_len, include_dirs[i], idir_len + 1);
+            sysroot_strs[n_sysroot_strs++] = combined;
+            include_dirs[i] = combined;
+        }
     }
 
     /* Read source and preprocess */
@@ -302,6 +342,8 @@ int main(int argc, char *argv[]) {
                                                                defines, n_defines,
                                                                include_dirs, n_include_dirs);
     free(source);
+    for (int i = 0; i < n_sysroot_strs; i++) free(sysroot_strs[i]);
+    free(sysroot_strs);
     free(defines);
     free(include_dirs);
 

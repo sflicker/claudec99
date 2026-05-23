@@ -18,6 +18,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
+DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
 if [ $# -lt 1 ]; then
     echo "usage: $0 <source.c>"
@@ -65,7 +66,7 @@ for src in "$SOURCE_DIR"/*.c; do
     [ -f "$src" ] || continue
     src_name=$(basename "$src" .c)
     echo "compiling: $src"
-    "$COMPILER" "${COMPILER_FLAGS[@]}" "$src"
+    "$COMPILER" "${COMPILER_FLAGS[@]}" "${DEFAULT_IFLAGS[@]}" "$src"
 
     echo "assembling: ${src_name}.asm"
     nasm -f elf64 "${src_name}.asm" -o "${src_name}.o"

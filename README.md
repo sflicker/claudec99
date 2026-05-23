@@ -43,13 +43,21 @@ This produces `build/ccompiler`.
 ## Usage
 
 ```
-ccompiler [--print-ast | --print-tokens] [-DNAME[=VAL]] [-I<dir>] <source.c>
+ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>
 ```
 
 - Default: writes `<name>.asm` next to the invocation directory and
   prints `compiled: <source> -> <name>.asm`.
 - `--print-tokens`: dumps the token stream and exits.
 - `--print-ast`: dumps the AST and exits.
+- `--sysroot=<dir>`: sets a virtual filesystem root. Every `-I` path
+  that begins with `/` is rewritten to `<dir><path>` before include
+  search begins. Relative `-I` paths are left unchanged. Trailing
+  slashes on `<dir>` are stripped automatically.
+
+  Using `--sysroot=.` makes the current working directory the virtual
+  root, which is useful for portable test setups that need absolute-style
+  include paths without hardcoding the checkout location.
 
 End-to-end build and run:
 
@@ -267,7 +275,7 @@ The test harness consists of six suites under `test/`:
 | -------------- | ------------------------------------------------------------------- |
 | `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
-| `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.cflags`, `.args`, `.input`, `.status`) drive expected stdout, link flags, compiler flags, runtime argv, stdin, and exit code. |
+| `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.cflags`, `.args`, `.input`, `.status`) drive expected stdout, link flags, compiler flags, runtime argv, stdin, and exit code. The runner always appends `-I${PROJECT_DIR}/test/include` after the test's own `.cflags` so stub system headers (`stdio.h`, `stddef.h`, etc.) are found automatically — `.cflags` files only need to list test-local include paths (e.g. `-Iinclude`). |
 | `print_ast`    | `--print-ast` output must match `.expected`                         |
 | `print_tokens` | `--print-tokens` output must match `.expected`                      |
 | `print_asm`    | Generated `.asm` must match `.expected`                             |
@@ -279,9 +287,9 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 58 all
-tests pass (638 valid, 202 invalid, 38 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 1037 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 59 all
+tests pass (638 valid, 202 invalid, 39 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 1038 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
