@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp"
+DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
 mkdir -p "$WORK_DIR"
 
@@ -28,7 +29,7 @@ for src in "$SCRIPT_DIR"/*.c; do
     fi
 
     # Compile .c -> .asm
-    if ! "$COMPILER" "$src" 2>/dev/null; then
+    if ! "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" 2>/dev/null; then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue

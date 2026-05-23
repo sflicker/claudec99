@@ -4,6 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
+DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
 if [ $# -lt 1 ]; then
     echo "usage: $0 <source.c> [expected_exit_code]"
@@ -25,7 +26,7 @@ fi
 
 # Compile C -> ASM
 echo "compiling: $SOURCE"
-"$COMPILER" "$SOURCE"
+"$COMPILER" "${DEFAULT_IFLAGS[@]}" "$SOURCE"
 
 # Assemble ASM -> object
 echo "assembling: ${BASENAME}.asm"
