@@ -288,8 +288,8 @@ Run everything from the project root after building:
 
 The runner aggregates per-suite results and prints a final
 `Aggregate: P passed, F failed, T total` line. As of stage 59 all
-tests pass (638 valid, 202 invalid, 39 integration, 39 print-AST,
-99 print-tokens, 21 print-asm; 1038 total).
+tests pass (638 valid, 202 invalid, 53 integration, 39 print-AST,
+99 print-tokens, 21 print-asm; 1052 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
