@@ -1838,6 +1838,20 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, 0, "199901", strlen("199901"));
     macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, 0, "1",      strlen("1"));
 
+    /* Target/ABI predefined macros — x86_64 Linux LP64. */
+    macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, "1", 1);
+    macro_define(&macros, "__linux__",           strlen("__linux__"),           NULL, -1, 0, "1", 1);
+    macro_define(&macros, "__unix__",            strlen("__unix__"),            NULL, -1, 0, "1", 1);
+    macro_define(&macros, "__LP64__",            strlen("__LP64__"),            NULL, -1, 0, "1", 1);
+    macro_define(&macros, "_LP64",               strlen("_LP64"),               NULL, -1, 0, "1", 1);
+    macro_define(&macros, "__CHAR_BIT__",        strlen("__CHAR_BIT__"),        NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_CHAR__",     strlen("__SIZEOF_CHAR__"),     NULL, -1, 0, "1", 1);
+    macro_define(&macros, "__SIZEOF_SHORT__",    strlen("__SIZEOF_SHORT__"),    NULL, -1, 0, "2", 1);
+    macro_define(&macros, "__SIZEOF_INT__",      strlen("__SIZEOF_INT__"),      NULL, -1, 0, "4", 1);
+    macro_define(&macros, "__SIZEOF_LONG__",     strlen("__SIZEOF_LONG__"),     NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_POINTER__",  strlen("__SIZEOF_POINTER__"),  NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_SIZE_T__",   strlen("__SIZEOF_SIZE_T__"),   NULL, -1, 0, "8", 1);
+
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
         const char *eq  = strchr(def, '=');
