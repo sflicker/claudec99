@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "preprocessor.h"
 
 #define MAX_INCLUDE_DEPTH 64
@@ -1837,6 +1838,19 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, 0, "1",      strlen("1"));
     macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, 0, "199901", strlen("199901"));
     macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, 0, "1",      strlen("1"));
+    macro_define(&macros, "__STDC_HOSTED__",  strlen("__STDC_HOSTED__"),  NULL, -1, 0, "1",      strlen("1"));
+
+    /* Runtime context predefined macros — computed once at preprocessing start. */
+    {
+        time_t     now = time(NULL);
+        struct tm *tm  = localtime(&now);
+        char date_buf[16]; /* "\"Mmm DD YYYY\"\0" fits in 16 */
+        char time_buf[12]; /* "\"HH:MM:SS\"\0"   fits in 12 */
+        strftime(date_buf, sizeof(date_buf), "\"%b %e %Y\"", tm);
+        strftime(time_buf, sizeof(time_buf), "\"%H:%M:%S\"", tm);
+        macro_define(&macros, "__DATE__", strlen("__DATE__"), NULL, -1, 0, date_buf, strlen(date_buf));
+        macro_define(&macros, "__TIME__", strlen("__TIME__"), NULL, -1, 0, time_buf, strlen(time_buf));
+    }
 
     /* Target/ABI predefined macros — x86_64 Linux LP64. */
     macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, "1", 1);
