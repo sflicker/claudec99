@@ -123,6 +123,7 @@ int main(void) {
     u = 1U;
     
     return s < u;     // expect 1
+}
 ```
 NOTE: since long can represent every unsigned. THe unsigned int converts to long, not the other way around
 
@@ -136,6 +137,7 @@ int main(void) {
     u = 1UL;
     
     return s < u;     // expect 0
+}
 ```
 NOTE: s converts to unsigned long, so -1L becomes a very large unsigned value
 
@@ -148,7 +150,7 @@ int main(void) {
     x = 40LL;
     y = 2;
     
-    return x + y = 42LL;    // expect 1;
+    return x + y == 42LL;    // expect 1;
 }
 ```
 
@@ -162,6 +164,7 @@ int main(void) {
     s = -1L;
     
     return s < u;     // expect 0
+}
 ```
 NOTE: s converts to `unsigned long long`
 
@@ -175,6 +178,7 @@ int main(void) {
     x = 257U;       // 257U should trunctate to 1 since x is unsigned char;
     
     return x == 1;    // expect 1
+}
 ```
 
 assignment conversion to _Bool
@@ -195,7 +199,7 @@ int main() {
     }
     
     b = x + 1;
-    return b == false;     // expect 1
+    return b != false;     // expect 1
 }
 ```
 
@@ -222,7 +226,7 @@ int main(void) {
     x = 250U;
     x += 10U;
     
-    return x = 4U;    // expect 1;
+    return x == 4U;    // expect 1;
 }
 ```
 

@@ -97,7 +97,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 64 (long long support):
+Through stage 65 (integer conversion and arithmetic hardening):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -354,7 +354,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 64 all tests pass (677 valid, 211 invalid, 53 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1100 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 65 all tests pass (694 valid, 211 invalid, 53 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1117 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
