@@ -26,6 +26,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 COMPILER="$PROJECT_DIR/build/ccompiler"
+# Stub system headers (stdio.h, stddef.h, etc.) — appended after user -I flags
+# so user-supplied paths take precedence, matching the test harness convention.
+DEFAULT_IFLAGS=("-I$PROJECT_DIR/test/include")
 
 usage() {
     cat >&2 <<'EOF'
@@ -142,7 +145,7 @@ for src in "${input_files[@]}"; do
 
     # ── compile: .c → .asm ───────────────────────────────────────────────────
     # Run compiler from tmpdir so the .asm output lands there
-    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "$abs_src"); then
+    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$abs_src"); then
         exit 1
     fi
 
