@@ -1,0 +1,154 @@
+#!/bin/bash
+#
+# cc99 - ClaudeC99 compiler frontend
+#
+# Compiles one or more C source files to an executable (or intermediate
+# form) using ccompiler, nasm, and gcc.
+#
+# Usage:
+#   cc99 [options] file.c [file2.c ...]
+#
+# Options:
+#   -o <file>        Output file name (default: a.out)
+#   -c               Compile and assemble only; produce .o files, no link
+#   -S               Compile only; produce .asm files, no assemble or link
+#   -D NAME[=VAL]    Define a preprocessor macro
+#   -I <dir>         Add directory to include search path
+#   -I<dir>          (same, one-argument form)
+#   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
+#   -l <lib>         Link with library (passed to gcc)
+#   -l<lib>          (same, one-argument form)
+#   -L <dir>         Add library search path (passed to gcc)
+#   -L<dir>          (same, one-argument form)
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+COMPILER="$PROJECT_DIR/build/ccompiler"
+
+if [[ ! -x "$COMPILER" ]]; then
+    echo "cc99: compiler not found at $COMPILER" >&2
+    echo "cc99: build first with: cmake --build build" >&2
+    exit 1
+fi
+
+# ── argument parsing ──────────────────────────────────────────────────────────
+
+output="a.out"
+mode="link"           # link | compile-only | asm-only
+compiler_flags=()
+link_flags=()
+input_files=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o)
+            [[ $# -lt 2 ]] && { echo "cc99: -o requires an argument" >&2; exit 1; }
+            output="$2"; shift 2 ;;
+        -o*)
+            output="${1#-o}"; shift ;;
+        -c)
+            mode="compile-only"; shift ;;
+        -S)
+            mode="asm-only"; shift ;;
+        -D*)
+            compiler_flags+=("$1"); shift ;;
+        -I)
+            [[ $# -lt 2 ]] && { echo "cc99: -I requires an argument" >&2; exit 1; }
+            # Resolve relative path so it stays valid when compiler runs from tmpdir
+            dir="$2"
+            [[ "$dir" != /* ]] && dir="$(pwd)/$dir"
+            compiler_flags+=("-I$dir"); shift 2 ;;
+        -I*)
+            dir="${1#-I}"
+            [[ "$dir" != /* ]] && dir="$(pwd)/$dir"
+            compiler_flags+=("-I$dir"); shift ;;
+        --sysroot=*)
+            compiler_flags+=("$1"); shift ;;
+        -l)
+            [[ $# -lt 2 ]] && { echo "cc99: -l requires an argument" >&2; exit 1; }
+            link_flags+=("-l$2"); shift 2 ;;
+        -l*)
+            link_flags+=("$1"); shift ;;
+        -L)
+            [[ $# -lt 2 ]] && { echo "cc99: -L requires an argument" >&2; exit 1; }
+            link_flags+=("-L$2"); shift 2 ;;
+        -L*)
+            link_flags+=("$1"); shift ;;
+        --)
+            shift; input_files+=("$@"); break ;;
+        -*)
+            echo "cc99: unrecognized option: $1" >&2; exit 1 ;;
+        *.c)
+            input_files+=("$1"); shift ;;
+        *)
+            echo "cc99: unrecognized input: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ ${#input_files[@]} -eq 0 ]]; then
+    echo "cc99: no input files" >&2
+    exit 1
+fi
+
+# -o with multiple files in -c / -S mode is not meaningful
+if [[ ${#input_files[@]} -gt 1 && "$mode" != "link" && "$output" != "a.out" ]]; then
+    echo "cc99: warning: -o ignored with multiple input files in -c/-S mode" >&2
+    output="a.out"
+fi
+
+# ── compilation loop ──────────────────────────────────────────────────────────
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+obj_files=()
+
+for src in "${input_files[@]}"; do
+    abs_src="$(realpath "$src" 2>/dev/null)"
+    if [[ -z "$abs_src" || ! -f "$abs_src" ]]; then
+        echo "cc99: $src: no such file" >&2
+        exit 1
+    fi
+
+    base="$(basename "$src" .c)"
+    asm_out="$tmpdir/${base}.asm"
+    obj_out="$tmpdir/${base}.o"
+
+    # ── compile: .c → .asm ───────────────────────────────────────────────────
+    # Run compiler from tmpdir so the .asm output lands there
+    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "$abs_src"); then
+        exit 1
+    fi
+
+    if [[ "$mode" == "asm-only" ]]; then
+        dest="${base}.asm"
+        [[ ${#input_files[@]} -eq 1 && "$output" != "a.out" ]] && dest="$output"
+        cp "$asm_out" "$dest"
+        continue
+    fi
+
+    # ── assemble: .asm → .o ──────────────────────────────────────────────────
+    if ! nasm -f elf64 "$asm_out" -o "$obj_out"; then
+        echo "cc99: assembly failed for $src" >&2
+        exit 1
+    fi
+
+    if [[ "$mode" == "compile-only" ]]; then
+        dest="${base}.o"
+        [[ ${#input_files[@]} -eq 1 && "$output" != "a.out" ]] && dest="$output"
+        cp "$obj_out" "$dest"
+        continue
+    fi
+
+    obj_files+=("$obj_out")
+done
+
+# ── link ──────────────────────────────────────────────────────────────────────
+if [[ "$mode" == "link" ]]; then
+    if ! gcc -no-pie "${obj_files[@]}" "${link_flags[@]}" -o "$output"; then
+        echo "cc99: link failed" >&2
+        exit 1
+    fi
+fi
