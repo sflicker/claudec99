@@ -12,4 +12,5 @@ int printf(const char *, ...);
 FILE *fopen(const char *, const char *);
 int fclose(FILE *);
 int fgetc(FILE *);
+char *fgets(char *, int, FILE *);
 #endif
