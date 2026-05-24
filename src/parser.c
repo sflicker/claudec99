@@ -37,6 +37,8 @@ typedef struct {
     /* Stage 26: param types consumed inline when is_func_pointer is set. */
     Type *fp_param_types[FUNC_TYPE_MAX_PARAMS];
     int   fp_param_count;
+    /* Stage 66: set when "const" appears after the last "*" (T * const p). */
+    int  pointer_is_const;
 } ParsedDeclarator;
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -830,10 +832,20 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
     memset(&d, 0, sizeof(d));
 
     int outer_stars = 0;
+    int pointer_is_const = 0;
     while (parser->current.type == TOKEN_STAR) {
         outer_stars++;
         parser->current = lexer_next_token(parser->lexer);
+        /* Stage 66: consume optional "const" qualifier after each star.
+         * The last such qualifier marks the pointer itself as const. */
+        if (parser->current.type == TOKEN_CONST) {
+            pointer_is_const = 1;
+            parser->current = lexer_next_token(parser->lexer);
+        } else {
+            pointer_is_const = 0;
+        }
     }
+    d.pointer_is_const = pointer_is_const;
 
     if (parser->current.type == TOKEN_LPAREN) {
         /* Parenthesized declarator: "(" { "*" } identifier [ suffix ] ")" */
@@ -2011,15 +2023,23 @@ static ASTNode *parse_statement(Parser *parser) {
             return decl;
         }
 
+        /* Stage 66: when const precedes a pointer declaration (const T *p),
+         * the base type is const-qualified; build a const copy so the
+         * pointer type chain carries is_const on the pointee. */
+        Type *effective_base = (local_is_const && d.pointer_count > 0)
+                               ? type_const_copy(base_type) : base_type;
+
         /* Build the fully-wrapped element type: base + pointer levels. */
-        Type *full_type = base_type;
+        Type *full_type = effective_base;
         for (int i = 0; i < d.pointer_count; i++) {
             full_type = type_pointer(full_type);
         }
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
-        /* Stage 39: const applies to the variable when no pointer depth. */
-        decl->is_const = (local_is_const && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
+        /* Stage 39: const applies to the variable when no pointer depth.
+         * Stage 66: also applies when the pointer itself is const (T * const p). */
+        decl->is_const = ((local_is_const && d.pointer_count == 0 && !d.is_array) ||
+                          d.pointer_is_const) ? 1 : 0;
 
         /* Stage 13-01 / 14-06: optional array suffix on the declarator.
          * An omitted size is only valid with a string-literal initializer;
@@ -2130,12 +2150,16 @@ static ASTNode *parse_statement(Parser *parser) {
                 fprintf(stderr, "error: array declarator in multi-declarator list not supported\n");
                 exit(1);
             }
-            Type *full_type2 = base_type;
+            /* Stage 66: propagate const base for multi-declarator const pointer lists. */
+            Type *effective_base2 = (local_is_const && d2.pointer_count > 0)
+                                    ? type_const_copy(base_type) : base_type;
+            Type *full_type2 = effective_base2;
             for (int i = 0; i < d2.pointer_count; i++) {
                 full_type2 = type_pointer(full_type2);
             }
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
-            next_decl->is_const = (local_is_const && d2.pointer_count == 0) ? 1 : 0;
+            next_decl->is_const = ((local_is_const && d2.pointer_count == 0) ||
+                                   d2.pointer_is_const) ? 1 : 0;
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = full_type2;
@@ -2581,7 +2605,10 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     "error: cannot declare variable '%s' of type void\n", d.name);
             exit(1);
         }
-        Type *full_type = base_type;
+        /* Stage 66: propagate const base for file-scope const pointer declarations. */
+        Type *effective_base_fs = (ds.is_const && d.pointer_count > 0)
+                                  ? type_const_copy(base_type) : base_type;
+        Type *full_type = effective_base_fs;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
 
@@ -2606,8 +2633,10 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
         decl->storage_class = sc;
-        /* Stage 39: const applies to the variable when no pointer depth. */
-        decl->is_const = (ds.is_const && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
+        /* Stage 39/66: const applies to the scalar variable when no pointer depth,
+         * or to the pointer variable itself when T * const p form is used. */
+        decl->is_const = ((ds.is_const && d.pointer_count == 0 && !d.is_array) ||
+                          d.pointer_is_const) ? 1 : 0;
         if (d.is_array) {
             /* Stage 43: file-scope array with optional initializer.
              * Size may be inferred from a string literal or brace list. */
@@ -2734,14 +2763,18 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             }
             TypeKind k2 = (d2.pointer_count > 0 || base_kind == TYPE_POINTER)
                           ? TYPE_POINTER : base_kind;
-            Type *ft2 = base_type;
+            /* Stage 66: propagate const base for file-scope multi-declarator lists. */
+            Type *eff_base2 = (ds.is_const && d2.pointer_count > 0)
+                              ? type_const_copy(base_type) : base_type;
+            Type *ft2 = eff_base2;
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);
             Type *reg_ft2 = (k2 == TYPE_POINTER) ? ft2 : NULL;
             parser_register_global(parser, d2.name, k2, sc, reg_ft2);
             ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
-            next_decl->is_const = (ds.is_const && d2.pointer_count == 0) ? 1 : 0;
+            next_decl->is_const = ((ds.is_const && d2.pointer_count == 0) ||
+                                   d2.pointer_is_const) ? 1 : 0;
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
                 next_decl->decl_type = TYPE_POINTER;
                 next_decl->full_type = ft2;

@@ -59,6 +59,9 @@ typedef struct Type {
      * Points to a calloc'd array of field_count StructField entries. */
     StructField *fields;
     int field_count;
+    /* Stage 66: set when this type is const-qualified. Used on
+     * heap-allocated copies only — never set on static singletons. */
+    int is_const;
 } Type;
 
 Type *type_void(void);
@@ -77,6 +80,8 @@ Type *type_pointer(Type *base);
 Type *type_array(Type *element_type, int length);
 Type *type_function(Type *return_type, int param_count, Type **param_types);
 Type *type_struct(int size, int alignment);
+/* Stage 66: allocate a heap copy of t with is_const=1. Never mutates t. */
+Type *type_const_copy(Type *t);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

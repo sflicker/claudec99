@@ -235,6 +235,7 @@ static void print_tokens_mode(const char *source) {
 int main(int argc, char *argv[]) {
     int print_ast = 0;
     int print_tokens = 0;
+    int warnings_are_errors = 0;
     const char *source_file = NULL;
     const char *sysroot = NULL;
     const char **defines = NULL;
@@ -249,6 +250,8 @@ int main(int argc, char *argv[]) {
             print_ast = 1;
         } else if (strcmp(argv[i], "--print-tokens") == 0) {
             print_tokens = 1;
+        } else if (strcmp(argv[i], "-Werror") == 0) {
+            warnings_are_errors = 1;
         } else if (strncmp(argv[i], "--sysroot=", 10) == 0) {
             sysroot = argv[i] + 10;
             if (*sysroot == '\0') {
@@ -292,14 +295,14 @@ int main(int argc, char *argv[]) {
         } else if (!source_file) {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-Werror] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
             free(defines); free(include_dirs);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-Werror] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
         free(defines); free(include_dirs);
         return 1;
     }
@@ -383,6 +386,7 @@ int main(int argc, char *argv[]) {
 
     CodeGen cg;
     codegen_init(&cg, out);
+    cg.warnings_are_errors = warnings_are_errors;
     codegen_translation_unit(&cg, ast);
 
     fclose(out);

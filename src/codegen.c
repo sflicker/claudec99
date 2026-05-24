@@ -250,6 +250,31 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_return_full_type = NULL;
     cg->tu_root = NULL;
     cg->string_pool_count = 0;
+    cg->warnings_are_errors = 0;
+}
+
+/* Stage 66: emit a warning to stderr; if warnings_are_errors is set, exit.
+ * Callers pass a pre-built message so this stays a simple helper. */
+static void codegen_warn(CodeGen *cg, const char *msg) {
+    if (cg->warnings_are_errors) {
+        fprintf(stderr, "error: %s\n", msg);
+        exit(1);
+    }
+    fprintf(stderr, "warning: %s\n", msg);
+}
+
+/* Stage 66: warn with a variable name embedded. */
+static void codegen_warn_const_discard(CodeGen *cg, const char *prefix,
+                                        const char *varname) {
+    if (cg->warnings_are_errors) {
+        fprintf(stderr,
+                "error: %s '%s' discards 'const' qualifier from pointer target type\n",
+                prefix, varname);
+        exit(1);
+    }
+    fprintf(stderr,
+            "warning: %s '%s' discards 'const' qualifier from pointer target type\n",
+            prefix, varname);
 }
 
 /*
@@ -389,16 +414,20 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
  */
 static Type *local_var_type(LocalVar *lv) {
     if (lv->full_type) return lv->full_type;
+    Type *t;
     switch (lv->kind) {
-    case TYPE_CHAR:               return type_char();
-    case TYPE_SHORT:              return type_short();
-    case TYPE_LONG:               return type_long();
-    case TYPE_LONG_LONG:          return type_long_long();
-    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
+    case TYPE_CHAR:               t = type_char(); break;
+    case TYPE_SHORT:              t = type_short(); break;
+    case TYPE_LONG:               t = type_long(); break;
+    case TYPE_LONG_LONG:          t = type_long_long(); break;
+    case TYPE_UNSIGNED_LONG_LONG: t = type_unsigned_long_long(); break;
     case TYPE_STRUCT:             return lv->full_type; /* always set for struct locals */
     case TYPE_INT:
-    default:                      return type_int();
+    default:                      t = type_int(); break;
     }
+    /* Stage 66: const int x → &x yields const int*; return a const copy. */
+    if (lv->is_const) t = type_const_copy(t);
+    return t;
 }
 
 /* Stage 22-01: global variable helpers. */
@@ -412,15 +441,19 @@ static GlobalVar *codegen_find_global(CodeGen *cg, const char *name) {
 
 static Type *global_var_type(GlobalVar *gv) {
     if (gv->full_type) return gv->full_type;
+    Type *t;
     switch (gv->kind) {
-    case TYPE_CHAR:               return type_char();
-    case TYPE_SHORT:              return type_short();
-    case TYPE_LONG:               return type_long();
-    case TYPE_LONG_LONG:          return type_long_long();
-    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
+    case TYPE_CHAR:               t = type_char(); break;
+    case TYPE_SHORT:              t = type_short(); break;
+    case TYPE_LONG:               t = type_long(); break;
+    case TYPE_LONG_LONG:          t = type_long_long(); break;
+    case TYPE_UNSIGNED_LONG_LONG: t = type_unsigned_long_long(); break;
     case TYPE_INT:
-    default:                      return type_int();
+    default:                      t = type_int(); break;
     }
+    /* Stage 66: const global x → &x yields const T*; return a const copy. */
+    if (gv->is_const) t = type_const_copy(t);
+    return t;
 }
 
 static void emit_load_global(CodeGen *cg, const char *name, int size, int is_unsigned) {
@@ -1481,6 +1514,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 exit(1);
             }
             Type *base = operand_type->base;
+            /* Stage 66: reject assignment through a pointer-to-const type. */
+            if (base && base->is_const) {
+                fprintf(stderr,
+                        "error: assignment through pointer to const-qualified type\n");
+                exit(1);
+            }
             int sz = type_size(base);
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
@@ -1561,6 +1600,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     exit(1);
                 }
             }
+            /* Stage 66: warn when assigning a const-pointee pointer to a
+             * non-const-pointee pointer (discards the const qualifier). */
+            if (lv->kind == TYPE_POINTER && lv->full_type && lv->full_type->base &&
+                !is_null_pointer_constant(node->children[0])) {
+                Type *rhs_full = node->children[0]->full_type;
+                if (rhs_full && rhs_full->kind == TYPE_POINTER && rhs_full->base &&
+                    rhs_full->base->is_const && !lv->full_type->base->is_const) {
+                    codegen_warn_const_discard(cg, "assignment to", lv->name);
+                }
+            }
             /* Pointer RHS values are already in full rax — skip the
              * 32-to-64 sign-extend that integer values would need. */
             int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
@@ -1613,6 +1662,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: incompatible function pointer type in assignment to '%s'\n",
                         gv->name);
                 exit(1);
+            }
+        }
+        /* Stage 66: warn when global pointer assignment discards const. */
+        if (gv->kind == TYPE_POINTER && gv->full_type && gv->full_type->base &&
+            !is_null_pointer_constant(node->children[0])) {
+            Type *rhs_full = node->children[0]->full_type;
+            if (rhs_full && rhs_full->kind == TYPE_POINTER && rhs_full->base &&
+                rhs_full->base->is_const && !gv->full_type->base->is_const) {
+                codegen_warn_const_discard(cg, "assignment to", gv->name);
             }
         }
         int rhs_is_long_g = (node->children[0]->result_type == TYPE_LONG ||
@@ -2942,6 +3000,13 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                             "error: variable '%s' incompatible pointer type in initializer\n",
                             node->value);
                     exit(1);
+                }
+                /* Stage 66: warn when initializer discards const qualifier. */
+                if (node->full_type && node->full_type->base &&
+                    node->children[0]->full_type && node->children[0]->full_type->base &&
+                    node->children[0]->full_type->base->is_const &&
+                    !node->full_type->base->is_const) {
+                    codegen_warn_const_discard(cg, "initialization of", node->value);
                 }
             }
             /* Pointer values live in the full rax already (lea / 8-byte

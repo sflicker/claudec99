@@ -124,6 +124,8 @@ typedef struct {
      * outlives `codegen_translation_unit`. */
     ASTNode *string_pool[MAX_STRING_LITERALS];
     int string_pool_count;
+    /* Stage 66: when set, warnings are promoted to errors (exit 1). */
+    int warnings_are_errors;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

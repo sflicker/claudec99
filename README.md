@@ -136,7 +136,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 65 (integer conversion and arithmetic hardening):
+Through stage 66 (const pointer compatibility hardening):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -247,8 +247,11 @@ Through stage 65 (integer conversion and arithmetic hardening):
   implicit conversion to/from any non-function pointer type. `f(void)` parameter list
   means zero parameters.
 - **const qualifier**: `const` keyword support in declarations and parameters; assignment
-  to const-qualified variables is rejected. Pointer-level const enforcement (writes through
-  const pointers, const-to-non-const conversions) is not yet supported.
+  to const-qualified variables is rejected. Pointer-level const enforcement: writes through
+  const pointers (e.g., `*p = v` where `const int *p`) are always rejected; const-to-non-const
+  conversions in pointer assignments (e.g., `int *q = p` where `const int *p`) issue a warning
+  (or error if `-Werror` is set); const-to-pointer conversions (e.g., `int *q = &x` where
+  `const int x`) are allowed as rvalue decay with const-discard warning/error semantics.
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
@@ -393,7 +396,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 65 all tests pass (694 valid, 211 invalid, 53 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1117 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 66 all tests pass (697 valid, 213 invalid, 55 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1124 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

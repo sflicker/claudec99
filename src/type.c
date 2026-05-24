@@ -97,6 +97,20 @@ Type *type_function(Type *return_type, int param_count, Type **param_types) {
     return t;
 }
 
+/* Stage 66: heap-allocate a const-qualified copy of t. Never mutates
+ * the original — callers must not modify the returned node's base fields
+ * (kind, size, alignment, is_signed, base) as those are shallow-copied. */
+Type *type_const_copy(Type *t) {
+    Type *c = calloc(1, sizeof(Type));
+    if (!c) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    *c = *t;
+    c->is_const = 1;
+    return c;
+}
+
 /* Stage 30: heap-allocate a TYPE_STRUCT node with precomputed size and
  * alignment. Fields are not stored in the Type — only the layout totals
  * needed for sizeof and stack allocation. */
