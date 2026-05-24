@@ -8,4 +8,8 @@ typedef struct FILE FILE;
 
 int puts(const char *);
 int printf(const char *, ...);
+
+FILE *fopen(const char *, const char *);
+int fclose(FILE *);
+int fgetc(FILE *);
 #endif

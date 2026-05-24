@@ -131,9 +131,9 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     stdout_file="$test_work/${name}.stdout"
     if [ -f "$input_file" ]; then
-        "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file"
+        (cd "$test_dir" && "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
     else
-        "$test_work/$name" "${extra_args[@]}" >"$stdout_file"
+        (cd "$test_dir" && "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
     fi
     actual=$?
 
