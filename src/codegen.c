@@ -3782,4 +3782,7 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
         }
     }
     codegen_emit_string_pool(cg);
+    /* Mark the stack as non-executable so the linker doesn't warn about a
+     * missing .note.GNU-stack section (ELF ABI requirement on Linux). */
+    fprintf(cg->output, "\nsection .note.GNU-stack noalloc noexec nowrite progbits\n");
 }

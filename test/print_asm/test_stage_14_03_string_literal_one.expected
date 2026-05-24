@@ -13,3 +13,5 @@ main:
 section .rodata
 Lstr0:
     db 111, 110, 101, 0
+
+section .note.GNU-stack noalloc noexec nowrite progbits

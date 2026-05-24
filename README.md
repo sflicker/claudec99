@@ -73,6 +73,45 @@ linked in. This lets generated programs call libc functions
 (declared in the source via `int puts(char *s);` and similar) and
 ensures stdio buffers are flushed at exit.
 
+### Frontend script
+
+`bin/cc99` wraps the three steps above into a single command with
+familiar compiler-frontend conventions:
+
+```
+bin/cc99 [options] file.c [file2.c ...]
+```
+
+| Option | Effect |
+|--------|--------|
+| `-o <file>` | Output file name (default: `a.out`) |
+| `-c` | Compile and assemble only; produce `.o` per source file |
+| `-S` | Compile only; produce `.asm` per source file |
+| `-D NAME[=VAL]` | Preprocessor define (passed to `ccompiler`) |
+| `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
+| `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
+| `-l <lib>` / `-llib` | Link with library (passed to `gcc`) |
+| `-L <dir>` / `-Ldir` | Library search path (passed to `gcc`) |
+
+Examples:
+
+```
+# compile and link to a.out
+bin/cc99 hello.c
+
+# specify output name
+bin/cc99 -o hello hello.c
+
+# multiple source files
+bin/cc99 -o prog main.c util.c
+
+# use project stub headers
+bin/cc99 -I test/include -o prog main.c
+
+# compile only (no link)
+bin/cc99 -c hello.c          # produces hello.o
+```
+
 ## Example
 
 ```c
