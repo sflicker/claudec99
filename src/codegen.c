@@ -11,11 +11,13 @@ static int type_kind_bytes(TypeKind kind) {
     case TYPE_CHAR:     return 1;
     case TYPE_SHORT:    return 2;
     case TYPE_INT:      return 4;
-    case TYPE_LONG:     return 8;
-    case TYPE_POINTER:  return 8;
-    case TYPE_ARRAY:    return 0; /* size lives on full_type; caller uses that */
-    case TYPE_FUNCTION: return 0; /* never directly allocated; base of FP pointer */
-    case TYPE_STRUCT:   return 0; /* size lives on full_type; caller uses that */
+    case TYPE_LONG:               return 8;
+    case TYPE_LONG_LONG:          return 8;
+    case TYPE_UNSIGNED_LONG_LONG: return 8;
+    case TYPE_POINTER:            return 8;
+    case TYPE_ARRAY:              return 0; /* size lives on full_type; caller uses that */
+    case TYPE_FUNCTION:           return 0; /* never directly allocated; base of FP pointer */
+    case TYPE_STRUCT:             return 0; /* size lives on full_type; caller uses that */
     }
     return 4;
 }
@@ -127,12 +129,14 @@ static int func_ptr_types_equal_cg(Type *a, Type *b) {
 /* Stage 25-02: map a TypeKind to its singleton Type*. */
 static Type *type_from_kind(TypeKind kind) {
     switch (kind) {
-    case TYPE_VOID:  return type_void();
-    case TYPE_CHAR:  return type_char();
-    case TYPE_SHORT: return type_short();
-    case TYPE_LONG:  return type_long();
+    case TYPE_VOID:               return type_void();
+    case TYPE_CHAR:               return type_char();
+    case TYPE_SHORT:              return type_short();
+    case TYPE_LONG:               return type_long();
+    case TYPE_LONG_LONG:          return type_long_long();
+    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
     case TYPE_INT:
-    default:         return type_int();
+    default:                      return type_int();
     }
 }
 
@@ -386,12 +390,14 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
 static Type *local_var_type(LocalVar *lv) {
     if (lv->full_type) return lv->full_type;
     switch (lv->kind) {
-    case TYPE_CHAR:   return type_char();
-    case TYPE_SHORT:  return type_short();
-    case TYPE_LONG:   return type_long();
-    case TYPE_STRUCT: return lv->full_type; /* always set for struct locals */
+    case TYPE_CHAR:               return type_char();
+    case TYPE_SHORT:              return type_short();
+    case TYPE_LONG:               return type_long();
+    case TYPE_LONG_LONG:          return type_long_long();
+    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
+    case TYPE_STRUCT:             return lv->full_type; /* always set for struct locals */
     case TYPE_INT:
-    default:          return type_int();
+    default:                      return type_int();
     }
 }
 
@@ -407,11 +413,13 @@ static GlobalVar *codegen_find_global(CodeGen *cg, const char *name) {
 static Type *global_var_type(GlobalVar *gv) {
     if (gv->full_type) return gv->full_type;
     switch (gv->kind) {
-    case TYPE_CHAR:  return type_char();
-    case TYPE_SHORT: return type_short();
-    case TYPE_LONG:  return type_long();
+    case TYPE_CHAR:               return type_char();
+    case TYPE_SHORT:              return type_short();
+    case TYPE_LONG:               return type_long();
+    case TYPE_LONG_LONG:          return type_long_long();
+    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
     case TYPE_INT:
-    default:         return type_int();
+    default:                      return type_int();
     }
 }
 
@@ -853,7 +861,8 @@ static int compute_decl_bytes(ASTNode *node) {
  * arithmetic. int and long stay as-is. Stage 11-03: signed only.
  */
 static TypeKind promote_kind(TypeKind t) {
-    return (t == TYPE_LONG) ? TYPE_LONG : TYPE_INT;
+    return (t == TYPE_LONG || t == TYPE_LONG_LONG || t == TYPE_UNSIGNED_LONG_LONG)
+           ? TYPE_LONG : TYPE_INT;
 }
 
 /*
@@ -882,6 +891,9 @@ static TypeKind common_arith_kind(TypeKind a, TypeKind b) {
 static int uac_is_unsigned(TypeKind ak, int au, TypeKind bk, int bu) {
     if (ak == TYPE_CHAR || ak == TYPE_SHORT) ak = TYPE_INT;
     if (bk == TYPE_CHAR || bk == TYPE_SHORT) bk = TYPE_INT;
+    /* Normalize long long to long for rank comparisons — same 8-byte rank. */
+    if (ak == TYPE_LONG_LONG || ak == TYPE_UNSIGNED_LONG_LONG) ak = TYPE_LONG;
+    if (bk == TYPE_LONG_LONG || bk == TYPE_UNSIGNED_LONG_LONG) bk = TYPE_LONG;
     if (au == bu) return au;
     /* Different signedness. */
     int ulong_present = (au && ak == TYPE_LONG) || (bu && bk == TYPE_LONG);
@@ -1237,7 +1249,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
-        if (node->decl_type == TYPE_LONG) {
+        if (node->decl_type == TYPE_LONG ||
+            node->decl_type == TYPE_LONG_LONG ||
+            node->decl_type == TYPE_UNSIGNED_LONG_LONG) {
             fprintf(cg->output, "    mov rax, %s\n", node->value);
             node->result_type = TYPE_LONG;
         } else {
@@ -1396,6 +1410,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 switch (f->kind) {
                 case TYPE_CHAR:  sz = 1; break;
                 case TYPE_SHORT: sz = 2; break;
+                case TYPE_LONG_LONG:
+                case TYPE_UNSIGNED_LONG_LONG:
                 case TYPE_LONG:
                 case TYPE_POINTER: sz = 8; break;
                 default: sz = 4; break;
@@ -1426,6 +1442,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 switch (f->kind) {
                 case TYPE_CHAR:  sz = 1; break;
                 case TYPE_SHORT: sz = 2; break;
+                case TYPE_LONG_LONG:
+                case TYPE_UNSIGNED_LONG_LONG:
                 case TYPE_LONG:
                 case TYPE_POINTER: sz = 8; break;
                 default: sz = 4; break;
@@ -1709,6 +1727,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             switch (f->kind) {
             case TYPE_CHAR:  sz = 1; break;
             case TYPE_SHORT: sz = 2; break;
+            case TYPE_LONG_LONG:
+            case TYPE_UNSIGNED_LONG_LONG:
             case TYPE_LONG:
             case TYPE_POINTER: sz = 8; break;
             default: sz = 4; break;
@@ -1733,6 +1753,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             switch (f->kind) {
             case TYPE_CHAR:  sz = 1; break;
             case TYPE_SHORT: sz = 2; break;
+            case TYPE_LONG_LONG:
+            case TYPE_UNSIGNED_LONG_LONG:
             case TYPE_LONG:
             case TYPE_POINTER: sz = 8; break;
             default: sz = 4; break;
@@ -1760,12 +1782,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             sz = node->full_type->size;
         } else {
             switch (node->decl_type) {
-            case TYPE_BOOL:    sz = 1; break;
-            case TYPE_CHAR:    sz = 1; break;
-            case TYPE_SHORT:   sz = 2; break;
-            case TYPE_LONG:    sz = 8; break;
-            case TYPE_POINTER: sz = 8; break;
-            default:           sz = 4; break; /* TYPE_INT */
+            case TYPE_BOOL:               sz = 1; break;
+            case TYPE_CHAR:               sz = 1; break;
+            case TYPE_SHORT:              sz = 2; break;
+            case TYPE_LONG:               sz = 8; break;
+            case TYPE_LONG_LONG:          sz = 8; break;
+            case TYPE_UNSIGNED_LONG_LONG: sz = 8; break;
+            case TYPE_POINTER:            sz = 8; break;
+            default:                      sz = 4; break; /* TYPE_INT */
             }
         }
         fprintf(cg->output, "    mov rax, %d\n", sz);
@@ -1803,11 +1827,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         TypeKind kind = sizeof_type_of_expr(cg, child);
         int sz;
         switch (kind) {
-        case TYPE_CHAR:    sz = 1; break;
-        case TYPE_SHORT:   sz = 2; break;
-        case TYPE_LONG:    sz = 8; break;
-        case TYPE_POINTER: sz = 8; break;
-        default:           sz = 4; break; /* TYPE_INT */
+        case TYPE_CHAR:               sz = 1; break;
+        case TYPE_SHORT:              sz = 2; break;
+        case TYPE_LONG:               sz = 8; break;
+        case TYPE_LONG_LONG:          sz = 8; break;
+        case TYPE_UNSIGNED_LONG_LONG: sz = 8; break;
+        case TYPE_POINTER:            sz = 8; break;
+        default:                      sz = 4; break; /* TYPE_INT */
         }
         fprintf(cg->output, "    mov rax, %d\n", sz);
         node->result_type = TYPE_LONG;
@@ -3435,12 +3461,14 @@ static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
  */
 static const char *bss_res_directive(TypeKind kind) {
     switch (kind) {
-    case TYPE_CHAR:    return "resb";
-    case TYPE_SHORT:   return "resw";
+    case TYPE_CHAR:               return "resb";
+    case TYPE_SHORT:              return "resw";
+    case TYPE_LONG_LONG:
+    case TYPE_UNSIGNED_LONG_LONG:
     case TYPE_LONG:
-    case TYPE_POINTER: return "resq";
+    case TYPE_POINTER:            return "resq";
     case TYPE_INT:
-    default:           return "resd";
+    default:                      return "resd";
     }
 }
 
@@ -3529,12 +3557,14 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
 static const char *data_init_directive(TypeKind kind) {
     switch (kind) {
     case TYPE_BOOL:
-    case TYPE_CHAR:    return "db";
-    case TYPE_SHORT:   return "dw";
+    case TYPE_CHAR:               return "db";
+    case TYPE_SHORT:              return "dw";
+    case TYPE_LONG_LONG:
+    case TYPE_UNSIGNED_LONG_LONG:
     case TYPE_LONG:
-    case TYPE_POINTER: return "dq";
+    case TYPE_POINTER:            return "dq";
     case TYPE_INT:
-    default:           return "dd";
+    default:                      return "dd";
     }
 }
 

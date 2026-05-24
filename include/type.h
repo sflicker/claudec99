@@ -20,6 +20,8 @@ typedef enum {
     TYPE_SHORT,
     TYPE_INT,
     TYPE_LONG,
+    TYPE_LONG_LONG,
+    TYPE_UNSIGNED_LONG_LONG,
     TYPE_POINTER,
     TYPE_ARRAY,
     /* Stage 25-01: function type — used only as the base of a function-pointer
@@ -65,6 +67,8 @@ Type *type_char(void);
 Type *type_short(void);
 Type *type_int(void);
 Type *type_long(void);
+Type *type_long_long(void);
+Type *type_unsigned_long_long(void);
 Type *type_unsigned_char(void);
 Type *type_unsigned_short(void);
 Type *type_unsigned_int(void);

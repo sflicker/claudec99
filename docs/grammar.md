@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 63)
+# Claude C99 Grammar (Current through Stage 64)
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
 
@@ -59,7 +59,7 @@
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
 <type_specifier> ::= "void"
-                     | <integer_type> 
+                     | <integer_type_specifier> 
                      | "_Bool"
                      | <typedef_name> 
                      | <enum_specifier> 
@@ -69,16 +69,19 @@
 
 <type_name> ::= <type_specifier> { "*" }
 
-<integer_type> ::= [ <sign_specifier> ] "char"
-               | [ <sign_specifier> ] "short" [ "int" ]
-               | [ <sign_specifier> ] "int"
-               | <sign_specifier>
-               | [ <sign_specifier> ] "long" [ "int" ]
+<integer_type_specifier> ::= "char"
+                           | "short" [ "int" ]
+                           | "int"
+                           | "long" [ "int" ]
+                           | "long" "long" [ "int" ]
 
 <integer_suffix> ::= [Uu]
                    | [Ll]
+                   | "ll" | "LL"
                    | [Uu][Ll]
                    | [Ll][Uu]
+                   | [Uu]("ll"|"LL")
+                   | ("ll"|"LL")[Uu]
 
 <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
                    | "enum"             "{" <enumerator_list> "}"

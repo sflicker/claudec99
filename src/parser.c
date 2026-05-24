@@ -595,7 +595,27 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_BOOL:  kind = TYPE_BOOL;  t = type_bool();  break;
     case TOKEN_CHAR:  kind = TYPE_CHAR;  t = type_char();  break;
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
-    case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
+    case TOKEN_LONG: {
+        /* Stage 64: "long long" — peek at next token for second 'long'. */
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_LONG) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_LONG) {
+                fprintf(stderr, "error: 'long long long' is not a valid type\n");
+                exit(1);
+            }
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = TYPE_LONG_LONG;
+            return type_long_long();
+        }
+        /* single "long" — optional trailing "int" consumed below */
+        kind = TYPE_LONG;  t = type_long();
+        if (parser->current.type == TOKEN_INT)
+            parser->current = lexer_next_token(parser->lexer);
+        if (out_kind) *out_kind = kind;
+        return t;
+    }
     case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
     case TOKEN_SIGNED: {
         /* Stage 61: "signed" [ "char" | "short" [ "int" ] | "int" | "long" [ "int" ] ]
@@ -627,12 +647,23 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             kind = TYPE_INT;   t = type_int();
             break;
         case TOKEN_LONG:
-            kind = TYPE_LONG;  t = type_long();
+            /* Stage 64: "signed long long [int]" */
             parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_LONG) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LONG) {
+                    fprintf(stderr, "error: 'long long long' is not a valid type\n");
+                    exit(1);
+                }
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_LONG_LONG;
+                return type_long_long();
+            }
             if (parser->current.type == TOKEN_INT)
                 parser->current = lexer_next_token(parser->lexer);
-            if (out_kind) *out_kind = kind;
-            return t;
+            if (out_kind) *out_kind = TYPE_LONG;
+            return type_long();
         default:
             /* plain "signed" == int; do not consume the next token */
             kind = TYPE_INT;   t = type_int();
@@ -673,12 +704,23 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             kind = TYPE_INT;   t = type_unsigned_int();
             break;
         case TOKEN_LONG:
-            kind = TYPE_LONG;  t = type_unsigned_long();
+            /* Stage 64: "unsigned long long [int]" */
             parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_LONG) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LONG) {
+                    fprintf(stderr, "error: 'long long long' is not a valid type\n");
+                    exit(1);
+                }
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_UNSIGNED_LONG_LONG;
+                return type_unsigned_long_long();
+            }
             if (parser->current.type == TOKEN_INT)
                 parser->current = lexer_next_token(parser->lexer);
-            if (out_kind) *out_kind = kind;
-            return t;
+            if (out_kind) *out_kind = TYPE_LONG;
+            return type_unsigned_long();
         default:
             /* plain "unsigned" == unsigned int; do not consume the next token */
             kind = TYPE_INT;   t = type_unsigned_int();
@@ -703,10 +745,12 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             t = entry->full_type; /* pointer typedef or unsigned scalar typedef */
         } else {
             switch (kind) {
-            case TYPE_CHAR:  t = type_char();  break;
-            case TYPE_SHORT: t = type_short(); break;
-            case TYPE_LONG:  t = type_long();  break;
-            default:         t = type_int();   break;
+            case TYPE_CHAR:               t = type_char();               break;
+            case TYPE_SHORT:              t = type_short();              break;
+            case TYPE_LONG:               t = type_long();               break;
+            case TYPE_LONG_LONG:          t = type_long_long();          break;
+            case TYPE_UNSIGNED_LONG_LONG: t = type_unsigned_long_long(); break;
+            default:                      t = type_int();                break;
             }
         }
         break;

@@ -279,15 +279,22 @@ Token lexer_next_token(Lexer *lexer) {
             token.value[i++] = lexer->source[lexer->pos++];
         }
         token.value[i] = '\0';
-        int has_long_suffix = 0;
+        int l_count = 0;
         int has_unsigned_suffix = 0;
-        /* Stage 00-98: consume U/u and L/l suffixes in any order. */
+        /* Stage 00-98: consume U/u and L/l suffixes in any order.
+         * Stage 64: count L/l chars to detect LL suffix (long long). */
         while (lexer->source[lexer->pos] == 'U' || lexer->source[lexer->pos] == 'u' ||
                lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
             char sc = lexer->source[lexer->pos++];
             if (sc == 'U' || sc == 'u') has_unsigned_suffix = 1;
-            else has_long_suffix = 1;
+            else l_count++;
         }
+        if (l_count > 2) {
+            fprintf(stderr, "error: integer literal has too many 'L' suffixes\n");
+            exit(1);
+        }
+        int has_ll_suffix   = (l_count == 2);
+        int has_long_suffix = (l_count == 1);
         errno = 0;
         char *end = NULL;
         unsigned long parsed = strtoul(token.value, &end, 10);
@@ -295,7 +302,7 @@ Token lexer_next_token(Lexer *lexer) {
          * without overflow.  Plain or L-only literals are capped at
          * LONG_MAX since they live in the signed long domain. */
         int too_large = (errno == ERANGE) ||
-                        (!has_unsigned_suffix && parsed > (unsigned long)LONG_MAX);
+                        (!has_unsigned_suffix && !has_ll_suffix && parsed > (unsigned long)LONG_MAX);
         if (too_large) {
             fprintf(stderr,
                     "error: integer literal '%s' too large for supported integer types\n",
@@ -304,7 +311,10 @@ Token lexer_next_token(Lexer *lexer) {
         }
         token.long_value = (long)parsed;
         token.is_unsigned = has_unsigned_suffix;
-        if (has_long_suffix) {
+        if (has_ll_suffix) {
+            /* LL suffix: long long or unsigned long long. */
+            token.literal_type = has_unsigned_suffix ? TYPE_UNSIGNED_LONG_LONG : TYPE_LONG_LONG;
+        } else if (has_long_suffix) {
             token.literal_type = TYPE_LONG;
         } else if (has_unsigned_suffix) {
             /* U without L: unsigned int if fits in uint32, else unsigned long. */

@@ -1863,8 +1863,9 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__SIZEOF_SHORT__",    strlen("__SIZEOF_SHORT__"),    NULL, -1, 0, "2", 1);
     macro_define(&macros, "__SIZEOF_INT__",      strlen("__SIZEOF_INT__"),      NULL, -1, 0, "4", 1);
     macro_define(&macros, "__SIZEOF_LONG__",     strlen("__SIZEOF_LONG__"),     NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_POINTER__",  strlen("__SIZEOF_POINTER__"),  NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_SIZE_T__",   strlen("__SIZEOF_SIZE_T__"),   NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_POINTER__",   strlen("__SIZEOF_POINTER__"),   NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_SIZE_T__",    strlen("__SIZEOF_SIZE_T__"),    NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_LONG_LONG__", strlen("__SIZEOF_LONG_LONG__"), NULL, -1, 0, "8", 1);
 
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
