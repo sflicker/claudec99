@@ -37,6 +37,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     test_work="$WORK_DIR/$name"
     mkdir -p "$test_work"
+    cp -a "$test_dir/." "$test_work/"
 
     libs_file="$test_dir/${name}.libs"
     args_file="$test_dir/${name}.args"
@@ -131,9 +132,9 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     stdout_file="$test_work/${name}.stdout"
     if [ -f "$input_file" ]; then
-        (cd "$test_dir" && "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
+        (cd "$test_work" && "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
     else
-        (cd "$test_dir" && "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
+        (cd "$test_work" && "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
     fi
     actual=$?
 
