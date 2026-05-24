@@ -596,22 +596,78 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
     case TOKEN_INT:   kind = TYPE_INT;   t = type_int();   break;
+    case TOKEN_SIGNED: {
+        /* Stage 61: "signed" [ "char" | "short" [ "int" ] | "int" | "long" [ "int" ] ]
+         * signed → int, signed char → char, signed short → short,
+         * signed int → int, signed long → long */
+        parser->current = lexer_next_token(parser->lexer); /* consume 'signed' */
+        if (parser->current.type == TOKEN_UNSIGNED) {
+            fprintf(stderr,
+                    "error: 'signed' and 'unsigned' cannot both be specified\n");
+            exit(1);
+        }
+        switch (parser->current.type) {
+        case TOKEN_CHAR:
+            kind = TYPE_CHAR;  t = type_char();
+            break;
+        case TOKEN_SHORT:
+            kind = TYPE_SHORT; t = type_short();
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = kind;
+            return t;
+        case TOKEN_INT:
+            kind = TYPE_INT;   t = type_int();
+            break;
+        case TOKEN_LONG:
+            kind = TYPE_LONG;  t = type_long();
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = kind;
+            return t;
+        default:
+            /* plain "signed" == int; do not consume the next token */
+            kind = TYPE_INT;   t = type_int();
+            if (out_kind) *out_kind = kind;
+            return t;
+        }
+        /* Advance past the type keyword. */
+        parser->current = lexer_next_token(parser->lexer);
+        if (out_kind) *out_kind = kind;
+        return t;
+    }
     case TOKEN_UNSIGNED: {
-        /* Stage 40: "unsigned" [ "char" | "short" | "int" | "long" ] */
+        /* Stage 40: "unsigned" [ "char" | "short" [ "int" ] | "int" | "long" [ "int" ] ]
+         * Stage 61: also consume optional trailing "int" for short/long. */
         parser->current = lexer_next_token(parser->lexer); /* consume 'unsigned' */
+        if (parser->current.type == TOKEN_SIGNED) {
+            fprintf(stderr,
+                    "error: 'signed' and 'unsigned' cannot both be specified\n");
+            exit(1);
+        }
         switch (parser->current.type) {
         case TOKEN_CHAR:
             kind = TYPE_CHAR;  t = type_unsigned_char();
             break;
         case TOKEN_SHORT:
             kind = TYPE_SHORT; t = type_unsigned_short();
-            break;
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = kind;
+            return t;
         case TOKEN_INT:
             kind = TYPE_INT;   t = type_unsigned_int();
             break;
         case TOKEN_LONG:
             kind = TYPE_LONG;  t = type_unsigned_long();
-            break;
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = kind;
+            return t;
         default:
             /* plain "unsigned" == unsigned int; do not consume the next token */
             kind = TYPE_INT;   t = type_unsigned_int();
@@ -662,6 +718,9 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         exit(1);
     }
     parser->current = lexer_next_token(parser->lexer);
+    /* Stage 61: "short int" and "long int" — optional trailing 'int'. */
+    if ((kind == TYPE_SHORT || kind == TYPE_LONG) && parser->current.type == TOKEN_INT)
+        parser->current = lexer_next_token(parser->lexer);
     if (out_kind) *out_kind = kind;
     return t;
 }
@@ -1124,6 +1183,7 @@ static ASTNode *parse_unary(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_SIGNED ||
             parser->current.type == TOKEN_UNSIGNED ||
             parser->current.type == TOKEN_STRUCT ||
             (parser->current.type == TOKEN_IDENTIFIER &&
@@ -1217,6 +1277,7 @@ static ASTNode *parse_cast(Parser *parser) {
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_SIGNED ||
             parser->current.type == TOKEN_UNSIGNED ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
@@ -1853,6 +1914,7 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
         parser->current.type == TOKEN_LONG ||
+        parser->current.type == TOKEN_SIGNED ||
         parser->current.type == TOKEN_UNSIGNED ||
         parser->current.type == TOKEN_ENUM ||
         parser->current.type == TOKEN_STRUCT ||
@@ -2282,6 +2344,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
                    parser->current.type == TOKEN_LONG ||
+                   parser->current.type == TOKEN_SIGNED ||
                    parser->current.type == TOKEN_UNSIGNED ||
                    parser->current.type == TOKEN_ENUM ||
                    parser->current.type == TOKEN_STRUCT ||

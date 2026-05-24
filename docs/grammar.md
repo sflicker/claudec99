@@ -12,7 +12,10 @@
 
 <declaration_specifier>  ::= <storage_class_specifier>
                             | <type_specifier>
+                            | <sign_specifier>
                             | <type_qualifier>
+
+<sign_specifier> ::= "signed" | "unsigned"
 
 <type_qualifier> ::= "const"
 
@@ -65,12 +68,16 @@
 
 <type_name> ::= <type_specifier> { "*" }
 
-<integer_type> ::= [ "unsigned" ] "char"
-               | [ "unsigned" ] "short"
-               | [ "unsigned" ] "int"
-               | [ "unsigned" ]
-               | "unsigned" "long"
-               | "long"
+<integer_type> ::= [ <sign_specifier> ] "char"
+               | [ <sign_specifier> ] "short" [ "int" ]
+               | [ <sign_specifier> ] "int"
+               | <sign_specifier>
+               | [ <sign_specifier> ] "long" [ "int" ]
+
+<integer_suffix> ::= [Uu]
+                   | [Ll]
+                   | [Uu][Ll]
+                   | [Ll][Uu]
 
 <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
                    | "enum"             "{" <enumerator_list> "}"
