@@ -841,23 +841,110 @@
 - [x] Variadic macros accept arg_count >= param_count (fixed args required, extra optional)
 - [x] Too few fixed arguments → compile-time error
 
+## Stage 58 - Controlled Standard-Style Test Headers
+
+- [x] Stub headers added to `test/include/` for angle-bracket include support
+  - [x] `stdio.h` — `puts`, `printf`
+  - [x] `stddef.h` — `NULL`, `size_t`
+  - [x] `stdlib.h` — `malloc`, `free`, `exit`
+  - [x] `string.h` — `strlen`, `strcmp`, `strcpy`, `memcpy`, `memset`
+- [x] Test runner appends `-I${PROJECT_DIR}/test/include` automatically
+- [x] Integration tests updated to use angle-bracket forms for standard headers
+
+## Stage 59 - Controlled Header Hardening
+
+- [x] 15 new integration tests exercising preprocessor, stub headers, and compiler features together
+- [x] Integration test infrastructure for angle-bracket include validation
+
+## Stage 60-01 - Static Predefined ABI/Target Macros
+
+- [x] 12 ABI-reflecting macros injected unconditionally before user source
+  - [x] `__x86_64__`, `__linux__`, `__unix__`, `__LP64__`, `_LP64`
+  - [x] `__CHAR_BIT__` (8)
+  - [x] `__SIZEOF_CHAR__` (1), `__SIZEOF_SHORT__` (2), `__SIZEOF_INT__` (4), `__SIZEOF_LONG__` (8)
+  - [x] `__SIZEOF_POINTER__` (8), `__SIZEOF_SIZE_T__` (8)
+
+## Stage 60-02 - Runtime Context Predefined Macros
+
+- [x] `__DATE__` expands to `"Mmm DD YYYY"` (compile-time date)
+- [x] `__TIME__` expands to `"HH:MM:SS"` (compile-time time)
+- [x] `__STDC_HOSTED__` expands to `1`
+- [x] All three injected before user source is processed
+
+## Stage 61 - Signed Keyword and Suffix Formalization
+
+- [x] `signed` keyword accepted as a type specifier
+  - [x] `signed char`, `signed short`, `signed int`, `signed long`
+  - [x] Plain `signed` (= `signed int`)
+- [x] Trailing `int` forms: `short int`, `long int`, `unsigned short int`, `unsigned long int`, `signed short int`, `signed long int`
+- [x] `UL`/`LU` (unsigned long) integer literal suffixes formalized
+- [x] Declaration specifier parser updated for all combinations
+
+## Stage 62 - limits.h and stdint.h Stub Headers
+
+- [x] `test/include/limits.h` — complete set including `LLONG_MIN`, `LLONG_MAX`, `ULLONG_MAX`
+- [x] `test/include/stdint.h`
+  - [x] Exact-width signed types: `int8_t`, `int16_t`, `int32_t`, `int64_t`
+  - [x] Exact-width unsigned types: `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`
+  - [x] Pointer-size types: `intptr_t`, `uintptr_t`
+  - [x] Least-width and fast variants for 8/16/32/64 bits
+
+## Stage 63 - _Bool Type and stdbool.h
+
+- [x] `_Bool` type (TYPE_BOOL) added to type system
+  - [x] 1-byte storage, unsigned
+  - [x] Value-normalization: any nonzero value assigned to `_Bool` becomes 1, zero stays 0
+  - [x] Integer promotion: `_Bool` promotes to `int` in expressions
+- [x] `test/include/stdbool.h` stub
+  - [x] `bool` expands to `_Bool`
+  - [x] `true` expands to 1, `false` expands to 0
+- [x] `__SIZEOF_LONG_LONG__` added to stage-60-01 ABI macros
+
+## Stage 64 - long long and unsigned long long
+
+- [x] Tokenizer: `long long` recognized as a two-keyword sequence
+- [x] Type system: `TYPE_LONG_LONG` and `TYPE_UNSIGNED_LONG_LONG` (8 bytes, alignment 8)
+- [x] Codegen: `long long` uses 64-bit register file, identical to `long`
+- [x] Integer literal suffixes: `LL`/`ll` (long long), `ULL`/`LLU`/`ull`/`llu` (unsigned long long)
+- [x] Usual Arithmetic Conversions updated for `long long` and `unsigned long long` ranks
+- [x] `__SIZEOF_LONG_LONG__` predefined macro (= 8)
+- [x] `typedef` support for `long long` and `unsigned long long` base types
+
+## Stage 65 - Integer Conversion and Arithmetic Hardening Tests
+
+- [x] 17 new `test/valid/` tests covering:
+  - [x] `_Bool` promotion via `stdbool.h` (b = 99 → 1; 1 + 41 = 42)
+  - [x] `int8_t` sign-preserving promotion (stdint.h)
+  - [x] `uint8_t` promotes to `int`, not `unsigned int` (stdint.h)
+  - [x] `int16_t` sign-preserving promotion (stdint.h)
+  - [x] `uint16_t` promotes to `int` (stdint.h)
+  - [x] Signed/unsigned int UAC: `int -1 < unsigned int 1U` → 0
+  - [x] Plain `signed`/`unsigned` UAC comparison → 0
+  - [x] Negative literal vs unsigned literal: `-1 < 1U` → 0
+  - [x] LP64 rule: `long -1L < unsigned int 1U` → 1 (uint converts to long)
+  - [x] Signed long vs unsigned long: `-1L < 1UL` → 0
+  - [x] `long long` dominates `int` in UAC
+  - [x] `unsigned long long` dominates `long long`: `-1LL < 1ULL` → 0
+  - [x] Assignment truncation: `uint8_t x = 257U` → 1
+  - [x] `_Bool` assignment normalization (0 stays 0; nonzero → 1)
+  - [x] Conditional expression mixed types: `cond ? 42U : 9L` → common type long
+  - [x] Compound assignment truncation: `uint8_t 250 += 10` → 4 (wraps)
+  - [x] Unsigned multiplication wraparound: `1000000ULL * (ull)(-1) > 0`
+
 ---
 
 ## TODO
 
 ### Preprocessor
 - [ ] #pragma (at minimum #pragma once)
-- [ ] __DATE__ and __TIME__ predefined macros
+- [ ] #elifdef / #elifndef
 - [ ] GNU extension: `__VA_OPT__` and named variadic args
 
 ### Types
-- [ ] Integer suffix tokens: UL/ul, LL/ll, ULL/ull (U/u already supported)
-- [ ] _Bool type
 - [ ] float and double types
 - [ ] Floating-point arithmetic and comparisons
 - [ ] Floating-point literals (decimal and hex forms)
 - [ ] Floating-point conversions (int ↔ float ↔ double)
-- [ ] long long type (64-bit on all platforms)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [ ] Union types
 - [ ] Bit-field members in structs
@@ -869,7 +956,7 @@
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [ ] static storage class (block scope — local static variables)
+- [ ] static storage class (block scope — local static variables; prerequisite for self-hosting)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables
@@ -901,24 +988,26 @@
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions
-- [ ] Variadic function definitions: va_list, va_start, va_arg, va_end (<stdarg.h>)
+- [ ] Variadic function definitions: va_list, va_start, va_arg, va_end (<stdarg.h>); only declarations/external calls supported today
 - [ ] Old-style (K&R) function definitions
 - [ ] Implicit return in void functions
 - [ ] Functions returning function pointers: int (*f())(int)
 - [ ] Inline functions (inline keyword)
 
-### Standard Library Headers (minimal implementations or pass-through)
-- [ ] <stdio.h>: printf, scanf, fprintf, fopen, fclose, fread, fwrite, fgets, fputs, perror, sscanf, snprintf
-- [ ] <stdlib.h>: malloc, calloc, realloc, free, exit, abort, atoi, atol, strtol, strtoul, qsort, bsearch
-- [ ] <string.h>: strlen, strcpy, strncpy, strcat, strncat, strcmp, strncmp, memcpy, memmove, memset, memcmp, strchr, strrchr, strstr
+### Standard Library Headers (stub or pass-through)
+- [x] <stdio.h>: `puts`, `printf` (stub; full set including `fprintf`, `fopen`, `fclose`, `fread`, `fgets`, `snprintf` not yet in stub)
+- [x] <stdlib.h>: `malloc`, `free`, `exit` (stub; `calloc`, `realloc`, `qsort` etc. not yet in stub)
+- [x] <string.h>: `strlen`, `strcmp`, `strcpy`, `memcpy`, `memset` (stub)
+- [x] <stddef.h>: `NULL`, `size_t` (stub)
+- [x] <stdint.h>: full exact-width, least-width, fast, and pointer-size integer typedefs (stub complete)
+- [x] <limits.h>: full set including `LLONG_MIN`, `LLONG_MAX`, `ULLONG_MAX` (stub complete)
+- [x] <stdbool.h>: `bool`, `true`, `false` (stub complete)
+- [ ] <stdio.h>: expand stub to cover `FILE *`, `fprintf`, `fopen`, `fclose`, `fread`, `fgets`, `snprintf`, `stderr` (needed for self-hosting)
+- [ ] <ctype.h>: `isalpha`, `isdigit`, `isspace`, `isalnum`, `toupper`, `tolower` (needed for self-hosting)
+- [ ] <errno.h>: `errno`, `ERANGE`, `EINVAL`, etc. (needed for self-hosting)
+- [ ] <time.h>: `time_t`, `struct tm`, `time()`, `localtime()` (needed for self-hosting)
 - [ ] <math.h>: basic floating-point math functions
-- [ ] <ctype.h>: isalpha, isdigit, isspace, toupper, tolower, etc.
-- [ ] <stddef.h>: NULL, size_t, ptrdiff_t, offsetof
-- [ ] <stdint.h>: int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, INT_MAX, etc.
-- [ ] <limits.h>: CHAR_MAX, INT_MAX, LONG_MAX, etc.
 - [ ] <assert.h>: assert macro
-- [ ] <errno.h>: errno, ENOENT, EINVAL, etc.
-- [ ] <stdbool.h>: bool, true, false
 
 ### Code Generation and Optimization
 - [ ] Multi-file compilation (compile multiple .c files to .o files)
@@ -926,8 +1015,8 @@
 - [ ] Linker invocation
 - [ ] Debug information (DWARF)
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
-- [ ] Spill-and-restore for more than 6 arguments
-- [ ] Calling convention for struct arguments and return values
+- [ ] Spill-and-restore for more than 6 arguments (SysV stack-passing; prerequisite for self-hosting)
+- [ ] Calling convention for struct arguments and return values (hidden-pointer ABI for large structs; prerequisite for self-hosting)
 - [ ] Floating-point ABI (xmm registers for float/double arguments)
 - [ ] Tail-call opportunities
 - [ ] Constant folding for integer expressions
