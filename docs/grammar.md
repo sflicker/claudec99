@@ -185,7 +185,7 @@
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
-<integer_literal> ::= [0-9]+ [Ll]?
+<integer_literal> ::= [0-9]+ [ <integer_suffix> ]
 
 <string_literal> ::= TOKEN_STRING_LITERAL
 
@@ -433,8 +433,12 @@
 #     `&&` and `||` produce 0 or 1.
 #   - Function-like macros (`#define NAME(...)`), nested function-like macro invocations,
 #     and stringification (`#param` in function-like macro replacement lists) are supported (stage 57).
-#     Token pasting (`##`), recursive macro expansion beyond simple guarding,
-#     `#if` and `#elif` with bitwise or shift expression evaluation,
-#     `#elifdef`/`#elifndef`, and variadic macros are not yet supported.
+#   - Token pasting (`##`) in function-like macro replacement lists is supported.
+#   - Variadic function-like macros (`#define M(...)`, `#define M(x, ...)`) with
+#     `__VA_ARGS__` expansion are supported.
+#   - `#if`/`#elif` conditions support bitwise (`~`, `&`, `^`, `|`) and shift
+#     (`<<`, `>>`) operators (see the pp-expression grammar above).
+#   - Recursive macro expansion beyond simple guarding and `#elifdef`/`#elifndef`
+#     are not yet supported.
 
 ```
