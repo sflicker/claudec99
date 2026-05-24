@@ -2,6 +2,10 @@
 #ifndef CLAUDEC99_STDIO_H
 #define CLAUDEC99_STDIO_H
 
+typedef struct FILE FILE;
+
+#define EOF (-1)
+
 int puts(const char *);
 int printf(const char *, ...);
 #endif

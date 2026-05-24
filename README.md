@@ -136,7 +136,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 66 (const pointer compatibility hardening):
+Through stage 67-01 (opaque FILE and EOF constant):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -144,7 +144,7 @@ Through stage 66 (const pointer compatibility hardening):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h`, `stddef.h`,
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type and `#define EOF (-1)`), `stddef.h`,
     `stdlib.h`, `string.h`, `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, and `stdbool.h`, supplied from `test/include/`.
   - _Object-like macros_: `#define` definition and expansion. Macros defined
@@ -396,7 +396,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 66 all tests pass (697 valid, 213 invalid, 55 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1124 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 67-01 all tests pass (698 valid, 213 invalid, 55 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1125 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
