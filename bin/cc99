@@ -27,6 +27,28 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 
+usage() {
+    cat >&2 <<'EOF'
+Usage: cc99 [options] file.c [file2.c ...]
+
+Options:
+  -o <file>        Output file name (default: a.out)
+  -c               Compile and assemble only; produce .o files
+  -S               Compile only; produce .asm files
+  -D NAME[=VAL]    Define a preprocessor macro
+  -I <dir>         Add directory to include search path
+  --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
+  -Werror          Treat warnings as errors
+  -l <lib>         Link with library
+  -L <dir>         Add library search path
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+fi
+
 if [[ ! -x "$COMPILER" ]]; then
     echo "cc99: compiler not found at $COMPILER" >&2
     echo "cc99: build first with: cmake --build build" >&2
@@ -52,6 +74,8 @@ while [[ $# -gt 0 ]]; do
             mode="compile-only"; shift ;;
         -S)
             mode="asm-only"; shift ;;
+        -Werror)
+            compiler_flags+=("$1"); shift ;;
         -D*)
             compiler_flags+=("$1"); shift ;;
         -I)
