@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 62)
+# Claude C99 Grammar (Current through Stage 63)
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
 
@@ -60,6 +60,7 @@
 
 <type_specifier> ::= "void"
                      | <integer_type> 
+                     | "_Bool"
                      | <typedef_name> 
                      | <enum_specifier> 
                      | <struct_specifier>

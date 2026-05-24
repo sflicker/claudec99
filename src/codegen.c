@@ -7,6 +7,7 @@
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
     case TYPE_VOID:     return 0; /* never directly allocated */
+    case TYPE_BOOL:     return 1;
     case TYPE_CHAR:     return 1;
     case TYPE_SHORT:    return 2;
     case TYPE_INT:      return 4;
@@ -41,6 +42,21 @@ static void emit_convert(CodeGen *cg, TypeKind src, TypeKind dst) {
     }
     /* dst_sz == 4 and src_sz == 8: low 32 bits of rax are already in
      * eax, so no explicit instruction is needed. */
+}
+
+/*
+ * Stage 63: normalize the value in eax/rax to 0 or 1 for _Bool storage.
+ * Any nonzero value becomes 1; zero stays 0. `is_long_value` selects
+ * whether to test the full rax (1) or just eax (0).
+ */
+static void emit_bool_normalize(CodeGen *cg, int is_long_value) {
+    if (is_long_value) {
+        fprintf(cg->output, "    test rax, rax\n");
+    } else {
+        fprintf(cg->output, "    test eax, eax\n");
+    }
+    fprintf(cg->output, "    setne al\n");
+    fprintf(cg->output, "    movzx eax, al\n");
 }
 
 /*
@@ -1531,6 +1547,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
              * 32-to-64 sign-extend that integer values would need. */
             int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
                                node->children[0]->result_type == TYPE_POINTER);
+            /* Stage 63: _Bool assignment normalizes any nonzero value to 1. */
+            if (lv->kind == TYPE_BOOL)
+                emit_bool_normalize(cg, rhs_is_long);
             emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
             if (lv->kind == TYPE_POINTER) {
                 node->result_type = TYPE_POINTER;
@@ -1580,6 +1599,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         int rhs_is_long_g = (node->children[0]->result_type == TYPE_LONG ||
                              node->children[0]->result_type == TYPE_POINTER);
+        /* Stage 63: _Bool assignment normalizes any nonzero value to 1. */
+        if (gv->kind == TYPE_BOOL)
+            emit_bool_normalize(cg, rhs_is_long_g);
         emit_store_global(cg, gv->name, gv->size, rhs_is_long_g);
         if (gv->kind == TYPE_POINTER) {
             node->result_type = TYPE_POINTER;
@@ -1738,6 +1760,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             sz = node->full_type->size;
         } else {
             switch (node->decl_type) {
+            case TYPE_BOOL:    sz = 1; break;
             case TYPE_CHAR:    sz = 1; break;
             case TYPE_SHORT:   sz = 2; break;
             case TYPE_LONG:    sz = 8; break;
@@ -2905,6 +2928,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                                init_kind == TYPE_POINTER ||
                                rhs_is_null_ptr ||
                                (size == 8 && node->children[0]->is_unsigned));
+            /* Stage 63: _Bool initializer normalizes any nonzero value to 1. */
+            if (node->decl_type == TYPE_BOOL)
+                emit_bool_normalize(cg, rhs_is_long);
             emit_store_local(cg, offset, size, rhs_is_long);
         }
     } else if (node->type == AST_DECL_LIST) {
@@ -3451,10 +3477,12 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {
-            gv->init_value = strtol(init->value, NULL, 10);
+            long v = strtol(init->value, NULL, 10);
+            gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
             gv->is_initialized = 1;
         } else if (init->type == AST_CHAR_LITERAL) {
-            gv->init_value = (long)(unsigned char)init->value[0];
+            long v = (long)(unsigned char)init->value[0];
+            gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
             gv->is_initialized = 1;
         } else if (init->type == AST_VAR_REF) {
             /* Stage 25-02: function-pointer global initialized from a
@@ -3500,6 +3528,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
  */
 static const char *data_init_directive(TypeKind kind) {
     switch (kind) {
+    case TYPE_BOOL:
     case TYPE_CHAR:    return "db";
     case TYPE_SHORT:   return "dw";
     case TYPE_LONG:

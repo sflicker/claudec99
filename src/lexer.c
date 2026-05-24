@@ -291,7 +291,12 @@ Token lexer_next_token(Lexer *lexer) {
         errno = 0;
         char *end = NULL;
         unsigned long parsed = strtoul(token.value, &end, 10);
-        if (errno == ERANGE || parsed > (unsigned long)LONG_MAX) {
+        /* Unsigned literals (U suffix) may hold values up to ULONG_MAX
+         * without overflow.  Plain or L-only literals are capped at
+         * LONG_MAX since they live in the signed long domain. */
+        int too_large = (errno == ERANGE) ||
+                        (!has_unsigned_suffix && parsed > (unsigned long)LONG_MAX);
+        if (too_large) {
             fprintf(stderr,
                     "error: integer literal '%s' too large for supported integer types\n",
                     token.value);
@@ -373,6 +378,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_SIGNED;
         } else if (strcmp(token.value, "unsigned") == 0) {
             token.type = TOKEN_UNSIGNED;
+        } else if (strcmp(token.value, "_Bool") == 0) {
+            token.type = TOKEN_BOOL;
         } else {
             token.type = TOKEN_IDENTIFIER;
         }
@@ -412,6 +419,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_ENUM:             return "'enum'";
         case TOKEN_STRUCT:           return "'struct'";
         case TOKEN_VOID:             return "'void'";
+        case TOKEN_BOOL:             return "'_Bool'";
         case TOKEN_CONST:            return "'const'";
         case TOKEN_SIGNED:           return "'signed'";
         case TOKEN_UNSIGNED:         return "'unsigned'";

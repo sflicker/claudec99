@@ -10,6 +10,7 @@
  */
 
 static Type type_void_singleton           = { TYPE_VOID,  0, 0, 0, NULL, 0 };
+static Type type_bool_singleton           = { TYPE_BOOL,  1, 1, 0, NULL, 0 };
 static Type type_char_singleton           = { TYPE_CHAR,  1, 1, 1, NULL, 0 };
 static Type type_short_singleton          = { TYPE_SHORT, 2, 2, 1, NULL, 0 };
 static Type type_int_singleton            = { TYPE_INT,   4, 4, 1, NULL, 0 };
@@ -20,6 +21,7 @@ static Type type_unsigned_int_singleton   = { TYPE_INT,   4, 4, 0, NULL, 0 };
 static Type type_unsigned_long_singleton  = { TYPE_LONG,  8, 8, 0, NULL, 0 };
 
 Type *type_void(void)           { return &type_void_singleton;           }
+Type *type_bool(void)           { return &type_bool_singleton;           }
 Type *type_char(void)           { return &type_char_singleton;           }
 Type *type_short(void)          { return &type_short_singleton;          }
 Type *type_int(void)            { return &type_int_singleton;            }
@@ -110,6 +112,7 @@ Type *type_struct(int size, int alignment) {
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
     case TYPE_VOID:     return "void";
+    case TYPE_BOOL:     return "_Bool";
     case TYPE_CHAR:     return "char";
     case TYPE_SHORT:    return "short";
     case TYPE_INT:      return "int";
@@ -133,6 +136,7 @@ int type_alignment(Type *t) {
 int type_is_integer(Type *t) {
     if (!t) return 0;
     switch (t->kind) {
+    case TYPE_BOOL:
     case TYPE_CHAR:
     case TYPE_SHORT:
     case TYPE_INT:

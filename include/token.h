@@ -28,6 +28,7 @@ typedef enum {
     TOKEN_ENUM,
     TOKEN_STRUCT,
     TOKEN_VOID,
+    TOKEN_BOOL,
     TOKEN_CONST,
     TOKEN_SIGNED,
     TOKEN_UNSIGNED,

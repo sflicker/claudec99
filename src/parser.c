@@ -592,6 +592,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     Type *t;
     switch (parser->current.type) {
     case TOKEN_VOID:  kind = TYPE_VOID;  t = type_void();  break;
+    case TOKEN_BOOL:  kind = TYPE_BOOL;  t = type_bool();  break;
     case TOKEN_CHAR:  kind = TYPE_CHAR;  t = type_char();  break;
     case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
     case TOKEN_LONG:  kind = TYPE_LONG;  t = type_long();  break;
@@ -604,6 +605,11 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         if (parser->current.type == TOKEN_UNSIGNED) {
             fprintf(stderr,
                     "error: 'signed' and 'unsigned' cannot both be specified\n");
+            exit(1);
+        }
+        if (parser->current.type == TOKEN_BOOL) {
+            fprintf(stderr,
+                    "error: _Bool type cannot have a sign qualifier\n");
             exit(1);
         }
         switch (parser->current.type) {
@@ -645,6 +651,11 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         if (parser->current.type == TOKEN_SIGNED) {
             fprintf(stderr,
                     "error: 'signed' and 'unsigned' cannot both be specified\n");
+            exit(1);
+        }
+        if (parser->current.type == TOKEN_BOOL) {
+            fprintf(stderr,
+                    "error: _Bool type cannot have a sign qualifier\n");
             exit(1);
         }
         switch (parser->current.type) {
@@ -1179,7 +1190,8 @@ static ASTNode *parse_unary(Parser *parser) {
             fprintf(stderr, "error: sizeof applied to void type\n");
             exit(1);
         }
-        if (parser->current.type == TOKEN_CHAR ||
+        if (parser->current.type == TOKEN_BOOL ||
+            parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
             parser->current.type == TOKEN_LONG ||
@@ -1273,6 +1285,7 @@ static ASTNode *parse_cast(Parser *parser) {
         Token saved_token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
@@ -1910,6 +1923,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (local_is_const ||
         parser->current.type == TOKEN_VOID ||
+        parser->current.type == TOKEN_BOOL ||
         parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
         parser->current.type == TOKEN_INT ||
@@ -2340,6 +2354,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
             else r.sc = SC_TYPEDEF;
             parser->current = lexer_next_token(parser->lexer);
         } else if (parser->current.type == TOKEN_VOID ||
+                   parser->current.type == TOKEN_BOOL ||
                    parser->current.type == TOKEN_CHAR ||
                    parser->current.type == TOKEN_SHORT ||
                    parser->current.type == TOKEN_INT ||
