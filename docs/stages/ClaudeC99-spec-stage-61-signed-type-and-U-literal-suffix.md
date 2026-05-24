@@ -9,7 +9,7 @@ add a keyword token for `signed`
 
 ## Grammar Updates
 
-```bnsf
+```ebnf
 
 <declaration_specifiers> ::= <declaration_specifier> { <declaration_specifier> }
 
@@ -18,7 +18,7 @@ add a keyword token for `signed`
                             | <sign_specifier>
                             | <type_qualifier>
 
-<sign_specifier> ::= "signed" | unsigned"
+<sign_specifier> ::= "signed" | "unsigned"
 
 <integer_type> ::=  "char"
                   | "short"
@@ -82,7 +82,7 @@ long long x;       // reject for this stage
 ## Tests
 ```C
 int main(void) {
-    signed char x;
+    signed char d;
     c = -1;
     return c < 0;     // expect 1
 }
@@ -99,7 +99,8 @@ int main(void) {
 int main(void) {
     unsigned long x;
     x = 42UL;
-    return x = 42UL;    // expect 1
+    return x == 42UL;    // expect 1
+}
 ```
 
 ```C
@@ -109,6 +110,7 @@ int main(void) {
     int8_t x;
     x = -5;
     return x < 0;   // return 1
+}
 ```
 
 ## Invalid Tests
