@@ -13,4 +13,5 @@ FILE *fopen(const char *, const char *);
 int fclose(FILE *);
 int fgetc(FILE *);
 char *fgets(char *, int, FILE *);
+int fprintf(FILE *, const char *, ...);
 #endif

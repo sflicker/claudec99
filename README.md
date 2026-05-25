@@ -136,7 +136,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 67-03 (file open, close, character input, and line input):
+Through stage 67-04 (file output with fprintf):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -144,7 +144,7 @@ Through stage 67-03 (file open, close, character input, and line input):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, and `fgets`), `stddef.h`,
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, and `fprintf`), `stddef.h`,
     `stdlib.h`, `string.h`, `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, and `stdbool.h`, supplied from `test/include/`.
   - _Object-like macros_: `#define` definition and expansion. Macros defined
@@ -396,7 +396,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 67-03 all tests pass (698 valid, 213 invalid, 57 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1127 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 67-04 all tests pass (698 valid, 213 invalid, 58 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1128 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
