@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 72 (union support):
+Through stage 73-01 (anonymous struct/union types):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -303,6 +303,10 @@ Through stage 72 (union support):
   Named `union` types with max-size layout (size = max member, all offsets 0), local and global
   union variables, first-member initialization, whole-union assignment, union fields inside structs,
   and struct fields inside unions.
+  Anonymous struct and union types (without a tag) when a body is present
+  (e.g., `struct { int x; int y; } p;`, `typedef union { int a; char b; } U;`).
+  Each anonymous definition creates a unique type; two separately defined anonymous
+  structs with identical layouts are not assignment-compatible.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   string-literal initialization for pointer globals, brace-list initialization for array globals,
@@ -373,7 +377,7 @@ Through stage 72 (union support):
 
 ## Not yet supported
 
-Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; array
+Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope `extern`; block-scope `static` arrays and structs;
 defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
@@ -402,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 72 all tests pass (718 valid, 214 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1158 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 73-01 all tests pass (726 valid, 217 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1169 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

@@ -322,13 +322,15 @@ static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
 }
 
 /*
- * <struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list> "}"
+ * <struct_specifier> ::= "struct" [ <identifier> ] "{" <struct_declaration_list> "}"
  *                      | "struct" <identifier>
  *
  * <struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
  * <struct_declaration>      ::= <type_specifier> <struct_declarator_list> ";"
  * <struct_declarator_list>  ::= <declarator> { "," <declarator> }
  *
+ * Stage 73-01: the tag is optional when a body '{' follows (anonymous struct).
+ * Each anonymous definition creates a unique Type*; type identity is by pointer.
  * Layout uses natural alignment: each field is aligned to its type's natural
  * alignment; the struct's total size is rounded up to the struct's alignment
  * (the maximum field alignment). Returns the TYPE_STRUCT Type*.
@@ -337,15 +339,18 @@ static Type *parse_struct_specifier(Parser *parser) {
     /* consume 'struct' */
     parser->current = lexer_next_token(parser->lexer);
 
-    if (parser->current.type != TOKEN_IDENTIFIER) {
-        PARSER_ERROR(parser, "error: expected struct tag name after 'struct'\n");
-    }
-    char tag[256];
-    strncpy(tag, parser->current.value, sizeof(tag) - 1);
-    tag[sizeof(tag) - 1] = '\0';
-    parser->current = lexer_next_token(parser->lexer);
+    int has_tag = (parser->current.type == TOKEN_IDENTIFIER);
+    char tag[256] = "";
+    StructTag *st = NULL;
 
-    StructTag *st = parser_register_struct_tag(parser, tag);
+    if (has_tag) {
+        strncpy(tag, parser->current.value, sizeof(tag) - 1);
+        tag[sizeof(tag) - 1] = '\0';
+        parser->current = lexer_next_token(parser->lexer);
+        st = parser_register_struct_tag(parser, tag);
+    } else if (parser->current.type != TOKEN_LBRACE) {
+        PARSER_ERROR(parser, "error: expected identifier or '{' after 'struct'\n");
+    }
 
     if (parser->current.type == TOKEN_LBRACE) {
         parser->current = lexer_next_token(parser->lexer);
@@ -417,32 +422,42 @@ static Type *parse_struct_specifier(Parser *parser) {
         int total_size = (current_offset + max_align - 1) & ~(max_align - 1);
         if (total_size == 0) total_size = 1; /* empty struct: 1 byte by convention */
 
-        /* Stage 37: if a placeholder was created by a forward declaration,
-         * update it in-place so any existing Type* references (e.g. typedef
-         * entries) automatically reflect the completed layout. */
-        if (st->type && st->type->size == 0) {
-            st->type->size      = total_size;
-            st->type->alignment = max_align;
+        Type *result;
+        if (has_tag) {
+            /* Stage 37: if a placeholder was created by a forward declaration,
+             * update it in-place so any existing Type* references (e.g. typedef
+             * entries) automatically reflect the completed layout. */
+            if (st->type && st->type->size == 0) {
+                st->type->size      = total_size;
+                st->type->alignment = max_align;
+                result = st->type;
+            } else {
+                st->type = type_struct(total_size, max_align);
+                result = st->type;
+            }
         } else {
-            st->type = type_struct(total_size, max_align);
+            /* Stage 73-01: anonymous struct — fresh unique Type* each time. */
+            result = type_struct(total_size, max_align);
         }
 
         /* Stage 31: copy collected fields into the Type. */
         if (n_fields > 0) {
-            st->type->fields = calloc(n_fields, sizeof(StructField));
-            memcpy(st->type->fields, tmp_fields, n_fields * sizeof(StructField));
-            st->type->field_count = n_fields;
+            result->fields = calloc(n_fields, sizeof(StructField));
+            memcpy(result->fields, tmp_fields, n_fields * sizeof(StructField));
+            result->field_count = n_fields;
         }
+
+        return result;
 
     } else {
         /* Reference without body: "struct Tag" used as a type (e.g. pointer
          * target or forward declaration).  Stage 37: create an incomplete
-         * placeholder so forward declarations and opaque pointer fields work. */
+         * placeholder so forward declarations and opaque pointer fields work.
+         * has_tag is guaranteed true here (checked above). */
         if (!st->type)
             st->type = type_struct(0, 0);
+        return st->type;
     }
-
-    return st->type;
 }
 
 /* Stage 72: union tag table helpers. */
@@ -469,8 +484,11 @@ static UnionTag *parser_register_union_tag(Parser *parser, const char *tag) {
 }
 
 /*
- * <union_specifier> ::= "union" <identifier> [ "{" <struct_declaration_list> "}" ]
+ * <union_specifier> ::= "union" [ <identifier> ] "{" <struct_declaration_list> "}"
+ *                     | "union" <identifier>
  *
+ * Stage 73-01: the tag is optional when a body '{' follows (anonymous union).
+ * Each anonymous definition creates a unique Type*; type identity is by pointer.
  * Layout: all member offsets are 0; size = max(member sizes) rounded up to
  * the union's alignment (max of all member alignments).
  * Returns the TYPE_UNION Type*.
@@ -479,15 +497,18 @@ static Type *parse_union_specifier(Parser *parser) {
     /* consume 'union' */
     parser->current = lexer_next_token(parser->lexer);
 
-    if (parser->current.type != TOKEN_IDENTIFIER) {
-        PARSER_ERROR(parser, "error: expected union tag name after 'union'\n");
-    }
-    char tag[256];
-    strncpy(tag, parser->current.value, sizeof(tag) - 1);
-    tag[sizeof(tag) - 1] = '\0';
-    parser->current = lexer_next_token(parser->lexer);
+    int has_tag = (parser->current.type == TOKEN_IDENTIFIER);
+    char tag[256] = "";
+    UnionTag *ut = NULL;
 
-    UnionTag *ut = parser_register_union_tag(parser, tag);
+    if (has_tag) {
+        strncpy(tag, parser->current.value, sizeof(tag) - 1);
+        tag[sizeof(tag) - 1] = '\0';
+        parser->current = lexer_next_token(parser->lexer);
+        ut = parser_register_union_tag(parser, tag);
+    } else if (parser->current.type != TOKEN_LBRACE) {
+        PARSER_ERROR(parser, "error: expected identifier or '{' after 'union'\n");
+    }
 
     if (parser->current.type == TOKEN_LBRACE) {
         parser->current = lexer_next_token(parser->lexer);
@@ -549,26 +570,36 @@ static Type *parse_union_specifier(Parser *parser) {
         int total_size = (max_size + max_align - 1) & ~(max_align - 1);
         if (total_size == 0) total_size = 1;
 
-        if (ut->type && ut->type->size == 0) {
-            ut->type->size      = total_size;
-            ut->type->alignment = max_align;
+        Type *result;
+        if (has_tag) {
+            if (ut->type && ut->type->size == 0) {
+                ut->type->size      = total_size;
+                ut->type->alignment = max_align;
+                result = ut->type;
+            } else {
+                ut->type = type_union(total_size, max_align);
+                result = ut->type;
+            }
         } else {
-            ut->type = type_union(total_size, max_align);
+            /* Stage 73-01: anonymous union — fresh unique Type* each time. */
+            result = type_union(total_size, max_align);
         }
 
         if (n_fields > 0) {
-            ut->type->fields = calloc(n_fields, sizeof(StructField));
-            memcpy(ut->type->fields, tmp_fields, n_fields * sizeof(StructField));
-            ut->type->field_count = n_fields;
+            result->fields = calloc(n_fields, sizeof(StructField));
+            memcpy(result->fields, tmp_fields, n_fields * sizeof(StructField));
+            result->field_count = n_fields;
         }
 
+        return result;
+
     } else {
-        /* Forward declaration / reference without body. */
+        /* Forward declaration / reference without body.
+         * has_tag is guaranteed true here (checked above). */
         if (!ut->type)
             ut->type = type_union(0, 0);
+        return ut->type;
     }
-
-    return ut->type;
 }
 
 /*

@@ -93,10 +93,10 @@
 
 <enumerator> ::= <identifier> [ "=" <constant_expression> ]
 
-<struct_specifier> ::= "struct" <identifier> "{" <struct_declaration_list> "}"
+<struct_specifier> ::= "struct" [ <identifier> ] "{" <struct_declaration_list> "}"
                      | "struct" <identifier>
 
-<union_specifier> ::= "union" <identifier> "{" <struct_declaration_list> "}"
+<union_specifier> ::= "union" [ <identifier> ] "{" <struct_declaration_list> "}"
                     | "union" <identifier>
 
 <struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
@@ -378,6 +378,12 @@
 #   - Struct-by-value function parameters are not yet supported.
 #     Pointer-to-struct parameters (struct T *p) are supported (stage 34).
 #   - Struct-by-value return types are not yet supported.
+#   - Anonymous struct/union types are supported (stage 73-01): the tag is optional
+#     when a body '{' is present (e.g., `struct { int x; int y; } p;`). Each anonymous
+#     definition creates a unique type; type identity is by pointer, so two separately
+#     defined anonymous structs with identical layouts are not assignment-compatible.
+#     Typedef aliases for anonymous struct/union types share the same unique Type* and
+#     so are mutually assignment-compatible.
 #
 # void type (stage 38):
 #   - void cannot be used as an object type (void x; is rejected at all scopes).
