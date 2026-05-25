@@ -35,6 +35,7 @@ usage() {
 Usage: cc99 [options] file.c [file2.c ...]
 
 Options:
+  --version        Print compiler version and exit
   -o <file>        Output file name (default: a.out)
   -c               Compile and assemble only; produce .o files
   -S               Compile only; produce .asm files
@@ -42,6 +43,7 @@ Options:
   -I <dir>         Add directory to include search path
   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
   -Werror          Treat warnings as errors
+  --max-errors=N   Stop after N errors (0 = unlimited)
   -l <lib>         Link with library
   -L <dir>         Add library search path
 EOF
@@ -68,6 +70,8 @@ input_files=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --version)
+            exec "$COMPILER" --version ;;
         -o)
             [[ $# -lt 2 ]] && { echo "cc99: -o requires an argument" >&2; exit 1; }
             output="$2"; shift 2 ;;
@@ -78,6 +82,8 @@ while [[ $# -gt 0 ]]; do
         -S)
             mode="asm-only"; shift ;;
         -Werror)
+            compiler_flags+=("$1"); shift ;;
+        --max-errors=*)
             compiler_flags+=("$1"); shift ;;
         -D*)
             compiler_flags+=("$1"); shift ;;

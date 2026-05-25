@@ -3,6 +3,33 @@
 #include <string.h>
 #include "util.h"
 
+/* Error counting and recovery globals. */
+int     g_max_errors    = 1;
+int     g_error_count   = 0;
+jmp_buf g_error_jmp;
+int     g_error_jmp_valid = 0;
+
+/* Report a compilation error.
+ * Always prints the message. Increments g_error_count. Exits when the
+ * error limit is reached (g_max_errors > 0 && g_error_count >= g_max_errors).
+ * Otherwise performs a long jump to the recovery point in
+ * parse_translation_unit if one is active; exits unconditionally if not. */
+__attribute__((noreturn))
+void compile_error(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    g_error_count++;
+    if (g_max_errors > 0 && g_error_count >= g_max_errors) {
+        exit(1);
+    }
+    if (g_error_jmp_valid) {
+        longjmp(g_error_jmp, 1);
+    }
+    exit(1);
+}
+
 char *read_file(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) {

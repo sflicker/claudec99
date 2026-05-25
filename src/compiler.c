@@ -16,6 +16,7 @@
 #include "preprocessor.h"
 #include "token.h"
 #include "util.h"
+#include "version.h"
 
 static const char *token_type_name(TokenType t) {
     switch (t) {
@@ -45,6 +46,9 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_VOID:          return "TOKEN_VOID";
         case TOKEN_CONST:         return "TOKEN_CONST";
         case TOKEN_UNSIGNED:      return "TOKEN_UNSIGNED";
+        case TOKEN_SIGNED:        return "TOKEN_SIGNED";
+        case TOKEN_BOOL:          return "TOKEN_BOOL";
+        case TOKEN_ELLIPSIS:      return "TOKEN_ELLIPSIS";
         case TOKEN_IDENTIFIER:    return "TOKEN_IDENTIFIER";
         case TOKEN_INT_LITERAL:   return "TOKEN_INT_LITERAL";
         case TOKEN_STRING_LITERAL: return "TOKEN_STRING_LITERAL";
@@ -246,12 +250,25 @@ int main(int argc, char *argv[]) {
     int include_dirs_cap = 0;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--print-ast") == 0) {
+        if (strcmp(argv[i], "--version") == 0) {
+            printf("%s\n", get_version_string());
+            return 0;
+        } else if (strcmp(argv[i], "--print-ast") == 0) {
             print_ast = 1;
         } else if (strcmp(argv[i], "--print-tokens") == 0) {
             print_tokens = 1;
         } else if (strcmp(argv[i], "-Werror") == 0) {
             warnings_are_errors = 1;
+        } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
+            const char *val = argv[i] + 13;
+            char *end;
+            long n = strtol(val, &end, 10);
+            if (*end != '\0' || n < 0) {
+                fprintf(stderr, "error: --max-errors requires a non-negative integer\n");
+                free(defines); free(include_dirs);
+                return 1;
+            }
+            g_max_errors = (int)n;
         } else if (strncmp(argv[i], "--sysroot=", 10) == 0) {
             sysroot = argv[i] + 10;
             if (*sysroot == '\0') {
@@ -295,14 +312,14 @@ int main(int argc, char *argv[]) {
         } else if (!source_file) {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-Werror] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+            fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
             free(defines); free(include_dirs);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--print-ast | --print-tokens] [-Werror] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
+        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
         free(defines); free(include_dirs);
         return 1;
     }
@@ -364,6 +381,14 @@ int main(int argc, char *argv[]) {
     parser_init(&parser, &lexer);
 
     ASTNode *ast = parse_translation_unit(&parser);
+
+    /* If parse errors were collected (max-errors > 1 or 0), exit now
+     * rather than attempting codegen on a partial AST. */
+    if (g_error_count > 0) {
+        ast_free(ast);
+        free(preprocessed);
+        return 1;
+    }
 
     if (print_ast) {
         ast_pretty_print(ast, 0);

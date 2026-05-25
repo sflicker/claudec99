@@ -3,6 +3,7 @@
 #include <string.h>
 #include "codegen.h"
 #include "type.h"
+#include "util.h"
 
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
@@ -253,24 +254,12 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->warnings_are_errors = 0;
 }
 
-/* Stage 66: emit a warning to stderr; if warnings_are_errors is set, exit.
- * Callers pass a pre-built message so this stays a simple helper. */
-static void codegen_warn(CodeGen *cg, const char *msg) {
-    if (cg->warnings_are_errors) {
-        fprintf(stderr, "error: %s\n", msg);
-        exit(1);
-    }
-    fprintf(stderr, "warning: %s\n", msg);
-}
-
 /* Stage 66: warn with a variable name embedded. */
 static void codegen_warn_const_discard(CodeGen *cg, const char *prefix,
                                         const char *varname) {
     if (cg->warnings_are_errors) {
-        fprintf(stderr,
-                "error: %s '%s' discards 'const' qualifier from pointer target type\n",
-                prefix, varname);
-        exit(1);
+        compile_error("error: %s '%s' discards 'const' qualifier from pointer target type\n",
+                      prefix, varname);
     }
     fprintf(stderr,
             "warning: %s '%s' discards 'const' qualifier from pointer target type\n",
@@ -288,15 +277,13 @@ static void collect_user_labels(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_LABEL_STATEMENT) {
         for (int i = 0; i < cg->user_label_count; i++) {
             if (strcmp(cg->user_labels[i], node->value) == 0) {
-                fprintf(stderr, "error: duplicate label '%s' in function '%s'\n",
+                compile_error( "error: duplicate label '%s' in function '%s'\n",
                         node->value, cg->current_func);
-                exit(1);
             }
         }
         if (cg->user_label_count >= MAX_USER_LABELS) {
-            fprintf(stderr, "error: too many labels in function '%s' (max %d)\n",
+            compile_error( "error: too many labels in function '%s' (max %d)\n",
                     cg->current_func, MAX_USER_LABELS);
-            exit(1);
         }
         strncpy(cg->user_labels[cg->user_label_count], node->value, 255);
         cg->user_labels[cg->user_label_count][255] = '\0';
@@ -325,9 +312,8 @@ static void collect_switch_labels(CodeGen *cg, ASTNode *node, SwitchCtx *ctx) {
     if (!node) return;
     if (node->type == AST_CASE_SECTION) {
         if (ctx->count >= MAX_SWITCH_LABELS) {
-            fprintf(stderr, "error: too many case/default labels in switch (max %d)\n",
+            compile_error( "error: too many case/default labels in switch (max %d)\n",
                     MAX_SWITCH_LABELS);
-            exit(1);
         }
         ctx->nodes[ctx->count] = node;
         ctx->labels[ctx->count] = cg->label_count++;
@@ -339,9 +325,8 @@ static void collect_switch_labels(CodeGen *cg, ASTNode *node, SwitchCtx *ctx) {
     }
     if (node->type == AST_DEFAULT_SECTION) {
         if (ctx->count >= MAX_SWITCH_LABELS) {
-            fprintf(stderr, "error: too many case/default labels in switch (max %d)\n",
+            compile_error( "error: too many case/default labels in switch (max %d)\n",
                     MAX_SWITCH_LABELS);
-            exit(1);
         }
         int lbl = cg->label_count++;
         ctx->nodes[ctx->count] = node;
@@ -520,14 +505,12 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     if (base_node->type == AST_DEREF) {
         ASTNode *inner = base_node->children[0];
         if (inner->type != AST_VAR_REF) {
-            fprintf(stderr, "error: subscript base must be an identifier\n");
-            exit(1);
+            compile_error( "error: subscript base must be an identifier\n");
         }
         LocalVar *plv = codegen_find_var(cg, inner->value);
         if (!plv || plv->kind != TYPE_POINTER || !plv->full_type ||
             !plv->full_type->base || plv->full_type->base->kind != TYPE_ARRAY) {
-            fprintf(stderr, "error: subscript base must be a pointer to array\n");
-            exit(1);
+            compile_error( "error: subscript base must be a pointer to array\n");
         }
         fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
         Type *element = plv->full_type->base->base;
@@ -537,8 +520,7 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, index_node);
         TypeKind index_kind = index_node->result_type;
         if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
-            fprintf(stderr, "error: array subscript index must be an integer\n");
-            exit(1);
+            compile_error( "error: array subscript index must be an integer\n");
         }
         if (index_kind != TYPE_LONG) {
             fprintf(cg->output, "    movsxd rax, eax\n");
@@ -558,13 +540,11 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     if (base_node->type == AST_ARRAY_INDEX) {
         Type *inner_element = emit_array_index_addr(cg, base_node);
         if (inner_element->kind != TYPE_POINTER) {
-            fprintf(stderr, "error: subscript base is not a pointer or array\n");
-            exit(1);
+            compile_error( "error: subscript base is not a pointer or array\n");
         }
         Type *element = inner_element->base;
         if (element->kind == TYPE_VOID) {
-            fprintf(stderr, "error: cannot subscript void pointer\n");
-            exit(1);
+            compile_error( "error: cannot subscript void pointer\n");
         }
         fprintf(cg->output, "    mov rax, [rax]\n");
         int elem_size = type_size(element);
@@ -573,8 +553,7 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, index_node);
         TypeKind index_kind = index_node->result_type;
         if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
-            fprintf(stderr, "error: array subscript index must be an integer\n");
-            exit(1);
+            compile_error( "error: array subscript index must be an integer\n");
         }
         if (index_kind != TYPE_LONG) {
             fprintf(cg->output, "    movsxd rax, eax\n");
@@ -588,14 +567,12 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         return element;
     }
     if (base_node->type != AST_VAR_REF) {
-        fprintf(stderr, "error: subscript base must be an identifier\n");
-        exit(1);
+        compile_error( "error: subscript base must be an identifier\n");
     }
     LocalVar *lv = codegen_find_var(cg, base_node->value);
     GlobalVar *gv = lv ? NULL : codegen_find_global(cg, base_node->value);
     if (!lv && !gv) {
-        fprintf(stderr, "error: undeclared variable '%s'\n", base_node->value);
-        exit(1);
+        compile_error( "error: undeclared variable '%s'\n", base_node->value);
     }
     Type *element;
     if (lv) {
@@ -606,17 +583,15 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
             element = lv->full_type->base;
             /* Stage 38: subscript on void * is not allowed. */
             if (element && element->kind == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot subscript void pointer '%s'\n",
                         base_node->value);
-                exit(1);
             }
             fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
         } else {
-            fprintf(stderr,
+            compile_error(
                     "error: subscript base '%s' is not an array or pointer\n",
                     base_node->value);
-            exit(1);
         }
     } else {
         if (gv->kind == TYPE_ARRAY) {
@@ -626,17 +601,15 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
             element = gv->full_type->base;
             /* Stage 38: subscript on void * is not allowed. */
             if (element && element->kind == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot subscript void pointer '%s'\n",
                         base_node->value);
-                exit(1);
             }
             fprintf(cg->output, "    mov rax, [rel %s]\n", gv->name);
         } else {
-            fprintf(stderr,
+            compile_error(
                     "error: subscript base '%s' is not an array or pointer\n",
                     base_node->value);
-            exit(1);
         }
     }
     int elem_size = type_size(element);
@@ -646,8 +619,7 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     codegen_expression(cg, index_node);
     TypeKind index_kind = index_node->result_type;
     if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
-        fprintf(stderr, "error: array subscript index must be an integer\n");
-        exit(1);
+        compile_error( "error: array subscript index must be an integer\n");
     }
     if (index_kind != TYPE_LONG) {
         fprintf(cg->output, "    movsxd rax, eax\n");
@@ -690,26 +662,22 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     if (base->type == AST_DEREF) {
         ASTNode *ptr_expr = base->children[0];
         if (ptr_expr->type != AST_VAR_REF) {
-            fprintf(stderr, "error: '.' via dereference: pointer must be an identifier\n");
-            exit(1);
+            compile_error( "error: '.' via dereference: pointer must be an identifier\n");
         }
         LocalVar *plv = codegen_find_var(cg, ptr_expr->value);
         if (!plv) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", ptr_expr->value);
-            exit(1);
+            compile_error( "error: undeclared variable '%s'\n", ptr_expr->value);
         }
         if (plv->kind != TYPE_POINTER || !plv->full_type ||
             !plv->full_type->base || plv->full_type->base->kind != TYPE_STRUCT) {
-            fprintf(stderr,
+            compile_error(
                     "error: '.' via dereference: '%s' is not a pointer to struct\n",
                     ptr_expr->value);
-            exit(1);
         }
         Type *st = plv->full_type->base;
         StructField *f = find_struct_field(st, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
         if (f->offset != 0)
@@ -721,14 +689,12 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     if (base->type == AST_MEMBER_ACCESS) {
         StructField *inner_f = emit_member_addr(cg, base);
         if (inner_f->kind != TYPE_STRUCT || !inner_f->full_type) {
-            fprintf(stderr, "error: '.' applied to non-struct member '%s'\n",
+            compile_error( "error: '.' applied to non-struct member '%s'\n",
                     base->value);
-            exit(1);
         }
         StructField *f = find_struct_field(inner_f->full_type, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -739,13 +705,11 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     if (base->type == AST_ARRAY_INDEX) {
         Type *element = emit_array_index_addr(cg, base);
         if (element->kind != TYPE_STRUCT) {
-            fprintf(stderr, "error: '.' applied to non-struct array element\n");
-            exit(1);
+            compile_error( "error: '.' applied to non-struct array element\n");
         }
         StructField *f = find_struct_field(element, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -753,19 +717,16 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     }
 
     if (base->type != AST_VAR_REF) {
-        fprintf(stderr, "error: '.' base must be an identifier\n");
-        exit(1);
+        compile_error( "error: '.' base must be an identifier\n");
     }
     LocalVar *lv = codegen_find_var(cg, base->value);
     if (lv) {
         if (lv->kind != TYPE_STRUCT || !lv->full_type) {
-            fprintf(stderr, "error: '.' applied to non-struct '%s'\n", base->value);
-            exit(1);
+            compile_error( "error: '.' applied to non-struct '%s'\n", base->value);
         }
         StructField *f = find_struct_field(lv->full_type, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset - f->offset);
         return f;
@@ -773,17 +734,14 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     /* Stage 44: fall back to global struct variable. */
     GlobalVar *gv = codegen_find_global(cg, base->value);
     if (!gv) {
-        fprintf(stderr, "error: undeclared variable '%s'\n", base->value);
-        exit(1);
+        compile_error( "error: undeclared variable '%s'\n", base->value);
     }
     if (gv->kind != TYPE_STRUCT || !gv->full_type) {
-        fprintf(stderr, "error: '.' applied to non-struct '%s'\n", base->value);
-        exit(1);
+        compile_error( "error: '.' applied to non-struct '%s'\n", base->value);
     }
     StructField *f = find_struct_field(gv->full_type, field_name);
     if (!f) {
-        fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-        exit(1);
+        compile_error( "error: struct has no member '%s'\n", field_name);
     }
     if (f->offset != 0)
         fprintf(cg->output, "    lea rax, [rel %s + %d]\n", gv->name, f->offset);
@@ -807,14 +765,12 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         StructField *inner = emit_member_addr(cg, base);
         if (inner->kind != TYPE_POINTER || !inner->full_type ||
             !inner->full_type->base || inner->full_type->base->kind != TYPE_STRUCT) {
-            fprintf(stderr, "error: '->' applied to non-pointer-to-struct\n");
-            exit(1);
+            compile_error( "error: '->' applied to non-pointer-to-struct\n");
         }
         Type *st = inner->full_type->base;
         StructField *f = find_struct_field(st, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         fprintf(cg->output, "    mov rax, [rax]\n");
         if (f->offset != 0)
@@ -828,13 +784,11 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         Type *ptr_type = base->full_type;
         if (!ptr_type || ptr_type->kind != TYPE_POINTER ||
             !ptr_type->base || ptr_type->base->kind != TYPE_STRUCT) {
-            fprintf(stderr, "error: '->' applied to non-pointer-to-struct\n");
-            exit(1);
+            compile_error( "error: '->' applied to non-pointer-to-struct\n");
         }
         StructField *f = find_struct_field(ptr_type->base, field_name);
         if (!f) {
-            fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-            exit(1);
+            compile_error( "error: struct has no member '%s'\n", field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -842,21 +796,18 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
     }
     LocalVar *lv = codegen_find_var(cg, base->value);
     if (!lv) {
-        fprintf(stderr, "error: undeclared variable '%s'\n", base->value);
-        exit(1);
+        compile_error( "error: undeclared variable '%s'\n", base->value);
     }
     if (lv->kind != TYPE_POINTER || !lv->full_type ||
         !lv->full_type->base || lv->full_type->base->kind != TYPE_STRUCT) {
-        fprintf(stderr,
+        compile_error(
                 "error: '->' applied to non-pointer-to-struct '%s'\n",
                 base->value);
-        exit(1);
     }
     Type *st = lv->full_type->base;
     StructField *f = find_struct_field(st, field_name);
     if (!f) {
-        fprintf(stderr, "error: struct has no member '%s'\n", field_name);
-        exit(1);
+        compile_error( "error: struct has no member '%s'\n", field_name);
     }
     fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
     if (f->offset != 0)
@@ -1320,10 +1271,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * `strlen(node->value)` since `full_type` no longer carries
          * the array length. */
         if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-            fprintf(stderr,
+            compile_error(
                     "error: too many string literals (max %d)\n",
                     MAX_STRING_LITERALS);
-            exit(1);
         }
         int idx = cg->string_pool_count;
         cg->string_pool[idx] = node;
@@ -1370,8 +1320,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = build_func_designator_type(func_decl);
                 return;
             }
-            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
-            exit(1);
+            compile_error( "error: undeclared variable '%s'\n", node->value);
         }
         if (gv->kind == TYPE_ARRAY) {
             fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
@@ -1406,16 +1355,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 int rhs_is_null = is_null_pointer_constant(node->children[1]);
                 TypeKind rhs_kind = node->children[1]->result_type;
                 if (!rhs_is_null && rhs_kind != TYPE_POINTER) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: assigning nonzero integer to pointer\n");
-                    exit(1);
                 }
                 if (!rhs_is_null && rhs_kind == TYPE_POINTER &&
                     !pointer_types_assignable(element,
                                               node->children[1]->full_type)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: incompatible pointer type in array element assignment\n");
-                    exit(1);
                 }
             }
             emit_convert(cg, node->children[1]->result_type, element->kind);
@@ -1510,15 +1457,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             codegen_expression(cg, deref->children[0]);
             Type *operand_type = deref->children[0]->full_type;
             if (!operand_type || operand_type->kind != TYPE_POINTER) {
-                fprintf(stderr, "error: cannot dereference non-pointer value\n");
-                exit(1);
+                compile_error( "error: cannot dereference non-pointer value\n");
             }
             Type *base = operand_type->base;
             /* Stage 66: reject assignment through a pointer-to-const type. */
             if (base && base->is_const) {
-                fprintf(stderr,
+                compile_error(
                         "error: assignment through pointer to const-qualified type\n");
-                exit(1);
             }
             int sz = type_size(base);
             fprintf(cg->output, "    push rax\n");
@@ -1544,29 +1489,24 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (lv) {
             /* Stage 13-01: arrays are not assignable. */
             if (lv->kind == TYPE_ARRAY) {
-                fprintf(stderr, "error: arrays are not assignable\n");
-                exit(1);
+                compile_error( "error: arrays are not assignable\n");
             }
             /* Stage 39: reject assignment to a const-qualified variable. */
             if (lv->is_const) {
-                fprintf(stderr,
+                compile_error(
                         "error: assignment to const variable '%s'\n", lv->name);
-                exit(1);
             }
             /* Stage 33: struct-to-struct assignment — byte copy of sizeof(T) bytes. */
             if (lv->kind == TYPE_STRUCT && lv->full_type) {
                 if (node->child_count < 1 || node->children[0]->type != AST_VAR_REF) {
-                    fprintf(stderr, "error: struct assignment requires a struct variable\n");
-                    exit(1);
+                    compile_error( "error: struct assignment requires a struct variable\n");
                 }
                 LocalVar *src = codegen_find_var(cg, node->children[0]->value);
                 if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
-                    fprintf(stderr, "error: cannot assign non-struct to struct '%s'\n", lv->name);
-                    exit(1);
+                    compile_error( "error: cannot assign non-struct to struct '%s'\n", lv->name);
                 }
                 if (src->full_type != lv->full_type) {
-                    fprintf(stderr, "error: incompatible struct types in assignment to '%s'\n", lv->name);
-                    exit(1);
+                    compile_error( "error: incompatible struct types in assignment to '%s'\n", lv->name);
                 }
                 int sz = lv->full_type->size;
                 for (int b = 0; b < sz; b++) {
@@ -1580,10 +1520,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             /* Stage 38: reject assigning a void function call result. */
             if (node->children[0]->type == AST_FUNCTION_CALL &&
                 node->children[0]->decl_type == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot use void function result in assignment to '%s'\n",
                         lv->name);
-                exit(1);
             }
             codegen_expression(cg, node->children[0]);
             /* Stage 25-02: when the LHS is a function pointer, verify
@@ -1594,10 +1533,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 if (!rhs_type || rhs_type->kind != TYPE_POINTER || !rhs_type->base ||
                     rhs_type->base->kind != TYPE_FUNCTION ||
                     !func_ptr_types_equal_cg(lv->full_type, rhs_type)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: incompatible function pointer type in assignment to '%s'\n",
                             lv->name);
-                    exit(1);
                 }
             }
             /* Stage 66: warn when assigning a const-pointee pointer to a
@@ -1629,26 +1567,22 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Stage 22-01: fall back to global table. */
         GlobalVar *gv = codegen_find_global(cg, node->value);
         if (!gv) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", node->value);
-            exit(1);
+            compile_error( "error: undeclared variable '%s'\n", node->value);
         }
         if (gv->kind == TYPE_ARRAY) {
-            fprintf(stderr, "error: arrays are not assignable\n");
-            exit(1);
+            compile_error( "error: arrays are not assignable\n");
         }
         /* Stage 39: reject assignment to a const-qualified global. */
         if (gv->is_const) {
-            fprintf(stderr,
+            compile_error(
                     "error: assignment to const variable '%s'\n", gv->name);
-            exit(1);
         }
         /* Stage 38: reject assigning a void function call result. */
         if (node->children[0]->type == AST_FUNCTION_CALL &&
             node->children[0]->decl_type == TYPE_VOID) {
-            fprintf(stderr,
+            compile_error(
                     "error: cannot use void function result in assignment to '%s'\n",
                     gv->name);
-            exit(1);
         }
         codegen_expression(cg, node->children[0]);
         /* Stage 25-02: same function pointer type check for global LHS. */
@@ -1658,10 +1592,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             if (!rhs_type || rhs_type->kind != TYPE_POINTER || !rhs_type->base ||
                 rhs_type->base->kind != TYPE_FUNCTION ||
                 !func_ptr_types_equal_cg(gv->full_type, rhs_type)) {
-                fprintf(stderr,
+                compile_error(
                         "error: incompatible function pointer type in assignment to '%s'\n",
                         gv->name);
-                exit(1);
             }
         }
         /* Stage 66: warn when global pointer assignment discards const. */
@@ -1710,8 +1643,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         GlobalVar *gv = codegen_find_global(cg, operand->value);
         if (!gv) {
-            fprintf(stderr, "error: undeclared variable '%s'\n", operand->value);
-            exit(1);
+            compile_error( "error: undeclared variable '%s'\n", operand->value);
         }
         fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
         node->result_type = TYPE_POINTER;
@@ -1725,14 +1657,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, node->children[0]);
         Type *operand_type = node->children[0]->full_type;
         if (!operand_type || operand_type->kind != TYPE_POINTER) {
-            fprintf(stderr, "error: cannot dereference non-pointer value\n");
-            exit(1);
+            compile_error( "error: cannot dereference non-pointer value\n");
         }
         Type *base = operand_type->base;
         /* Stage 38: reject dereferencing a void pointer. */
         if (base->kind == TYPE_VOID) {
-            fprintf(stderr, "error: cannot dereference void pointer\n");
-            exit(1);
+            compile_error( "error: cannot dereference void pointer\n");
         }
         /* Stage 25-03: dereferencing a function pointer is an identity —
          * the address already in rax is the callable value; no memory
@@ -1834,8 +1764,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         int sz;
         if (node->decl_type == TYPE_STRUCT && node->full_type) {
             if (node->full_type->size == 0) {
-                fprintf(stderr, "error: sizeof applied to incomplete struct type\n");
-                exit(1);
+                compile_error( "error: sizeof applied to incomplete struct type\n");
             }
             sz = node->full_type->size;
         } else {
@@ -1910,9 +1839,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->result_type = ot;
         } else if (strcmp(op, "!") == 0) {
             if (node->children[0]->result_type == TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: operator '!' not supported on pointer operands\n");
-                exit(1);
             }
             if (node->children[0]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
@@ -1924,9 +1852,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->result_type = TYPE_INT;
         } else if (strcmp(op, "~") == 0) {
             if (node->children[0]->result_type == TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: operator '~' not supported on pointer operands\n");
-                exit(1);
             }
             TypeKind ot = promote_kind(node->children[0]->result_type);
             if (ot == TYPE_LONG) {
@@ -1970,8 +1897,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else {
             GlobalVar *gv = codegen_find_global(cg, var_name);
             if (!gv) {
-                fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
-                exit(1);
+                compile_error( "error: undeclared variable '%s'\n", var_name);
             }
             emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
             if (gv->kind == TYPE_POINTER && gv->full_type) {
@@ -2029,8 +1955,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else {
             GlobalVar *gv = codegen_find_global(cg, var_name);
             if (!gv) {
-                fprintf(stderr, "error: undeclared variable '%s'\n", var_name);
-                exit(1);
+                compile_error( "error: undeclared variable '%s'\n", var_name);
             }
             emit_load_global(cg, gv->name, gv->size, gv->is_unsigned);
             if (gv->kind == TYPE_POINTER && gv->full_type) {
@@ -2086,22 +2011,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         TypeKind _dst = _p->decl_type; \
         if (_dst == TYPE_POINTER || _src == TYPE_POINTER) { \
             if (_dst != TYPE_POINTER) { \
-                fprintf(stderr, \
+                compile_error( \
                         "error: function '%s' parameter '%s' expected integer argument, got pointer\n", \
                         (call_node)->value, _p->value); \
-                exit(1); \
             } \
             if (_src != TYPE_POINTER) { \
-                fprintf(stderr, \
+                compile_error( \
                         "error: function '%s' parameter '%s' expected pointer argument, got integer\n", \
                         (call_node)->value, _p->value); \
-                exit(1); \
             } \
             if (!pointer_types_assignable(_p->full_type, (call_node)->children[(i)]->full_type)) { \
-                fprintf(stderr, \
+                compile_error( \
                         "error: function '%s' parameter '%s' has incompatible pointer type\n", \
                         (call_node)->value, _p->value); \
-                exit(1); \
             } \
         } else { \
             emit_convert(cg, _src, _dst); \
@@ -2192,9 +2114,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             LocalVar *clv = codegen_find_var(cg, callee_name);
             GlobalVar *cgv = clv ? NULL : codegen_find_global(cg, callee_name);
             if (!clv && !cgv) {
-                fprintf(stderr, "error: call to undefined function '%s'\n",
+                compile_error( "error: call to undefined function '%s'\n",
                         callee_name);
-                exit(1);
             }
         }
         /* Evaluate callee first so we can validate its type, then save
@@ -2204,15 +2125,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             !node->children[0]->full_type ||
             !node->children[0]->full_type->base ||
             node->children[0]->full_type->base->kind != TYPE_FUNCTION) {
-            fprintf(stderr, "error: expression is not callable\n");
-            exit(1);
+            compile_error( "error: expression is not callable\n");
         }
         Type *fn = node->children[0]->full_type->base; /* TYPE_FUNCTION node */
         if (fn->param_count != nargs) {
-            fprintf(stderr,
+            compile_error(
                     "error: indirect call expects %d arguments, got %d\n",
                     fn->param_count, nargs);
-            exit(1);
         }
         /* Save callee address below the arguments. */
         fprintf(cg->output, "    push rax\n");
@@ -2224,16 +2143,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     TypeKind _dst = (fn_type)->params[(i)]->kind; \
     if (_dst == TYPE_POINTER || _src == TYPE_POINTER) { \
         if (_dst != TYPE_POINTER) { \
-            fprintf(stderr, \
+            compile_error( \
                     "error: indirect call argument %d: expected integer, got pointer\n", \
                     (i) + 1); \
-            exit(1); \
         } \
         if (_src != TYPE_POINTER) { \
-            fprintf(stderr, \
+            compile_error( \
                     "error: indirect call argument %d: expected pointer, got integer\n", \
                     (i) + 1); \
-            exit(1); \
         } \
     } else { \
         emit_convert(cg, _src, _dst); \
@@ -2376,10 +2293,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: operator '%s' not supported on pointer operands\n",
                         bw);
-                exit(1);
             }
             TypeKind common = common_arith_kind(lt, rt);
             codegen_expression(cg, node->children[0]);
@@ -2415,10 +2331,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: operator '%s' not supported on pointer operands\n",
                         sop);
-                exit(1);
             }
             codegen_expression(cg, node->children[0]);
             fprintf(cg->output, "    push rax\n");
@@ -2483,9 +2398,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     common = TYPE_LONG;
                 } else if (strcmp(op, "+") == 0) {
                     if (lt == TYPE_POINTER && rt == TYPE_POINTER) {
-                        fprintf(stderr,
+                        compile_error(
                                 "error: cannot add two pointers\n");
-                        exit(1);
                     }
                     is_pointer_arith = 1;
                     common = TYPE_LONG;
@@ -2496,18 +2410,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         common = TYPE_LONG;
                     } else {
                         if (rt == TYPE_POINTER) {
-                            fprintf(stderr,
+                            compile_error(
                                     "error: cannot subtract pointer from integer\n");
-                            exit(1);
                         }
                         is_pointer_arith = 1;
                         common = TYPE_LONG;
                     }
                 } else {
-                    fprintf(stderr,
+                    compile_error(
                             "error: operator '%s' not supported on pointer operands\n",
                             op);
-                    exit(1);
                 }
             } else {
                 common = common_arith_kind(lt, rt);
@@ -2549,21 +2461,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             int rhs_ptr = (rhs->result_type == TYPE_POINTER);
             if (lhs_ptr && rhs_ptr) {
                 if (!pointer_types_equal(lhs->full_type, rhs->full_type)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: incompatible pointer types in comparison\n");
-                    exit(1);
                 }
             } else if (lhs_ptr && !rhs_ptr) {
                 if (!is_null_pointer_constant(rhs)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: comparing pointer with non zero integer\n");
-                    exit(1);
                 }
             } else if (!lhs_ptr && rhs_ptr) {
                 if (!is_null_pointer_constant(lhs)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: comparing pointer with non zero integer\n");
-                    exit(1);
                 }
             }
         }
@@ -2580,21 +2489,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             Type *ptr_type = lhs_is_ptr ? node->children[0]->full_type
                                         : node->children[1]->full_type;
             if (!ptr_type || ptr_type->kind != TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: pointer arithmetic missing pointer type\n");
-                exit(1);
             }
             /* Stage 38: pointer arithmetic on void * is not allowed. */
             if (ptr_type->base && ptr_type->base->kind == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot perform pointer arithmetic on void pointer\n");
-                exit(1);
             }
             /* Stage 41: pointer arithmetic on function pointers is not allowed. */
             if (ptr_type->base && ptr_type->base->kind == TYPE_FUNCTION) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot perform pointer arithmetic on function pointer\n");
-                exit(1);
             }
             int elem_size = type_size(ptr_type->base);
             if (lhs_is_ptr) {
@@ -2630,26 +2536,22 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             Type *rptr = node->children[1]->full_type;
             if (!lptr || lptr->kind != TYPE_POINTER ||
                 !rptr || rptr->kind != TYPE_POINTER) {
-                fprintf(stderr,
+                compile_error(
                         "error: pointer subtraction missing pointer type\n");
-                exit(1);
             }
             if ((lptr->base && lptr->base->kind == TYPE_VOID) ||
                 (rptr->base && rptr->base->kind == TYPE_VOID)) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot perform pointer arithmetic on void pointer\n");
-                exit(1);
             }
             if ((lptr->base && lptr->base->kind == TYPE_FUNCTION) ||
                 (rptr->base && rptr->base->kind == TYPE_FUNCTION)) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot perform pointer arithmetic on function pointer\n");
-                exit(1);
             }
             if (!pointer_types_equal(lptr, rptr)) {
-                fprintf(stderr,
+                compile_error(
                         "error: incompatible pointer types in subtraction\n");
-                exit(1);
             }
             int elem_size = type_size(lptr->base);
             /* rcx = p1, rax = p2; compute p1 - p2 in bytes then divide. */
@@ -2805,9 +2707,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
 
         if (tk == TYPE_POINTER && fk == TYPE_POINTER) {
             if (!pointer_types_equal(true_node->full_type, false_node->full_type)) {
-                fprintf(stderr,
+                compile_error(
                         "error: conditional operator has incompatible pointer types\n");
-                exit(1);
             }
             node->result_type = TYPE_POINTER;
             node->full_type   = true_node->full_type;
@@ -2854,8 +2755,7 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
                                    ASTNode *list) {
     int ninit = list ? list->child_count : 0;
     if (ninit > st->field_count) {
-        fprintf(stderr, "error: too many initializers for struct\n");
-        exit(1);
+        compile_error( "error: too many initializers for struct\n");
     }
     for (int i = 0; i < ninit; i++) {
         StructField *f = &st->fields[i];
@@ -2872,19 +2772,17 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
             codegen_expression(cg, elem);
             if (elem->result_type != TYPE_POINTER &&
                 !is_null_pointer_constant(elem)) {
-                fprintf(stderr,
+                compile_error(
                         "error: incompatible field initializer for pointer field '%s'\n",
                         f->name);
-                exit(1);
             }
             emit_store_local(cg, foffset, fsize, 1);
         } else {
             /* Scalar field: string literals are not valid for non-pointer fields. */
             if (elem->type == AST_STRING_LITERAL) {
-                fprintf(stderr,
+                compile_error(
                         "error: incompatible field initializer for field '%s'\n",
                         f->name);
-                exit(1);
             }
             codegen_expression(cg, elem);
             int src_is_long = (elem->result_type == TYPE_LONG ||
@@ -2899,8 +2797,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         /* Duplicate check limited to the current scope only — shadowing is allowed. */
         for (int i = cg->scope_start; i < cg->local_count; i++) {
             if (strcmp(cg->locals[i].name, node->value) == 0) {
-                fprintf(stderr, "error: duplicate declaration of variable '%s'\n", node->value);
-                exit(1);
+                compile_error( "error: duplicate declaration of variable '%s'\n", node->value);
             }
         }
         /* Stage 13-01: array locals get sized from the array Type
@@ -2916,10 +2813,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         if (node->decl_type == TYPE_STRUCT && node->full_type) {
             /* Stage 30/32: struct local. Stage 32 adds brace-initializer support. */
             if (node->full_type->size == 0) {
-                fprintf(stderr,
+                compile_error(
                         "error: variable '%s' has incomplete struct type\n",
                         node->value);
-                exit(1);
             }
             int size = node->full_type->size;
             int align = node->full_type->alignment;
@@ -2939,17 +2835,14 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 /* Stage 33: struct T d = c — copy from another struct variable. */
                 ASTNode *init = node->children[0];
                 if (init->type != AST_VAR_REF) {
-                    fprintf(stderr, "error: struct initializer must be a struct variable\n");
-                    exit(1);
+                    compile_error( "error: struct initializer must be a struct variable\n");
                 }
                 LocalVar *src = codegen_find_var(cg, init->value);
                 if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
-                    fprintf(stderr, "error: struct initializer must be a struct variable\n");
-                    exit(1);
+                    compile_error( "error: struct initializer must be a struct variable\n");
                 }
                 if (src->full_type != node->full_type) {
-                    fprintf(stderr, "error: incompatible struct types in initializer for '%s'\n", node->value);
-                    exit(1);
+                    compile_error( "error: incompatible struct types in initializer for '%s'\n", node->value);
                 }
                 for (int b = 0; b < size; b++) {
                     fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
@@ -2973,10 +2866,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                  * Stage 44: struct elements handled via emit_local_struct_init. */
                 ASTNode *list = node->children[0];
                 if (list->child_count > length) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: too many initializers for array '%s'\n",
                             node->value);
-                    exit(1);
                 }
                 Type *elem_type = node->full_type->base;
                 for (int i = 0; i < length; i++) {
@@ -3041,23 +2933,20 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             if (!rhs_is_null_ptr &&
                 (node->decl_type == TYPE_POINTER || init_kind == TYPE_POINTER)) {
                 if (node->decl_type != TYPE_POINTER) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: variable '%s' assigning pointer to non pointer\n",
                             node->value);
-                    exit(1);
                 }
                 if (init_kind != TYPE_POINTER) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: variable '%s' assigning non pointer to pointer\n",
                             node->value);
-                    exit(1);
                 }
                 if (!pointer_types_assignable(node->full_type,
                                               node->children[0]->full_type)) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: variable '%s' incompatible pointer type in initializer\n",
                             node->value);
-                    exit(1);
                 }
                 /* Stage 66: warn when initializer discards const qualifier. */
                 if (node->full_type && node->full_type->base &&
@@ -3090,10 +2979,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         if (node->child_count == 0) {
             /* bare return; — only valid in void functions */
             if (cg->current_return_type != TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: empty return statement in non-void function '%s'\n",
                         cg->current_func);
-                exit(1);
             }
             if (cg->has_frame) {
                 fprintf(cg->output, "    mov rsp, rbp\n");
@@ -3103,17 +2991,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         } else {
             /* return with expression */
             if (cg->current_return_type == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: void function '%s' cannot return a value\n",
                         cg->current_func);
-                exit(1);
             }
             /* Reject using a void function call result as a return value. */
             if (node->children[0]->type == AST_FUNCTION_CALL &&
                 node->children[0]->decl_type == TYPE_VOID) {
-                fprintf(stderr,
+                compile_error(
                         "error: cannot use void function result as return value\n");
-                exit(1);
             }
             /* Stage 12-06: a return of the literal `0` from a pointer
              * function is a null pointer constant; accept it before the
@@ -3132,16 +3018,14 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 /* null pointer constant: no conversion needed */
             } else if (dst_kind == TYPE_POINTER || src_kind == TYPE_POINTER) {
                 if (dst_kind != TYPE_POINTER) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: function '%s' returning pointer from non pointer function\n",
                             cg->current_func);
-                    exit(1);
                 }
                 if (src_kind != TYPE_POINTER) {
-                    fprintf(stderr,
+                    compile_error(
                             "error: function '%s' returning non pointer; expected pointer\n",
                             cg->current_func);
-                    exit(1);
                 }
                 /* Stage 38: void* return is compatible with any object pointer return type,
                  * and any object pointer is compatible with a void* return type. */
@@ -3151,10 +3035,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                                               node->children[0]->full_type)) {
                     if (!pointer_types_equal(node->children[0]->full_type,
                                              cg->current_return_full_type)) {
-                        fprintf(stderr,
+                        compile_error(
                                 "error: function '%s' returning incorrect pointer type\n",
                                 cg->current_func);
-                        exit(1);
                     }
                 }
             } else {
@@ -3259,9 +3142,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * pre-assigned label via the innermost SwitchCtx. `break`
          * targets the switch-end label. */
         if (cg->switch_depth >= MAX_SWITCH_DEPTH) {
-            fprintf(stderr, "error: switch nesting exceeds max depth %d\n",
+            compile_error( "error: switch nesting exceeds max depth %d\n",
                     MAX_SWITCH_DEPTH);
-            exit(1);
         }
         int label_id = cg->label_count++;
         SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth];
@@ -3330,9 +3212,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
     } else if (node->type == AST_GOTO_STATEMENT) {
         if (!user_label_defined(cg, node->value)) {
-            fprintf(stderr, "error: undefined label '%s' in function '%s'\n",
+            compile_error( "error: undefined label '%s' in function '%s'\n",
                     node->value, cg->current_func);
-            exit(1);
         }
         fprintf(cg->output, "    jmp .L_usr_%s_%s\n",
                 cg->current_func, node->value);
@@ -3631,8 +3512,7 @@ static const char *bss_res_directive(TypeKind kind) {
  */
 static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     if (cg->global_count >= MAX_GLOBALS) {
-        fprintf(stderr, "error: too many global variables (max %d)\n", MAX_GLOBALS);
-        exit(1);
+        compile_error( "error: too many global variables (max %d)\n", MAX_GLOBALS);
     }
     GlobalVar *gv = &cg->globals[cg->global_count];
     strncpy(gv->name, decl->value, 255);
@@ -3679,9 +3559,8 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
              * literal.  Add the literal to the string pool now so its label
              * is assigned before codegen_emit_data runs. */
             if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                fprintf(stderr, "error: too many string literals (max %d)\n",
+                compile_error( "error: too many string literals (max %d)\n",
                         MAX_STRING_LITERALS);
-                exit(1);
             }
             int idx = cg->string_pool_count;
             cg->string_pool[idx] = init;
@@ -3745,9 +3624,8 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
             } else if (f->kind == TYPE_POINTER &&
                        elem->type == AST_STRING_LITERAL) {
                 if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                    fprintf(stderr, "error: too many string literals (max %d)\n",
+                    compile_error( "error: too many string literals (max %d)\n",
                             MAX_STRING_LITERALS);
-                    exit(1);
                 }
                 int idx = cg->string_pool_count;
                 cg->string_pool[idx] = elem;
@@ -3762,10 +3640,9 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
                 fprintf(cg->output, "    %s %ld\n",
                         data_init_directive(f->kind), v);
             } else {
-                fprintf(stderr,
+                compile_error(
                         "error: unsupported initializer for struct field '%s'\n",
                         f->name);
-                exit(1);
             }
         } else {
             /* Zero-fill missing trailing fields. */
@@ -3837,9 +3714,8 @@ static void codegen_emit_data(CodeGen *cg) {
                     } else if (elem->type == AST_STRING_LITERAL) {
                         /* char *names[] element — add to pool, emit dq Lstr<N>. */
                         if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                            fprintf(stderr, "error: too many string literals (max %d)\n",
+                            compile_error( "error: too many string literals (max %d)\n",
                                     MAX_STRING_LITERALS);
-                            exit(1);
                         }
                         int idx = cg->string_pool_count;
                         cg->string_pool[idx] = elem;
@@ -3852,10 +3728,9 @@ static void codegen_emit_data(CodeGen *cg) {
                         long v = (long)(unsigned char)elem->value[0];
                         fprintf(cg->output, "    %s %ld\n", dir, v);
                     } else {
-                        fprintf(stderr,
+                        compile_error(
                                 "error: unsupported initializer element type in '%s'\n",
                                 gv->name);
-                        exit(1);
                     }
                 } else {
                     /* Zero-fill trailing elements. */

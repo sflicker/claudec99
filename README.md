@@ -43,13 +43,16 @@ This produces `build/ccompiler`.
 ## Usage
 
 ```
-ccompiler [--print-ast | --print-tokens] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>
+ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>
 ```
 
 - Default: writes `<name>.asm` next to the invocation directory and
   prints `compiled: <source> -> <name>.asm`.
+- `--version`: prints the compiler version string and exits.
 - `--print-tokens`: dumps the token stream and exits.
 - `--print-ast`: dumps the AST and exits.
+- `--max-errors=N`: stop after N compilation errors; `0` collects all errors
+  through end of file (default: `1`).
 - `--sysroot=<dir>`: sets a virtual filesystem root. Every `-I` path
   that begins with `/` is rewritten to `<dir><path>` before include
   search begins. Relative `-I` paths are left unchanged. Trailing
@@ -84,12 +87,14 @@ bin/cc99 [options] file.c [file2.c ...]
 
 | Option | Effect |
 |--------|--------|
+| `--version` | Print compiler version and exit |
 | `-o <file>` | Output file name (default: `a.out`) |
 | `-c` | Compile and assemble only; produce `.o` per source file |
 | `-S` | Compile only; produce `.asm` per source file |
 | `-D NAME[=VAL]` | Preprocessor define (passed to `ccompiler`) |
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
+| `--max-errors=N` | Stop after N errors; `0` = unlimited (passed to `ccompiler`) |
 | `-l <lib>` / `-llib` | Link with library (passed to `gcc`) |
 | `-L <dir>` / `-Ldir` | Library search path (passed to `gcc`) |
 
@@ -136,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 70 (mini-compiler-shaped integration test):
+Through stage 70.01 (versioning and max-errors tooling):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -394,7 +399,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 70 all tests pass (705 valid, 212 invalid, 66 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1142 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 70.01 all tests pass (705 valid, 212 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1143 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
