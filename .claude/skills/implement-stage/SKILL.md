@@ -60,6 +60,7 @@ Implementation Rules:
 * If the spec is ambiguous, inconsistent, or contains grammar errors, stop and point them out before implementing.
 * Add tests listed in the spec if a similar test is not already present.
 * Additional tests may be added to fill test coverage gaps.
+* Update the src/version.c code module to contain the current stage. See the section on version.c below for the formatting rules.
 
 Output Requirements:
 
@@ -101,3 +102,14 @@ README.md
 * Do not rewrite unrelated sections.
 * Do not add implementation-level detail that belongs in the milestone or transcript.
 * If the stage does not change user-visible capabilities, say that no README update is needed.
+
+version.c
+* update the stage number in `version.c`.
+    * The stage number is a 8 digit number
+    * The first four digits are the stage number.
+    * The next two are the substage number.
+    * The next two are the sub-substage number.
+    * Given a stage number like 70.03.0
+    * The stage number would be 00700300
+    * the `#define VERSION_STAGE  "00700100"` object macro in the version.c code module should be 
+      updated during the stage implementation following the above rules.
