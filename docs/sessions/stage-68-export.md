@@ -861,3 +861,41 @@ docs/stages/ClaudeC99-spec-stage-68-support-more-than-6-arguments.md
   (was 1129).
 
 ✻ Worked for 23m 2s
+
+❯ /export docs/sessions/stage-68-export.md                                      
+  ⎿  Conversation exported to:
+     /home/scott/code/claude/claudec99/docs/sessions/stage-68-export.md
+
+❯ /usage 
+  ⎿  Settings dialog dismissed
+
+❯ have the changes been commited                                                
+
+● Bash(git status)
+  ⎿  On branch master
+     Your branch is up to date with 'origin/master'.
+     … +25 lines (ctrl+o to expand)
+
+● Not yet committed. Would you like me to commit now?
+
+✻ Churned for 5s
+
+❯ yes                                                                           
+
+● Bash(git log --oneline -5)
+  ⎿  df77939 adding spec for stage 68
+     75e7672 stage 67-05 session export and usage
+     3b0e8e0 feat: stage 67-05 — add snprintf to stdio.h stub
+     … +2 lines (ctrl+o to expand)
+
+● Bash(git add src/parser.c src/codegen.c README.md \
+        test/invalid/test_invalid_19__max_supported_is_6.c \…)
+  ⎿  [master c3ae4a1] feat: stage 68 — support more than 6 function argumen
+     ts (SysV AMD64 stack passing)
+      17 files changed, 1334 insertions(+), 149 deletions(-)
+     … +13 lines (ctrl+o to expand)
+
+● Committed as c3ae4a1. 17 files changed — all stage-68 source, tests, and
+  artifacts are in.
+
+✻ Baked for 13s
