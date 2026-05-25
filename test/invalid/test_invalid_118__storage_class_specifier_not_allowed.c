@@ -1,4 +1,4 @@
 int main() {
-    static int x = 1;   // INVALID: storage class at block scope
+    extern int x;   // INVALID: extern at block scope
     return x;
 }

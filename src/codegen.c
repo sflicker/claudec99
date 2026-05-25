@@ -252,6 +252,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->tu_root = NULL;
     cg->string_pool_count = 0;
     cg->warnings_are_errors = 0;
+    cg->local_static_count = 0;
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -511,7 +512,10 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
             !plv->full_type->base || plv->full_type->base->kind != TYPE_ARRAY) {
             compile_error( "error: subscript base must be a pointer to array\n");
         }
-        fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
+        if (plv->is_static)
+            fprintf(cg->output, "    mov rax, [rel %s]\n", plv->static_label);
+        else
+            fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
         Type *element = plv->full_type->base->base;
         int elem_size = type_size(element);
         fprintf(cg->output, "    push rax\n");
@@ -577,6 +581,8 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     if (lv) {
         if (lv->kind == TYPE_ARRAY) {
             element = lv->full_type->base;
+            /* Array statics are rejected at declaration time; is_static is
+             * always false here, so no static-label branch needed. */
             fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
         } else if (lv->kind == TYPE_POINTER) {
             element = lv->full_type->base;
@@ -586,7 +592,10 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
                         "error: cannot subscript void pointer '%s'\n",
                         base_node->value);
             }
-            fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+            if (lv->is_static)
+                fprintf(cg->output, "    mov rax, [rel %s]\n", lv->static_label);
+            else
+                fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
         } else {
             compile_error(
                     "error: subscript base '%s' is not an array or pointer\n",
@@ -678,7 +687,10 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
         if (!f) {
             compile_error( "error: struct has no member '%s'\n", field_name);
         }
-        fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
+        if (plv->is_static)
+            fprintf(cg->output, "    mov rax, [rel %s]\n", plv->static_label);
+        else
+            fprintf(cg->output, "    mov rax, [rbp - %d]\n", plv->offset);
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
         return f;
@@ -808,7 +820,10 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
     if (!f) {
         compile_error( "error: struct has no member '%s'\n", field_name);
     }
-    fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+    if (lv->is_static)
+        fprintf(cg->output, "    mov rax, [rel %s]\n", lv->static_label);
+    else
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
     if (f->offset != 0)
         fprintf(cg->output, "    add rax, %d\n", f->offset);
     return f;
@@ -1303,7 +1318,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->result_type = promote_kind(type_kind_from_size(lv->size));
                 node->is_unsigned = lv->is_unsigned;
             }
-            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
+            if (lv->is_static)
+                emit_load_global(cg, lv->static_label, lv->size, lv->is_unsigned);
+            else
+                emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             return;
         }
         /* Stage 22-01: fall back to global table. */
@@ -1554,7 +1572,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             /* Stage 63: _Bool assignment normalizes any nonzero value to 1. */
             if (lv->kind == TYPE_BOOL)
                 emit_bool_normalize(cg, rhs_is_long);
-            emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
+            if (lv->is_static)
+                emit_store_global(cg, lv->static_label, lv->size, rhs_is_long);
+            else
+                emit_store_local(cg, lv->offset, lv->size, rhs_is_long);
             if (lv->kind == TYPE_POINTER) {
                 node->result_type = TYPE_POINTER;
                 node->full_type = lv->full_type;
@@ -1635,7 +1656,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         LocalVar *lv = codegen_find_var(cg, operand->value);
         if (lv) {
-            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+            if (lv->is_static)
+                fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
+            else
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(local_var_type(lv));
             return;
@@ -1873,7 +1897,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
-            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
+            if (lv->is_static)
+                emit_load_global(cg, lv->static_label, lv->size, lv->is_unsigned);
+            else
+                emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             if (lv->kind == TYPE_POINTER && lv->full_type) {
                 int elem_size = type_size(lv->full_type->base);
                 if (strcmp(node->value, "++") == 0) {
@@ -1881,7 +1908,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 } else {
                     fprintf(cg->output, "    sub rax, %d\n", elem_size);
                 }
-                emit_store_local(cg, lv->offset, lv->size, 1);
+                if (lv->is_static)
+                    emit_store_global(cg, lv->static_label, lv->size, 1);
+                else
+                    emit_store_local(cg, lv->offset, lv->size, 1);
                 node->result_type = TYPE_POINTER;
                 node->full_type = lv->full_type;
             } else {
@@ -1890,7 +1920,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 } else {
                     fprintf(cg->output, "    sub eax, 1\n");
                 }
-                emit_store_local(cg, lv->offset, lv->size, 0);
+                if (lv->is_static)
+                    emit_store_global(cg, lv->static_label, lv->size, 0);
+                else
+                    emit_store_local(cg, lv->offset, lv->size, 0);
                 node->result_type = TYPE_INT;
             }
         } else {
@@ -1927,7 +1960,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
-            emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
+            if (lv->is_static)
+                emit_load_global(cg, lv->static_label, lv->size, lv->is_unsigned);
+            else
+                emit_load_local(cg, lv->offset, lv->size, lv->is_unsigned);
             if (lv->kind == TYPE_POINTER && lv->full_type) {
                 int elem_size = type_size(lv->full_type->base);
                 fprintf(cg->output, "    mov rcx, rax\n");  /* save old pointer */
@@ -1936,7 +1972,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 } else {
                     fprintf(cg->output, "    sub rax, %d\n", elem_size);
                 }
-                emit_store_local(cg, lv->offset, lv->size, 1);
+                if (lv->is_static)
+                    emit_store_global(cg, lv->static_label, lv->size, 1);
+                else
+                    emit_store_local(cg, lv->offset, lv->size, 1);
                 fprintf(cg->output, "    mov rax, rcx\n");  /* result: old pointer */
                 node->result_type = TYPE_POINTER;
                 node->full_type = lv->full_type;
@@ -1947,7 +1986,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 } else {
                     fprintf(cg->output, "    sub eax, 1\n");
                 }
-                emit_store_local(cg, lv->offset, lv->size, 0);
+                if (lv->is_static)
+                    emit_store_global(cg, lv->static_label, lv->size, 0);
+                else
+                    emit_store_local(cg, lv->offset, lv->size, 0);
                 fprintf(cg->output, "    mov eax, ecx\n");  /* result: old value */
                 node->result_type = TYPE_INT;
             }
@@ -2798,6 +2840,74 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             if (strcmp(cg->locals[i].name, node->value) == 0) {
                 compile_error( "error: duplicate declaration of variable '%s'\n", node->value);
             }
+        }
+        /* Stage 71: block-scope static variable. */
+        if (node->storage_class == SC_STATIC) {
+            if (node->decl_type == TYPE_ARRAY || node->decl_type == TYPE_STRUCT) {
+                compile_error(
+                        "error: static local arrays and structs are not yet supported\n");
+            }
+            if (cg->local_static_count >= MAX_LOCAL_STATICS) {
+                compile_error(
+                        "error: too many local static variables (max %d)\n",
+                        MAX_LOCAL_STATICS);
+            }
+            /* Validate that the initializer (if any) is a compile-time constant. */
+            long init_value = 0;
+            int is_initialized = 0;
+            if (node->child_count > 0) {
+                ASTNode *init = node->children[0];
+                if (init->type == AST_INT_LITERAL) {
+                    init_value = strtol(init->value, NULL, 10);
+                    is_initialized = 1;
+                } else if (init->type == AST_CHAR_LITERAL) {
+                    init_value = (long)(unsigned char)init->value[0];
+                    is_initialized = 1;
+                } else if (init->type == AST_UNARY_OP &&
+                           strcmp(init->value, "-") == 0 &&
+                           init->child_count > 0 &&
+                           init->children[0]->type == AST_INT_LITERAL) {
+                    init_value = -strtol(init->children[0]->value, NULL, 10);
+                    is_initialized = 1;
+                } else {
+                    compile_error(
+                            "error: initializer for block-scope static '%s' must be a constant expression\n",
+                            node->value);
+                }
+            }
+            /* Generate a unique label: Lstatic_<func>_<counter>. */
+            char label[256];
+            snprintf(label, sizeof(label), "Lstatic_%s_%d",
+                     cg->current_func, cg->label_count++);
+            /* Register in the local variable table so scope and shadowing work.
+             * Don't advance stack_offset — statics are not stack-allocated. */
+            if (cg->local_count >= MAX_LOCALS) {
+                compile_error("error: too many local variables\n");
+            }
+            LocalVar *lv = &cg->locals[cg->local_count];
+            strncpy(lv->name, node->value, 255);
+            lv->name[255] = '\0';
+            lv->offset = 0;
+            lv->size = type_kind_bytes(node->decl_type);
+            lv->kind = node->decl_type;
+            lv->full_type = node->full_type;
+            lv->is_const = node->is_const;
+            lv->is_unsigned = node->is_unsigned;
+            lv->is_static = 1;
+            strncpy(lv->static_label, label, 255);
+            lv->static_label[255] = '\0';
+            cg->local_count++;
+            /* Add to the deferred emission pool (.data or .bss). */
+            LocalStaticVar *sv = &cg->local_statics[cg->local_static_count++];
+            strncpy(sv->label, label, 255);
+            sv->label[255] = '\0';
+            sv->kind = node->decl_type;
+            sv->full_type = node->full_type;
+            sv->size = type_kind_bytes(node->decl_type);
+            sv->is_initialized = is_initialized;
+            sv->init_value = init_value;
+            sv->is_unsigned = node->is_unsigned;
+            return;
         }
         /* Stage 13-01: array locals get sized from the array Type
          * (element_size * length) and aligned to the element's
@@ -3775,6 +3885,36 @@ static void codegen_emit_bss(CodeGen *cg) {
     }
 }
 
+/* Stage 71: emit block-scope static variables accumulated during function
+ * body emission. Initialized statics go to .data; uninitialized to .bss.
+ * These sections are separate from the file-scope globals emitted earlier
+ * and are merged by the assembler. */
+static void codegen_emit_local_statics(CodeGen *cg) {
+    int has_data = 0, has_bss = 0;
+    for (int i = 0; i < cg->local_static_count; i++) {
+        if (cg->local_statics[i].is_initialized) has_data = 1;
+        else has_bss = 1;
+    }
+    if (has_data) {
+        fprintf(cg->output, "section .data\n");
+        for (int i = 0; i < cg->local_static_count; i++) {
+            LocalStaticVar *sv = &cg->local_statics[i];
+            if (!sv->is_initialized) continue;
+            fprintf(cg->output, "%s: %s %ld\n",
+                    sv->label, data_init_directive(sv->kind), sv->init_value);
+        }
+    }
+    if (has_bss) {
+        fprintf(cg->output, "section .bss\n");
+        for (int i = 0; i < cg->local_static_count; i++) {
+            LocalStaticVar *sv = &cg->local_statics[i];
+            if (sv->is_initialized) continue;
+            fprintf(cg->output, "%s: %s 1\n",
+                    sv->label, bss_res_directive(sv->kind));
+        }
+    }
+}
+
 void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
     cg->tu_root = node;
     if (node->type == AST_TRANSLATION_UNIT) {
@@ -3807,6 +3947,9 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
         }
     }
     codegen_emit_string_pool(cg);
+    /* Stage 71: emit block-scope static variable storage accumulated
+     * during function body emission. */
+    codegen_emit_local_statics(cg);
     /* Mark the stack as non-executable so the linker doesn't warn about a
      * missing .note.GNU-stack section (ELF ABI requirement on Linux). */
     fprintf(cg->output, "\nsection .note.GNU-stack noalloc noexec nowrite progbits\n");

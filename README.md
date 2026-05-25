@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 70.03 (line/column in error messages):
+Through stage 71 (block-scope static variables):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -218,6 +218,7 @@ Through stage 70.03 (line/column in error messages):
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
   Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
   enum constants are available as compile-time integer values throughout the translation unit.
+  Block-scope `static` variables (scalar and pointer types) persist values across function calls and are stored in .bss or .data with constant-only initializers.
 - **Integer types**: `char`, `short`, `int`, `long` and their `unsigned` variants
   (`unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, plain `unsigned`).
   `signed` keyword support (`signed char`, `signed short`, `signed int`, `signed long`,
@@ -371,7 +372,7 @@ Through stage 70.03 (line/column in error messages):
 
 Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
 unions; floating-point; array
-typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
+typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope `extern`; block-scope `static` arrays and structs;
 defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
@@ -399,7 +400,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 70.03 all tests pass (705 valid, 212 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1143 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 71 all tests pass (709 valid, 213 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1148 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

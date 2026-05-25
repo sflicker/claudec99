@@ -1839,11 +1839,26 @@ static ASTNode *parse_switch_statement(Parser *parser) {
  *               | <expression_stmt>
  */
 static ASTNode *parse_statement(Parser *parser) {
-    /* Stage 23: storage class specifiers are not supported at block scope. */
-    if (parser->current.type == TOKEN_EXTERN ||
-        parser->current.type == TOKEN_STATIC) {
-        PARSER_ERROR(parser, 
+    /* Stage 23: extern is not allowed at block scope. */
+    if (parser->current.type == TOKEN_EXTERN) {
+        PARSER_ERROR(parser,
                 "error: storage class specifier not allowed in block scope\n");
+    }
+    /* Stage 71: static is allowed at block scope — consume the keyword,
+     * parse the declaration, and mark all resulting AST_DECLARATION nodes
+     * with SC_STATIC so codegen emits them to static storage. */
+    if (parser->current.type == TOKEN_STATIC) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *inner = parse_statement(parser);
+        if (inner->type == AST_DECLARATION) {
+            inner->storage_class = SC_STATIC;
+        } else if (inner->type == AST_DECL_LIST) {
+            for (int i = 0; i < inner->child_count; i++) {
+                if (inner->children[i]->type == AST_DECLARATION)
+                    inner->children[i]->storage_class = SC_STATIC;
+            }
+        }
+        return inner;
     }
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at block scope. */
     if (parser->current.type == TOKEN_TYPEDEF) {

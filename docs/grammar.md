@@ -304,8 +304,10 @@
 # Declarations:
 #   - In a function definition, the declarator must be a function declarator.
 #   - Function declarations may not have initializers.
-#   - extern/static storage-class specifiers are currently supported only
-#     for file-scope declarations.
+#   - The `extern` storage-class specifier is supported only at file scope.
+#   - The `static` specifier is supported at file scope and block scope
+#     (scalar and pointer types only; block-scope static arrays and structs
+#     are not yet supported).
 #   - extern declarations with initializers are currently rejected.
 #   - Function definition parameters must be named; unnamed parameters are
 #     only allowed in function prototypes and function pointer signatures.

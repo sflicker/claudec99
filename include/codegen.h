@@ -12,6 +12,7 @@
 #define MAX_SWITCH_LABELS 64
 #define MAX_USER_LABELS 64
 #define MAX_STRING_LITERALS 256
+#define MAX_LOCAL_STATICS 128
 
 typedef struct {
     char name[256];
@@ -28,7 +29,25 @@ typedef struct {
     int is_const;
     /* Stage 40: set when the variable has an unsigned integer type. */
     int is_unsigned;
+    /* Stage 71: set for block-scope static variables. When is_static is
+     * set, storage is in a named static symbol addressed via [rel label]
+     * instead of [rbp - offset]; offset is unused. */
+    int is_static;
+    char static_label[256];
 } LocalVar;
+
+/* Stage 71: one entry per block-scope static variable declared during
+ * function body emission. Accumulated during codegen_function and
+ * emitted to .data or .bss after all function bodies. */
+typedef struct {
+    char label[256];
+    TypeKind kind;
+    Type *full_type;
+    int size;
+    int is_initialized;
+    long init_value;
+    int is_unsigned;
+} LocalStaticVar;
 
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
  * addressing ([rel name]) instead of [rbp - offset]. size is the byte
@@ -126,6 +145,10 @@ typedef struct {
     int string_pool_count;
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
+    /* Stage 71: block-scope static variable pool — accumulated across all
+     * function bodies and emitted to .data/.bss after function code. */
+    LocalStaticVar local_statics[MAX_LOCAL_STATICS];
+    int local_static_count;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
