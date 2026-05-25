@@ -9,13 +9,18 @@
 #   cc99 [options] file.c [file2.c ...]
 #
 # Options:
+#   --version        Print compiler version and exit
 #   -o <file>        Output file name (default: a.out)
 #   -c               Compile and assemble only; produce .o files, no link
 #   -S               Compile only; produce .asm files, no assemble or link
+#   --print-ast      Print AST to stdout and exit (no output file)
+#   --print-tokens   Print token stream to stdout and exit (no output file)
 #   -D NAME[=VAL]    Define a preprocessor macro
 #   -I <dir>         Add directory to include search path
 #   -I<dir>          (same, one-argument form)
 #   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
+#   -Werror          Treat warnings as errors
+#   --max-errors=N   Stop after N errors (0 = unlimited)
 #   -l <lib>         Link with library (passed to gcc)
 #   -l<lib>          (same, one-argument form)
 #   -L <dir>         Add library search path (passed to gcc)
@@ -39,6 +44,8 @@ Options:
   -o <file>        Output file name (default: a.out)
   -c               Compile and assemble only; produce .o files
   -S               Compile only; produce .asm files
+  --print-ast      Print AST to stdout and exit (no output file)
+  --print-tokens   Print token stream to stdout and exit (no output file)
   -D NAME[=VAL]    Define a preprocessor macro
   -I <dir>         Add directory to include search path
   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
@@ -63,7 +70,7 @@ fi
 # ── argument parsing ──────────────────────────────────────────────────────────
 
 output="a.out"
-mode="link"           # link | compile-only | asm-only
+mode="link"           # link | compile-only | asm-only | print
 compiler_flags=()
 link_flags=()
 input_files=()
@@ -81,6 +88,8 @@ while [[ $# -gt 0 ]]; do
             mode="compile-only"; shift ;;
         -S)
             mode="asm-only"; shift ;;
+        --print-ast|--print-tokens)
+            mode="print"; compiler_flags+=("$1"); shift ;;
         -Werror)
             compiler_flags+=("$1"); shift ;;
         --max-errors=*)
@@ -153,6 +162,10 @@ for src in "${input_files[@]}"; do
     # Run compiler from tmpdir so the .asm output lands there
     if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$abs_src"); then
         exit 1
+    fi
+
+    if [[ "$mode" == "print" ]]; then
+        continue
     fi
 
     if [[ "$mode" == "asm-only" ]]; then

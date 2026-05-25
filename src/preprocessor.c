@@ -1138,10 +1138,15 @@ static char *preprocess_internal(const char *source, const char *source_path,
             continue;
         }
 
-        /* Block comment: replace with a single space. */
+        /* Block comment: replace with a single space, preserving newlines
+         * so that line numbers after the comment remain correct. */
         if (c == '/' && s[in + 1] == '*') {
             in += 2;
             while (s[in] && !(s[in] == '*' && s[in + 1] == '/')) {
+                if (s[in] == '\n') {
+                    current_line++;
+                    gbuf_push(&out, '\n');
+                }
                 in++;
             }
             if (!s[in]) {
