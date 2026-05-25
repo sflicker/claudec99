@@ -1,5 +1,10 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 64)
+# Claude C99 Grammar (Current through Stage 70)
+#
+# Note: Stage 70 adds an integration test (test_mini_compiler) that exercises
+# existing language features in a realistic tokenizer pattern. No grammar changes.
+#
+
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
 

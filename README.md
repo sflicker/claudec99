@@ -136,7 +136,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 69 (memory-related std headers):
+Through stage 70 (mini-compiler-shaped integration test):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -394,7 +394,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 69 all tests pass (705 valid, 212 invalid, 65 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1141 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 70 all tests pass (705 valid, 212 invalid, 66 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1142 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

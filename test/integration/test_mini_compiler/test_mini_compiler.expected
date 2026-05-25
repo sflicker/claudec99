@@ -1,0 +1,8 @@
+IDENT result
+PLUS
+NUM 42
+STAR
+IDENT x
+MINUS
+NUM 7
+EOF
