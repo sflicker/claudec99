@@ -127,6 +127,21 @@ Type *type_struct(int size, int alignment) {
     return t;
 }
 
+/* Stage 72: heap-allocate a TYPE_UNION node. Layout mirrors type_struct
+ * except the kind is TYPE_UNION. */
+Type *type_union(int size, int alignment) {
+    Type *t = calloc(1, sizeof(Type));
+    if (!t) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    t->kind = TYPE_UNION;
+    t->size = size;
+    t->alignment = alignment;
+    t->is_signed = 0;
+    return t;
+}
+
 const char *type_kind_name(TypeKind kind) {
     switch (kind) {
     case TYPE_VOID:     return "void";
@@ -141,6 +156,7 @@ const char *type_kind_name(TypeKind kind) {
     case TYPE_ARRAY:    return "array";
     case TYPE_FUNCTION: return "function";
     case TYPE_STRUCT:   return "struct";
+    case TYPE_UNION:    return "union";
     }
     return "unknown";
 }
@@ -169,6 +185,7 @@ int type_is_integer(Type *t) {
     case TYPE_ARRAY:
     case TYPE_FUNCTION:
     case TYPE_STRUCT:
+    case TYPE_UNION:
         return 0;
     }
     return 0;

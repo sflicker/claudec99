@@ -31,6 +31,7 @@ typedef enum {
     TOKEN_TYPEDEF,
     TOKEN_ENUM,
     TOKEN_STRUCT,
+    TOKEN_UNION,
     TOKEN_VOID,
     TOKEN_BOOL,
     TOKEN_CONST,

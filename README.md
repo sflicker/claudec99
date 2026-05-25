@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 71 (block-scope static variables):
+Through stage 72 (union support):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -280,26 +280,29 @@ Through stage 71 (block-scope static variables):
   type checking: compatible pointer assignments allowed, void-pointer conversions bidirectional,
   null constant (0) accepted, nonzero integers and incompatible pointer types rejected.
   Pointer arithmetic rejects void* and function pointer operands.
-- **Structs**: named struct definitions with natural-alignment field layout,
-  local and global struct variables, sizeof operator on struct types and struct instances,
+- **Structs and Unions**: named struct and union definitions with natural-alignment field layout,
+  local and global struct/union variables, sizeof operator on struct/union types and instances,
   member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
   chained arrow access (e.g., `n.next->value`),
-  brace-enclosed initializer lists for local struct variables with automatic zero-fill
-  (e.g., `struct Point p = {3, 4};`), whole-struct copy assignment and copy initialization
-  from another struct variable of the same type. Pointer-to-struct function parameters
+  brace-enclosed initializer lists for local struct/union variables with automatic zero-fill
+  (e.g., `struct Point p = {3, 4};`), whole-struct/union copy assignment and copy initialization
+  from another variable of the same type. Pointer-to-struct/union function parameters
   (`struct T *p`) with `->` field access and mutation; `&local_struct` and `&global_struct`
-  pass correctly as arguments; `(*p).field` deref-dot syntax works. Struct types as members
+  pass correctly as arguments; `(*p).field` deref-dot syntax works. Struct/union types as members
   of other structs (nested structs) with chained member access (e.g., `r.origin.x`).
-  Arrays with struct element types (e.g., `struct Point points[10]`) with indexed member
-  access patterns (e.g., `points[0].x`). Incomplete struct forward declarations:
-  `struct Tag;` can appear before the body is defined; pointer-to-incomplete-struct fields
-  and self-referential structs via typedef (e.g., `typedef struct Node Node; struct Node { Node *next; };`) are supported.
-  Validation: `sizeof` and variable declarations reject incomplete struct types with diagnostic errors.
-  File-scope struct initialization from brace-enclosed lists (`struct Point p = {3, 4};`).
+  Arrays with struct/union element types (e.g., `struct Point points[10]`) with indexed member
+  access patterns (e.g., `points[0].x`). Incomplete struct/union forward declarations:
+  `struct Tag;` can appear before the body is defined; pointer-to-incomplete-struct/union fields
+  and self-referential types via typedef are supported.
+  Validation: `sizeof` and variable declarations reject incomplete struct/union types with diagnostic errors.
+  File-scope struct/union initialization from brace-enclosed lists (`struct Point p = {3, 4};`).
   File-scope arrays of structs with per-element brace lists (`struct Point pts[] = {{1,2},{10,20}};`).
-  Struct fields of type `char *` initialized from string literals in file-scope contexts.
+  Struct/union fields of type `char *` initialized from string literals in file-scope contexts.
   Field-level type checking for aggregate initializers: string literal for non-pointer field
   and non-null integer for pointer field are rejected.
+  Named `union` types with max-size layout (size = max member, all offsets 0), local and global
+  union variables, first-member initialization, whole-union assignment, union fields inside structs,
+  and struct fields inside unions.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (with constant integer expressions,
   string-literal initialization for pointer globals, brace-list initialization for array globals,
@@ -370,8 +373,7 @@ Through stage 71 (block-scope static variables):
 
 ## Not yet supported
 
-Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported);
-unions; floating-point; array
+Anonymous structs, bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope `extern`; block-scope `static` arrays and structs;
 defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
@@ -400,7 +402,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 71 all tests pass (709 valid, 213 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1148 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 72 all tests pass (718 valid, 214 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1158 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

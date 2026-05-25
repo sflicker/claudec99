@@ -31,7 +31,10 @@ typedef enum {
     TYPE_FUNCTION,
     /* Stage 30: named struct type. size and alignment are computed from the
      * field layout at definition time. */
-    TYPE_STRUCT
+    TYPE_STRUCT,
+    /* Stage 72: named union type. Layout: all members at offset 0,
+     * size = max member size rounded up to alignment. */
+    TYPE_UNION
 } TypeKind;
 
 /* Stage 31: field descriptor stored inside a TYPE_STRUCT Type node. */
@@ -80,6 +83,7 @@ Type *type_pointer(Type *base);
 Type *type_array(Type *element_type, int length);
 Type *type_function(Type *return_type, int param_count, Type **param_types);
 Type *type_struct(int size, int alignment);
+Type *type_union(int size, int alignment);
 /* Stage 66: allocate a heap copy of t with is_const=1. Never mutates t. */
 Type *type_const_copy(Type *t);
 

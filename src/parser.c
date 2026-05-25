@@ -62,6 +62,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->enum_const_count = 0;
     parser->enum_tag_count = 0;
     parser->struct_tag_count = 0;
+    parser->union_tag_count = 0;
 }
 
 /* Stage 28-01: typedef name table helpers. */
@@ -371,11 +372,15 @@ static Type *parse_struct_specifier(Parser *parser) {
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
 
-                /* Stage 37: a non-pointer field of an incomplete struct type
-                 * is invalid; pointer-to-incomplete is allowed. */
+                /* Stage 37/72: a non-pointer field of an incomplete struct or
+                 * union type is invalid; pointer-to-incomplete is allowed. */
                 if (field_type->kind == TYPE_STRUCT && field_type->size == 0) {
-                    PARSER_ERROR(parser, 
+                    PARSER_ERROR(parser,
                             "error: field '%s' has incomplete struct type\n", d.name);
+                }
+                if (field_type->kind == TYPE_UNION && field_type->size == 0) {
+                    PARSER_ERROR(parser,
+                            "error: field '%s' has incomplete union type\n", d.name);
                 }
 
                 int fsz   = type_size(field_type);
@@ -395,7 +400,8 @@ static Type *parse_struct_specifier(Parser *parser) {
                     tmp_fields[n_fields].kind      = field_type->kind;
                     tmp_fields[n_fields].full_type = (field_type->kind == TYPE_POINTER ||
                                                      field_type->kind == TYPE_ARRAY   ||
-                                                     field_type->kind == TYPE_STRUCT)
+                                                     field_type->kind == TYPE_STRUCT  ||
+                                                     field_type->kind == TYPE_UNION)
                                                      ? field_type : NULL;
                     n_fields++;
                 }
@@ -437,6 +443,132 @@ static Type *parse_struct_specifier(Parser *parser) {
     }
 
     return st->type;
+}
+
+/* Stage 72: union tag table helpers. */
+static UnionTag *parser_find_union_tag(Parser *parser, const char *tag) {
+    for (int i = 0; i < parser->union_tag_count; i++) {
+        if (strcmp(parser->union_tags[i].tag, tag) == 0)
+            return &parser->union_tags[i];
+    }
+    return NULL;
+}
+
+static UnionTag *parser_register_union_tag(Parser *parser, const char *tag) {
+    UnionTag *ut = parser_find_union_tag(parser, tag);
+    if (ut) return ut;
+    if (parser->union_tag_count >= PARSER_MAX_UNION_TAGS) {
+        PARSER_ERROR(parser, "error: too many union tags (max %d)\n",
+                PARSER_MAX_UNION_TAGS);
+    }
+    ut = &parser->union_tags[parser->union_tag_count++];
+    strncpy(ut->tag, tag, sizeof(ut->tag) - 1);
+    ut->tag[sizeof(ut->tag) - 1] = '\0';
+    ut->type = NULL;
+    return ut;
+}
+
+/*
+ * <union_specifier> ::= "union" <identifier> [ "{" <struct_declaration_list> "}" ]
+ *
+ * Layout: all member offsets are 0; size = max(member sizes) rounded up to
+ * the union's alignment (max of all member alignments).
+ * Returns the TYPE_UNION Type*.
+ */
+static Type *parse_union_specifier(Parser *parser) {
+    /* consume 'union' */
+    parser->current = lexer_next_token(parser->lexer);
+
+    if (parser->current.type != TOKEN_IDENTIFIER) {
+        PARSER_ERROR(parser, "error: expected union tag name after 'union'\n");
+    }
+    char tag[256];
+    strncpy(tag, parser->current.value, sizeof(tag) - 1);
+    tag[sizeof(tag) - 1] = '\0';
+    parser->current = lexer_next_token(parser->lexer);
+
+    UnionTag *ut = parser_register_union_tag(parser, tag);
+
+    if (parser->current.type == TOKEN_LBRACE) {
+        parser->current = lexer_next_token(parser->lexer);
+
+        int max_size  = 0;
+        int max_align = 1;
+
+        StructField tmp_fields[64];
+        int n_fields = 0;
+
+        while (parser->current.type != TOKEN_RBRACE) {
+            Type *field_base = parse_type_specifier(parser, NULL);
+
+            do {
+                if (parser->current.type == TOKEN_COMMA)
+                    parser->current = lexer_next_token(parser->lexer);
+
+                ParsedDeclarator d = parse_declarator(parser);
+                Type *field_type = field_base;
+                for (int i = 0; i < d.pointer_count; i++)
+                    field_type = type_pointer(field_type);
+
+                /* Reject non-pointer field of an incomplete struct or union type. */
+                if ((field_type->kind == TYPE_STRUCT || field_type->kind == TYPE_UNION) &&
+                    field_type->size == 0) {
+                    PARSER_ERROR(parser,
+                            "error: field '%s' has incomplete type\n", d.name);
+                }
+
+                int fsz   = type_size(field_type);
+                int falign = type_alignment(field_type);
+                if (falign < 1) falign = 1;
+                if (fsz < 1)    fsz = 1;
+
+                if (falign > max_align) max_align = falign;
+                if (fsz > max_size)     max_size  = fsz;
+
+                if (n_fields < 64) {
+                    strncpy(tmp_fields[n_fields].name, d.name,
+                            sizeof(tmp_fields[n_fields].name) - 1);
+                    tmp_fields[n_fields].name[sizeof(tmp_fields[n_fields].name) - 1] = '\0';
+                    tmp_fields[n_fields].offset    = 0; /* all union members at offset 0 */
+                    tmp_fields[n_fields].kind      = field_type->kind;
+                    tmp_fields[n_fields].full_type = (field_type->kind == TYPE_POINTER ||
+                                                     field_type->kind == TYPE_ARRAY   ||
+                                                     field_type->kind == TYPE_STRUCT  ||
+                                                     field_type->kind == TYPE_UNION)
+                                                     ? field_type : NULL;
+                    n_fields++;
+                }
+
+            } while (parser->current.type == TOKEN_COMMA);
+
+            parser_expect(parser, TOKEN_SEMICOLON);
+        }
+        parser_expect(parser, TOKEN_RBRACE);
+
+        /* Round total size up to the union's alignment. */
+        int total_size = (max_size + max_align - 1) & ~(max_align - 1);
+        if (total_size == 0) total_size = 1;
+
+        if (ut->type && ut->type->size == 0) {
+            ut->type->size      = total_size;
+            ut->type->alignment = max_align;
+        } else {
+            ut->type = type_union(total_size, max_align);
+        }
+
+        if (n_fields > 0) {
+            ut->type->fields = calloc(n_fields, sizeof(StructField));
+            memcpy(ut->type->fields, tmp_fields, n_fields * sizeof(StructField));
+            ut->type->field_count = n_fields;
+        }
+
+    } else {
+        /* Forward declaration / reference without body. */
+        if (!ut->type)
+            ut->type = type_union(0, 0);
+    }
+
+    return ut->type;
 }
 
 /*
@@ -741,6 +873,12 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         Type *st = parse_struct_specifier(parser);
         if (out_kind) *out_kind = TYPE_STRUCT;
         return st;
+    }
+    case TOKEN_UNION: {
+        /* parse_union_specifier advances past all union tokens itself. */
+        Type *ut = parse_union_specifier(parser);
+        if (out_kind) *out_kind = TYPE_UNION;
+        return ut;
     }
     default:
         PARSER_ERROR(parser, "error: expected integer type, got '%s'\n",
@@ -1207,6 +1345,7 @@ static ASTNode *parse_unary(Parser *parser) {
             parser->current.type == TOKEN_SIGNED ||
             parser->current.type == TOKEN_UNSIGNED ||
             parser->current.type == TOKEN_STRUCT ||
+            parser->current.type == TOKEN_UNION ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
@@ -1214,7 +1353,7 @@ static ASTNode *parse_unary(Parser *parser) {
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
             node->decl_type = t->kind;
-            if (t->kind == TYPE_STRUCT)
+            if (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION)
                 node->full_type = t;
             return node;
         }
@@ -1897,7 +2036,9 @@ static ASTNode *parse_statement(Parser *parser) {
                                 ? TYPE_POINTER : base_kind;
         /* Stage 40: for unsigned scalar typedefs, store the base Type* (is_signed=0)
          * as full_type so the signedness is preserved when the typedef is resolved. */
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER || typedef_kind == TYPE_STRUCT)
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
+                               typedef_kind == TYPE_STRUCT  ||
+                               typedef_kind == TYPE_UNION)
                               ? full_type
                               : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
@@ -1945,6 +2086,7 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current.type == TOKEN_UNSIGNED ||
         parser->current.type == TOKEN_ENUM ||
         parser->current.type == TOKEN_STRUCT ||
+        parser->current.type == TOKEN_UNION ||
         (parser->current.type == TOKEN_IDENTIFIER &&
          parser_find_typedef(parser, parser->current.value))) {
         TypeKind base_kind;
@@ -2073,6 +2215,10 @@ static ASTNode *parse_statement(Parser *parser) {
             /* Stage 30: struct variable — carry the struct Type* for size/alignment. */
             decl->decl_type = TYPE_STRUCT;
             decl->full_type = full_type;
+        } else if (base_kind == TYPE_UNION) {
+            /* Stage 72: union variable. */
+            decl->decl_type = TYPE_UNION;
+            decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
             /* Stage 40: mark unsigned scalar. */
@@ -2082,7 +2228,8 @@ static ASTNode *parse_statement(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *init = parse_initializer(parser); /* stage 32: allows brace lists */
             if (init->type == AST_INITIALIZER_LIST &&
-                decl->decl_type != TYPE_STRUCT && decl->decl_type != TYPE_ARRAY) {
+                decl->decl_type != TYPE_STRUCT && decl->decl_type != TYPE_UNION &&
+                decl->decl_type != TYPE_ARRAY) {
                 PARSER_ERROR(parser, "error: brace initializer not valid for scalar type\n");
             }
             ast_add_child(decl, init);
@@ -2120,6 +2267,9 @@ static ASTNode *parse_statement(Parser *parser) {
                 next_decl->full_type = full_type2;
             } else if (base_kind == TYPE_STRUCT) {
                 next_decl->decl_type = TYPE_STRUCT;
+                next_decl->full_type = full_type2;
+            } else if (base_kind == TYPE_UNION) {
+                next_decl->decl_type = TYPE_UNION;
                 next_decl->full_type = full_type2;
             } else {
                 next_decl->decl_type = base_kind;
@@ -2375,11 +2525,12 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                    parser->current.type == TOKEN_UNSIGNED ||
                    parser->current.type == TOKEN_ENUM ||
                    parser->current.type == TOKEN_STRUCT ||
+                   parser->current.type == TOKEN_UNION ||
                    (!has_type &&
                     parser->current.type == TOKEN_IDENTIFIER &&
                     parser_find_typedef(parser, parser->current.value))) {
             if (has_type) {
-                PARSER_ERROR(parser, 
+                PARSER_ERROR(parser,
                         "error: multiple type specifiers are not allowed\n");
             }
             has_type = 1;
@@ -2465,7 +2616,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                                 ? TYPE_POINTER : base_kind;
         /* Stage 40: for unsigned scalar typedefs, store the base Type* so
          * signedness is preserved when the typedef name is later resolved. */
-        Type *reg_full_type = (typedef_kind == TYPE_POINTER || typedef_kind == TYPE_STRUCT)
+        Type *reg_full_type = (typedef_kind == TYPE_POINTER ||
+                               typedef_kind == TYPE_STRUCT  ||
+                               typedef_kind == TYPE_UNION)
                               ? full_type
                               : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
@@ -2557,7 +2710,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
                             (d.pointer_count > 0 || base_kind == TYPE_POINTER) ? TYPE_POINTER : base_kind;
-        Type *reg_full_type = (obj_kind == TYPE_POINTER || obj_kind == TYPE_STRUCT) ? full_type : NULL;
+        Type *reg_full_type = (obj_kind == TYPE_POINTER ||
+                               obj_kind == TYPE_STRUCT  ||
+                               obj_kind == TYPE_UNION)  ? full_type : NULL;
         parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
 
         ASTNode *decl = ast_new(AST_DECLARATION, d.name);
@@ -2629,6 +2784,10 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         } else if (base_kind == TYPE_STRUCT) {
             decl->decl_type = TYPE_STRUCT;
             decl->full_type = full_type;
+        } else if (base_kind == TYPE_UNION) {
+            /* Stage 72: union global variable. */
+            decl->decl_type = TYPE_UNION;
+            decl->full_type = full_type;
         } else {
             decl->decl_type = base_kind;
             /* Stage 40: mark unsigned scalar. */
@@ -2636,14 +2795,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         }
         /* Stage 22-02: optional constant initializer.
          * Stage 43: also accept string literals for pointer globals.
-         * Stage 44: accept brace-list initializers for struct globals. */
+         * Stage 44: accept brace-list initializers for struct globals.
+         * Stage 72: accept brace-list initializers for union globals (first member). */
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *init;
             if (parser->current.type == TOKEN_LBRACE) {
-                /* Stage 44: struct global initialized with brace list. */
-                if (decl->decl_type != TYPE_STRUCT) {
-                    PARSER_ERROR(parser, 
+                /* Stage 44/72: struct or union global initialized with brace list. */
+                if (decl->decl_type != TYPE_STRUCT && decl->decl_type != TYPE_UNION) {
+                    PARSER_ERROR(parser,
                             "error: brace initializer not valid for non-struct global '%s'\n",
                             d.name);
                 }

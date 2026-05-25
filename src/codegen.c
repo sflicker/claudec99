@@ -19,6 +19,7 @@ static int type_kind_bytes(TypeKind kind) {
     case TYPE_ARRAY:              return 0; /* size lives on full_type; caller uses that */
     case TYPE_FUNCTION:           return 0; /* never directly allocated; base of FP pointer */
     case TYPE_STRUCT:             return 0; /* size lives on full_type; caller uses that */
+    case TYPE_UNION:              return 0; /* size lives on full_type; caller uses that */
     }
     return 4;
 }
@@ -406,7 +407,8 @@ static Type *local_var_type(LocalVar *lv) {
     case TYPE_LONG:               t = type_long(); break;
     case TYPE_LONG_LONG:          t = type_long_long(); break;
     case TYPE_UNSIGNED_LONG_LONG: t = type_unsigned_long_long(); break;
-    case TYPE_STRUCT:             return lv->full_type; /* always set for struct locals */
+    case TYPE_STRUCT:             return lv->full_type; /* always set for struct/union locals */
+    case TYPE_UNION:              return lv->full_type;
     case TYPE_INT:
     default:                      t = type_int(); break;
     }
@@ -677,15 +679,17 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
             compile_error( "error: undeclared variable '%s'\n", ptr_expr->value);
         }
         if (plv->kind != TYPE_POINTER || !plv->full_type ||
-            !plv->full_type->base || plv->full_type->base->kind != TYPE_STRUCT) {
+            !plv->full_type->base || (plv->full_type->base->kind != TYPE_STRUCT &&
+                                      plv->full_type->base->kind != TYPE_UNION)) {
             compile_error(
-                    "error: '.' via dereference: '%s' is not a pointer to struct\n",
+                    "error: '.' via dereference: '%s' is not a pointer to struct/union\n",
                     ptr_expr->value);
         }
         Type *st = plv->full_type->base;
         StructField *f = find_struct_field(st, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(st->kind), field_name);
         }
         if (plv->is_static)
             fprintf(cg->output, "    mov rax, [rel %s]\n", plv->static_label);
@@ -699,13 +703,15 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     /* Stage 35: chained member access — base is itself a member access (e.g. r.origin.x). */
     if (base->type == AST_MEMBER_ACCESS) {
         StructField *inner_f = emit_member_addr(cg, base);
-        if (inner_f->kind != TYPE_STRUCT || !inner_f->full_type) {
-            compile_error( "error: '.' applied to non-struct member '%s'\n",
+        if ((inner_f->kind != TYPE_STRUCT && inner_f->kind != TYPE_UNION) ||
+            !inner_f->full_type) {
+            compile_error( "error: '.' applied to non-struct/union member '%s'\n",
                     base->value);
         }
         StructField *f = find_struct_field(inner_f->full_type, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(inner_f->kind), field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -715,12 +721,13 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     /* Stage 35: array-element member access — base is array subscript (e.g. points[0].x). */
     if (base->type == AST_ARRAY_INDEX) {
         Type *element = emit_array_index_addr(cg, base);
-        if (element->kind != TYPE_STRUCT) {
-            compile_error( "error: '.' applied to non-struct array element\n");
+        if (element->kind != TYPE_STRUCT && element->kind != TYPE_UNION) {
+            compile_error( "error: '.' applied to non-struct/union array element\n");
         }
         StructField *f = find_struct_field(element, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(element->kind), field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -732,27 +739,29 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
     }
     LocalVar *lv = codegen_find_var(cg, base->value);
     if (lv) {
-        if (lv->kind != TYPE_STRUCT || !lv->full_type) {
-            compile_error( "error: '.' applied to non-struct '%s'\n", base->value);
+        if ((lv->kind != TYPE_STRUCT && lv->kind != TYPE_UNION) || !lv->full_type) {
+            compile_error( "error: '.' applied to non-struct/union '%s'\n", base->value);
         }
         StructField *f = find_struct_field(lv->full_type, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(lv->kind), field_name);
         }
         fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset - f->offset);
         return f;
     }
-    /* Stage 44: fall back to global struct variable. */
+    /* Stage 44: fall back to global struct/union variable. */
     GlobalVar *gv = codegen_find_global(cg, base->value);
     if (!gv) {
         compile_error( "error: undeclared variable '%s'\n", base->value);
     }
-    if (gv->kind != TYPE_STRUCT || !gv->full_type) {
-        compile_error( "error: '.' applied to non-struct '%s'\n", base->value);
+    if ((gv->kind != TYPE_STRUCT && gv->kind != TYPE_UNION) || !gv->full_type) {
+        compile_error( "error: '.' applied to non-struct/union '%s'\n", base->value);
     }
     StructField *f = find_struct_field(gv->full_type, field_name);
     if (!f) {
-        compile_error( "error: struct has no member '%s'\n", field_name);
+        compile_error( "error: '%s' has no member '%s'\n",
+                type_kind_name(gv->kind), field_name);
     }
     if (f->offset != 0)
         fprintf(cg->output, "    lea rax, [rel %s + %d]\n", gv->name, f->offset);
@@ -775,13 +784,15 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
     if (base->type == AST_MEMBER_ACCESS) {
         StructField *inner = emit_member_addr(cg, base);
         if (inner->kind != TYPE_POINTER || !inner->full_type ||
-            !inner->full_type->base || inner->full_type->base->kind != TYPE_STRUCT) {
-            compile_error( "error: '->' applied to non-pointer-to-struct\n");
+            !inner->full_type->base || (inner->full_type->base->kind != TYPE_STRUCT &&
+                                        inner->full_type->base->kind != TYPE_UNION)) {
+            compile_error( "error: '->' applied to non-pointer-to-struct/union\n");
         }
         Type *st = inner->full_type->base;
         StructField *f = find_struct_field(st, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(st->kind), field_name);
         }
         fprintf(cg->output, "    mov rax, [rax]\n");
         if (f->offset != 0)
@@ -794,12 +805,14 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         codegen_expression(cg, base);
         Type *ptr_type = base->full_type;
         if (!ptr_type || ptr_type->kind != TYPE_POINTER ||
-            !ptr_type->base || ptr_type->base->kind != TYPE_STRUCT) {
-            compile_error( "error: '->' applied to non-pointer-to-struct\n");
+            !ptr_type->base || (ptr_type->base->kind != TYPE_STRUCT &&
+                                ptr_type->base->kind != TYPE_UNION)) {
+            compile_error( "error: '->' applied to non-pointer-to-struct/union\n");
         }
         StructField *f = find_struct_field(ptr_type->base, field_name);
         if (!f) {
-            compile_error( "error: struct has no member '%s'\n", field_name);
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(ptr_type->base->kind), field_name);
         }
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
@@ -810,15 +823,17 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         compile_error( "error: undeclared variable '%s'\n", base->value);
     }
     if (lv->kind != TYPE_POINTER || !lv->full_type ||
-        !lv->full_type->base || lv->full_type->base->kind != TYPE_STRUCT) {
+        !lv->full_type->base || (lv->full_type->base->kind != TYPE_STRUCT &&
+                                  lv->full_type->base->kind != TYPE_UNION)) {
         compile_error(
-                "error: '->' applied to non-pointer-to-struct '%s'\n",
+                "error: '->' applied to non-pointer-to-struct/union '%s'\n",
                 base->value);
     }
     Type *st = lv->full_type->base;
     StructField *f = find_struct_field(st, field_name);
     if (!f) {
-        compile_error( "error: struct has no member '%s'\n", field_name);
+        compile_error( "error: '%s' has no member '%s'\n",
+                type_kind_name(st->kind), field_name);
     }
     if (lv->is_static)
         fprintf(cg->output, "    mov rax, [rel %s]\n", lv->static_label);
@@ -841,8 +856,9 @@ static int compute_decl_bytes(ASTNode *node) {
     if (node->type == AST_DECLARATION) {
         if (node->decl_type == TYPE_ARRAY && node->full_type) {
             total = node->full_type->size + 7;
-        } else if (node->decl_type == TYPE_STRUCT && node->full_type) {
-            /* Struct: actual size plus alignment slack for stack alignment. */
+        } else if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
+                   node->full_type) {
+            /* Struct/union: actual size plus alignment slack for stack alignment. */
             total = node->full_type->size + (node->full_type->alignment - 1);
         } else {
             total = 8;
@@ -1031,7 +1047,8 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         ASTNode *base = node->children[0];
         if (base->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base->value);
-            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
+                lv->full_type) {
                 StructField *f = find_struct_field(lv->full_type, node->value);
                 if (f) return f->kind;
             }
@@ -1041,7 +1058,9 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
             base->children[0]->type == AST_VAR_REF) {
             LocalVar *plv = codegen_find_var(cg, base->children[0]->value);
             if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
-                plv->full_type->base && plv->full_type->base->kind == TYPE_STRUCT) {
+                plv->full_type->base &&
+                (plv->full_type->base->kind == TYPE_STRUCT ||
+                 plv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(plv->full_type->base, node->value);
                 if (f) return f->kind;
             }
@@ -1053,7 +1072,9 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         if (base->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base->value);
             if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
-                lv->full_type->base && lv->full_type->base->kind == TYPE_STRUCT) {
+                lv->full_type->base &&
+                (lv->full_type->base->kind == TYPE_STRUCT ||
+                 lv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(lv->full_type->base, node->value);
                 if (f) return f->kind;
             }
@@ -1196,7 +1217,8 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         ASTNode *base_node = node->children[0];
         if (base_node->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base_node->value);
-            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
+                lv->full_type) {
                 StructField *f = find_struct_field(lv->full_type, node->value);
                 if (f) {
                     t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
@@ -1210,7 +1232,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             base_node->children[0]->type == AST_VAR_REF) {
             LocalVar *plv = codegen_find_var(cg, base_node->children[0]->value);
             if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
-                plv->full_type->base && plv->full_type->base->kind == TYPE_STRUCT) {
+                plv->full_type->base &&
+                (plv->full_type->base->kind == TYPE_STRUCT ||
+                 plv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(plv->full_type->base, node->value);
                 if (f) {
                     t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
@@ -1226,7 +1250,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         if (base_node->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base_node->value);
             if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
-                lv->full_type->base && lv->full_type->base->kind == TYPE_STRUCT) {
+                lv->full_type->base &&
+                (lv->full_type->base->kind == TYPE_STRUCT ||
+                 lv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(lv->full_type->base, node->value);
                 if (f) {
                     t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
@@ -1513,24 +1539,27 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 compile_error(
                         "error: assignment to const variable '%s'\n", lv->name);
             }
-            /* Stage 33: struct-to-struct assignment — byte copy of sizeof(T) bytes. */
-            if (lv->kind == TYPE_STRUCT && lv->full_type) {
+            /* Stage 33/72: struct/union-to-struct/union assignment — byte copy. */
+            if ((lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) && lv->full_type) {
                 if (node->child_count < 1 || node->children[0]->type != AST_VAR_REF) {
-                    compile_error( "error: struct assignment requires a struct variable\n");
+                    compile_error( "error: %s assignment requires a %s variable\n",
+                            type_kind_name(lv->kind), type_kind_name(lv->kind));
                 }
                 LocalVar *src = codegen_find_var(cg, node->children[0]->value);
-                if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
-                    compile_error( "error: cannot assign non-struct to struct '%s'\n", lv->name);
+                if (!src || src->kind != lv->kind || !src->full_type) {
+                    compile_error( "error: cannot assign non-%s to %s '%s'\n",
+                            type_kind_name(lv->kind), type_kind_name(lv->kind), lv->name);
                 }
                 if (src->full_type != lv->full_type) {
-                    compile_error( "error: incompatible struct types in assignment to '%s'\n", lv->name);
+                    compile_error( "error: incompatible %s types in assignment to '%s'\n",
+                            type_kind_name(lv->kind), lv->name);
                 }
                 int sz = lv->full_type->size;
                 for (int b = 0; b < sz; b++) {
                     fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
                     fprintf(cg->output, "    mov [rbp - %d], al\n", lv->offset - b);
                 }
-                node->result_type = TYPE_STRUCT;
+                node->result_type = lv->kind;
                 node->full_type = lv->full_type;
                 return;
             }
@@ -1785,9 +1814,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_SIZEOF_TYPE) {
         int sz;
-        if (node->decl_type == TYPE_STRUCT && node->full_type) {
+        if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
+            node->full_type) {
             if (node->full_type->size == 0) {
-                compile_error( "error: sizeof applied to incomplete struct type\n");
+                compile_error( "error: sizeof applied to incomplete %s type\n",
+                        type_kind_name(node->decl_type));
             }
             sz = node->full_type->size;
         } else {
@@ -1815,7 +1846,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->result_type = TYPE_LONG;
                 return;
             }
-            if (lv && lv->kind == TYPE_STRUCT && lv->full_type) {
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
+                lv->full_type) {
                 fprintf(cg->output, "    mov rax, %d\n", lv->full_type->size);
                 node->result_type = TYPE_LONG;
                 return;
@@ -1827,7 +1859,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     node->result_type = TYPE_LONG;
                     return;
                 }
-                if (gv && gv->kind == TYPE_STRUCT && gv->full_type) {
+                if (gv && (gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
+                    gv->full_type) {
                     fprintf(cg->output, "    mov rax, %d\n", gv->full_type->size);
                     node->result_type = TYPE_LONG;
                     return;
@@ -2843,9 +2876,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
         /* Stage 71: block-scope static variable. */
         if (node->storage_class == SC_STATIC) {
-            if (node->decl_type == TYPE_ARRAY || node->decl_type == TYPE_STRUCT) {
+            if (node->decl_type == TYPE_ARRAY || node->decl_type == TYPE_STRUCT ||
+                node->decl_type == TYPE_UNION) {
                 compile_error(
-                        "error: static local arrays and structs are not yet supported\n");
+                        "error: static local arrays, structs and unions are not yet supported\n");
             }
             if (cg->local_static_count >= MAX_LOCAL_STATICS) {
                 compile_error(
@@ -2919,12 +2953,14 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * terminator and zero fill out to the array's declared size.
          * The literal is not added to the .rodata pool — codegen
          * emits per-byte stack stores instead. */
-        if (node->decl_type == TYPE_STRUCT && node->full_type) {
-            /* Stage 30/32: struct local. Stage 32 adds brace-initializer support. */
+        if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
+            node->full_type) {
+            /* Stage 30/32: struct local. Stage 32 adds brace-initializer support.
+             * Stage 72: union local — same machinery, first-member init via brace list. */
             if (node->full_type->size == 0) {
                 compile_error(
-                        "error: variable '%s' has incomplete struct type\n",
-                        node->value);
+                        "error: variable '%s' has incomplete %s type\n",
+                        node->value, type_kind_name(node->decl_type));
             }
             int size = node->full_type->size;
             int align = node->full_type->alignment;
@@ -2933,25 +2969,50 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             cg->locals[cg->local_count - 1].is_const = node->is_const;
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
-                /* Zero-fill the entire struct slot first, then store provided values. */
+                /* Zero-fill the entire slot first, then store provided values.
+                 * For unions, only the first member is initialized. */
                 for (int b = 0; b < size; b++) {
                     fprintf(cg->output, "    mov byte [rbp - %d], 0\n", offset - b);
                 }
-                /* Stage 44: delegate to recursive helper. */
-                emit_local_struct_init(cg, node->full_type, offset,
-                                       node->children[0]);
+                if (node->decl_type == TYPE_UNION) {
+                    /* First-member initialization: initialize only the first field. */
+                    ASTNode *list = node->children[0];
+                    if (list->child_count > 1) {
+                        compile_error(
+                                "error: too many initializers for union '%s'\n",
+                                node->value);
+                    }
+                    if (list->child_count == 1 && node->full_type->field_count > 0) {
+                        StructField *f = &node->full_type->fields[0];
+                        int fsize = f->full_type ? f->full_type->size
+                                                 : type_kind_bytes(f->kind);
+                        ASTNode *elem = list->children[0];
+                        codegen_expression(cg, elem);
+                        int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_POINTER);
+                        emit_store_local(cg, offset, fsize, src_is_long);
+                    }
+                } else {
+                    emit_local_struct_init(cg, node->full_type, offset,
+                                           node->children[0]);
+                }
             } else if (node->child_count > 0) {
-                /* Stage 33: struct T d = c — copy from another struct variable. */
+                /* struct/union T d = c — copy from another variable of the same type. */
                 ASTNode *init = node->children[0];
                 if (init->type != AST_VAR_REF) {
-                    compile_error( "error: struct initializer must be a struct variable\n");
+                    compile_error( "error: %s initializer must be a %s variable\n",
+                            type_kind_name(node->decl_type),
+                            type_kind_name(node->decl_type));
                 }
                 LocalVar *src = codegen_find_var(cg, init->value);
-                if (!src || src->kind != TYPE_STRUCT || !src->full_type) {
-                    compile_error( "error: struct initializer must be a struct variable\n");
+                if (!src || src->kind != node->decl_type || !src->full_type) {
+                    compile_error( "error: %s initializer must be a %s variable\n",
+                            type_kind_name(node->decl_type),
+                            type_kind_name(node->decl_type));
                 }
                 if (src->full_type != node->full_type) {
-                    compile_error( "error: incompatible struct types in initializer for '%s'\n", node->value);
+                    compile_error( "error: incompatible %s types in initializer for '%s'\n",
+                            type_kind_name(node->decl_type), node->value);
                 }
                 for (int b = 0; b < size; b++) {
                     fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
@@ -3681,8 +3742,9 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             /* Stage 43: int values[] = {10,20,30} or char *names[] = {...}. */
             gv->init_node = init;
             gv->is_initialized = 1;
-        } else if (gv->kind == TYPE_STRUCT && init->type == AST_INITIALIZER_LIST) {
-            /* Stage 44: struct Point p = {3, 4}. */
+        } else if ((gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
+                   init->type == AST_INITIALIZER_LIST) {
+            /* Stage 44/72: struct/union global initialized from brace list. */
             gv->init_node = init;
             gv->is_initialized = 1;
         }
@@ -3795,11 +3857,42 @@ static void codegen_emit_data(CodeGen *cg) {
                 fprintf(cg->output, "%d", b);
             }
             fprintf(cg->output, "\n");
-        } else if (gv->init_node && gv->kind == TYPE_STRUCT &&
+        } else if (gv->init_node &&
+                   (gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
                    gv->init_node->type == AST_INITIALIZER_LIST) {
-            /* Stage 44: struct global initialized from brace-list. */
+            /* Stage 44/72: struct/union global initialized from brace-list. */
             fprintf(cg->output, "%s:\n", gv->name);
-            emit_global_struct(cg, gv->full_type, gv->init_node);
+            if (gv->kind == TYPE_UNION) {
+                /* Union: initialize first member, zero-fill the rest. */
+                ASTNode *list = gv->init_node;
+                int cur_off = 0;
+                if (list->child_count > 1) {
+                    compile_error( "error: too many initializers for union '%s'\n",
+                            gv->name);
+                }
+                if (list->child_count == 1 && gv->full_type->field_count > 0) {
+                    StructField *f = &gv->full_type->fields[0];
+                    int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
+                    ASTNode *elem = list->children[0];
+                    if (elem->type == AST_INT_LITERAL) {
+                        long v = strtol(elem->value, NULL, 10);
+                        fprintf(cg->output, "    %s %ld\n", data_init_directive(f->kind), v);
+                    } else if (elem->type == AST_CHAR_LITERAL) {
+                        long v = (long)(unsigned char)elem->value[0];
+                        fprintf(cg->output, "    %s %ld\n", data_init_directive(f->kind), v);
+                    } else {
+                        compile_error( "error: unsupported initializer for union '%s'\n",
+                                gv->name);
+                    }
+                    cur_off = fsize;
+                }
+                while (cur_off < gv->full_type->size) {
+                    fprintf(cg->output, "    db 0\n");
+                    cur_off++;
+                }
+            } else {
+                emit_global_struct(cg, gv->full_type, gv->init_node);
+            }
         } else if (gv->init_node && gv->kind == TYPE_ARRAY &&
                    gv->init_node->type == AST_INITIALIZER_LIST) {
             /* Stage 43: int values[] = {10,20,30} or char *names[] = {...}.
@@ -3878,6 +3971,10 @@ static void codegen_emit_bss(CodeGen *cg) {
                     gv->name,
                     bss_res_directive(gv->full_type->base->kind),
                     gv->full_type->length);
+        } else if ((gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
+                   gv->full_type) {
+            /* Reserve the exact byte count for struct/union globals. */
+            fprintf(cg->output, "%s: resb %d\n", gv->name, gv->full_type->size);
         } else {
             fprintf(cg->output, "%s: %s 1\n",
                     gv->name, bss_res_directive(gv->kind));
