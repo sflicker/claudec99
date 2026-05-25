@@ -274,6 +274,7 @@ int main(int argc, char *argv[]) {
             print_tokens = 1;
         } else if (strcmp(argv[i], "-Werror") == 0) {
             warnings_are_errors = 1;
+            g_warnings_are_errors = 1;
         } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
             const char *val = argv[i] + 13;
             char *end;

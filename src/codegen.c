@@ -254,16 +254,15 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->warnings_are_errors = 0;
 }
 
-/* Stage 66: warn with a variable name embedded. */
+/* Stage 66/70-03: warn with a variable name embedded.
+ * Position is omitted (codegen has no token info); g_warnings_are_errors
+ * is checked inside compile_warning_at. */
 static void codegen_warn_const_discard(CodeGen *cg, const char *prefix,
                                         const char *varname) {
-    if (cg->warnings_are_errors) {
-        compile_error("error: %s '%s' discards 'const' qualifier from pointer target type\n",
-                      prefix, varname);
-    }
-    fprintf(stderr,
-            "warning: %s '%s' discards 'const' qualifier from pointer target type\n",
-            prefix, varname);
+    (void)cg; /* warnings_are_errors now routed through g_warnings_are_errors */
+    compile_warning_at(NULL, 0, 0,
+        "warning: %s '%s' discards 'const' qualifier from pointer target type\n",
+        prefix, varname);
 }
 
 /*

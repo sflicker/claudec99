@@ -4,6 +4,14 @@
 #include "parser.h"
 #include "util.h"
 
+/* Stage 70-03: report a parser error at the current token's source position. */
+#define PARSER_ERROR(parser, ...) \
+    compile_error_at( \
+        (parser)->current.file ? (parser)->current.file->path : NULL, \
+        (parser)->current.line, \
+        (parser)->current.col, \
+        __VA_ARGS__)
+
 /*
  * Internal helper filled by parse_declarator. Carries the identifier
  * name, pointer depth, and optional array-size or function-suffix
@@ -70,12 +78,12 @@ static void parser_register_typedef(Parser *parser, const char *name,
     for (int i = 0; i < parser->typedef_count; i++) {
         if (parser->typedefs[i].scope_depth == parser->scope_depth &&
             strcmp(parser->typedefs[i].name, name) == 0) {
-            compile_error( "error: duplicate typedef '%s' in this scope\n",
+            PARSER_ERROR(parser, "error: duplicate typedef '%s' in this scope\n",
                     name);
         }
     }
     if (parser->typedef_count >= PARSER_MAX_TYPEDEFS) {
-        compile_error( "error: too many typedefs (max %d)\n",
+        PARSER_ERROR(parser, "error: too many typedefs (max %d)\n",
                 PARSER_MAX_TYPEDEFS);
     }
     TypedefEntry *e = &parser->typedefs[parser->typedef_count++];
@@ -147,7 +155,7 @@ static void parser_register_global(Parser *parser, const char *name,
     GlobalObjSig *existing = parser_find_global(parser, name);
     if (existing) {
         if (existing->kind != kind) {
-            compile_error( "error: conflicting type for global '%s'\n", name);
+            PARSER_ERROR(parser, "error: conflicting type for global '%s'\n", name);
         }
         /* Stage 25-01: for function-pointer globals, verify the full type. */
         if (kind == TYPE_POINTER && existing->full_type && full_type) {
@@ -156,7 +164,7 @@ static void parser_register_global(Parser *parser, const char *name,
                 ef->base->kind == TYPE_FUNCTION &&
                 nf->base->kind == TYPE_FUNCTION) {
                 if (!func_ptr_types_equal(ef, nf)) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: conflicting type for global '%s'\n", name);
                 }
             }
@@ -164,16 +172,16 @@ static void parser_register_global(Parser *parser, const char *name,
         int ex_is_static = (existing->storage_class == SC_STATIC);
         int new_is_static = (sc == SC_STATIC);
         if (ex_is_static != new_is_static) {
-            compile_error( "error: conflicting linkage for '%s'\n", name);
+            PARSER_ERROR(parser, "error: conflicting linkage for '%s'\n", name);
         }
         if (ex_is_static) {
             /* static + static: duplicate definition */
-            compile_error( "error: duplicate global declaration '%s'\n", name);
+            PARSER_ERROR(parser, "error: duplicate global declaration '%s'\n", name);
         }
         /* Both non-static: extern+extern and extern+none are OK;
          * none+none is a duplicate definition. */
         if (existing->storage_class != SC_EXTERN && sc != SC_EXTERN) {
-            compile_error( "error: duplicate global declaration '%s'\n", name);
+            PARSER_ERROR(parser, "error: duplicate global declaration '%s'\n", name);
         }
         /* If new declaration is a definition (SC_NONE), upgrade the entry. */
         if (sc == SC_NONE) {
@@ -182,7 +190,7 @@ static void parser_register_global(Parser *parser, const char *name,
         return;
     }
     if (parser->global_count >= PARSER_MAX_GLOBALS) {
-        compile_error( "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
+        PARSER_ERROR(parser, "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
     }
     GlobalObjSig *g = &parser->globals[parser->global_count++];
     strncpy(g->name, name, 255);
@@ -213,7 +221,7 @@ static void parser_register_function(Parser *parser, const char *name,
                                      StorageClass sc, int is_variadic) {
     /* Stage 22-02: reject function if a global object with the same name exists. */
     if (parser_find_global(parser, name)) {
-        compile_error(
+        PARSER_ERROR(parser, 
                 "error: '%s' redeclared as a different kind of symbol\n", name);
     }
     FuncSig *existing = parser_find_function(parser, name);
@@ -222,28 +230,28 @@ static void parser_register_function(Parser *parser, const char *name,
         int ex_is_static = (existing->storage_class == SC_STATIC);
         int new_is_static = (sc == SC_STATIC);
         if (ex_is_static != new_is_static) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: conflicting linkage for '%s'\n", name);
         }
         if (existing->param_count != param_count) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: function '%s' parameter count mismatch (%d vs %d)\n",
                     name, existing->param_count, param_count);
         }
         if (existing->return_type != return_type) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: function '%s' return type mismatch\n", name);
         }
         for (int i = 0; i < param_count; i++) {
             if (existing->param_types[i] != param_types[i]) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: function '%s' parameter type mismatch at position %d\n",
                         name, i + 1);
             }
         }
         if (is_definition) {
             if (existing->has_definition) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: duplicate function definition '%s'\n",
                         name);
             }
@@ -252,10 +260,10 @@ static void parser_register_function(Parser *parser, const char *name,
         return;
     }
     if (parser->func_count >= PARSER_MAX_FUNCTIONS) {
-        compile_error( "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
+        PARSER_ERROR(parser, "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
     }
     if (param_count > FUNC_MAX_PARAMS) {
-        compile_error(
+        PARSER_ERROR(parser, 
                 "error: function '%s' has %d parameters; max supported is %d\n",
                 name, param_count, FUNC_MAX_PARAMS);
     }
@@ -275,7 +283,7 @@ static void parser_register_function(Parser *parser, const char *name,
 
 static Token parser_expect(Parser *parser, TokenType type) {
     if (parser->current.type != type) {
-        compile_error( "error: expected %s, got %s ('%s')\n",
+        PARSER_ERROR(parser, "error: expected %s, got %s ('%s')\n",
                 token_display_name(type),
                 token_display_name(parser->current.type),
                 parser->current.value);
@@ -302,7 +310,7 @@ static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
     StructTag *st = parser_find_struct_tag(parser, tag);
     if (st) return st;
     if (parser->struct_tag_count >= PARSER_MAX_STRUCT_TAGS) {
-        compile_error( "error: too many struct tags (max %d)\n",
+        PARSER_ERROR(parser, "error: too many struct tags (max %d)\n",
                 PARSER_MAX_STRUCT_TAGS);
     }
     st = &parser->struct_tags[parser->struct_tag_count++];
@@ -329,7 +337,7 @@ static Type *parse_struct_specifier(Parser *parser) {
     parser->current = lexer_next_token(parser->lexer);
 
     if (parser->current.type != TOKEN_IDENTIFIER) {
-        compile_error( "error: expected struct tag name after 'struct'\n");
+        PARSER_ERROR(parser, "error: expected struct tag name after 'struct'\n");
     }
     char tag[256];
     strncpy(tag, parser->current.value, sizeof(tag) - 1);
@@ -366,7 +374,7 @@ static Type *parse_struct_specifier(Parser *parser) {
                 /* Stage 37: a non-pointer field of an incomplete struct type
                  * is invalid; pointer-to-incomplete is allowed. */
                 if (field_type->kind == TYPE_STRUCT && field_type->size == 0) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: field '%s' has incomplete struct type\n", d.name);
                 }
 
@@ -470,7 +478,7 @@ static Type *parse_enum_specifier(Parser *parser) {
             }
             if (!et) {
                 if (parser->enum_tag_count >= PARSER_MAX_ENUM_TAGS) {
-                    compile_error( "error: too many enum tags (max %d)\n",
+                    PARSER_ERROR(parser, "error: too many enum tags (max %d)\n",
                             PARSER_MAX_ENUM_TAGS);
                 }
                 et = &parser->enum_tags[parser->enum_tag_count++];
@@ -484,7 +492,7 @@ static Type *parse_enum_specifier(Parser *parser) {
 
         while (parser->current.type != TOKEN_RBRACE) {
             if (parser->current.type != TOKEN_IDENTIFIER) {
-                compile_error( "error: expected identifier in enumerator list, got '%s'\n",
+                PARSER_ERROR(parser, "error: expected identifier in enumerator list, got '%s'\n",
                         parser->current.value);
             }
             char ename[256];
@@ -494,7 +502,7 @@ static Type *parse_enum_specifier(Parser *parser) {
 
             for (int i = 0; i < parser->enum_const_count; i++) {
                 if (strcmp(parser->enum_consts[i].name, ename) == 0) {
-                    compile_error( "error: duplicate enumerator '%s'\n", ename);
+                    PARSER_ERROR(parser, "error: duplicate enumerator '%s'\n", ename);
                 }
             }
 
@@ -507,19 +515,19 @@ static Type *parse_enum_specifier(Parser *parser) {
                     next_val = (long)(unsigned char)parser->current.value[0];
                     parser->current = lexer_next_token(parser->lexer);
                 } else {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: enumerator value must be an integer or character literal\n");
                 }
                 /* Reject expressions: only a bare literal is accepted. */
                 if (parser->current.type != TOKEN_COMMA &&
                     parser->current.type != TOKEN_RBRACE) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: enumerator value must be an integer or character literal\n");
                 }
             }
 
             if (parser->enum_const_count >= PARSER_MAX_ENUM_CONSTS) {
-                compile_error( "error: too many enum constants (max %d)\n",
+                PARSER_ERROR(parser, "error: too many enum constants (max %d)\n",
                         PARSER_MAX_ENUM_CONSTS);
             }
             EnumConst *ec = &parser->enum_consts[parser->enum_const_count++];
@@ -537,7 +545,7 @@ static Type *parse_enum_specifier(Parser *parser) {
     } else {
         /* Enum reference without body: "enum Tag" */
         if (!has_tag) {
-            compile_error( "error: expected identifier or '{' after 'enum'\n");
+            PARSER_ERROR(parser, "error: expected identifier or '{' after 'enum'\n");
         }
         int found = 0;
         for (int i = 0; i < parser->enum_tag_count; i++) {
@@ -548,7 +556,7 @@ static Type *parse_enum_specifier(Parser *parser) {
             }
         }
         if (!found) {
-            compile_error( "error: 'enum %s' is not defined\n", tag);
+            PARSER_ERROR(parser, "error: 'enum %s' is not defined\n", tag);
         }
     }
 
@@ -576,7 +584,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         if (parser->current.type == TOKEN_LONG) {
             parser->current = lexer_next_token(parser->lexer);
             if (parser->current.type == TOKEN_LONG) {
-                compile_error( "error: 'long long long' is not a valid type\n");
+                PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
             }
             if (parser->current.type == TOKEN_INT)
                 parser->current = lexer_next_token(parser->lexer);
@@ -597,11 +605,11 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
          * signed int → int, signed long → long */
         parser->current = lexer_next_token(parser->lexer); /* consume 'signed' */
         if (parser->current.type == TOKEN_UNSIGNED) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: 'signed' and 'unsigned' cannot both be specified\n");
         }
         if (parser->current.type == TOKEN_BOOL) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: _Bool type cannot have a sign qualifier\n");
         }
         switch (parser->current.type) {
@@ -624,7 +632,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             if (parser->current.type == TOKEN_LONG) {
                 parser->current = lexer_next_token(parser->lexer);
                 if (parser->current.type == TOKEN_LONG) {
-                    compile_error( "error: 'long long long' is not a valid type\n");
+                    PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
                 }
                 if (parser->current.type == TOKEN_INT)
                     parser->current = lexer_next_token(parser->lexer);
@@ -651,11 +659,11 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
          * Stage 61: also consume optional trailing "int" for short/long. */
         parser->current = lexer_next_token(parser->lexer); /* consume 'unsigned' */
         if (parser->current.type == TOKEN_SIGNED) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: 'signed' and 'unsigned' cannot both be specified\n");
         }
         if (parser->current.type == TOKEN_BOOL) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: _Bool type cannot have a sign qualifier\n");
         }
         switch (parser->current.type) {
@@ -678,7 +686,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
             if (parser->current.type == TOKEN_LONG) {
                 parser->current = lexer_next_token(parser->lexer);
                 if (parser->current.type == TOKEN_LONG) {
-                    compile_error( "error: 'long long long' is not a valid type\n");
+                    PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
                 }
                 if (parser->current.type == TOKEN_INT)
                     parser->current = lexer_next_token(parser->lexer);
@@ -704,7 +712,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         /* Stage 28-01/28-02: typedef name used as a type specifier. */
         TypedefEntry *entry = parser_find_typedef(parser, parser->current.value);
         if (!entry) {
-            compile_error( "error: unknown type name '%s'\n",
+            PARSER_ERROR(parser, "error: unknown type name '%s'\n",
                     parser->current.value);
         }
         kind = entry->kind;
@@ -735,7 +743,7 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
         return st;
     }
     default:
-        compile_error( "error: expected integer type, got '%s'\n",
+        PARSER_ERROR(parser, "error: expected integer type, got '%s'\n",
                 parser->current.value);
     }
     parser->current = lexer_next_token(parser->lexer);
@@ -825,7 +833,7 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         /* A function suffix on the inner identifier means "function returning
          * function pointer" (e.g. int (*fp())(int)) — not yet supported. */
         if (parser->current.type == TOKEN_LPAREN) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: functions returning function pointers are not supported\n");
         }
         /* Optional array suffix inside parens: (*a[10]) */
@@ -837,19 +845,19 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                 parser->current = lexer_next_token(parser->lexer);
                 int length = (int)size_tok.long_value;
                 if (length <= 0) {
-                    compile_error( "error: array size must be greater than zero\n");
+                    PARSER_ERROR(parser, "error: array size must be greater than zero\n");
                 }
                 d.array_length = length;
                 d.has_size = 1;
             } else if (parser->current.type != TOKEN_RBRACKET) {
-                compile_error( "error: array size must be an integer literal\n");
+                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
             }
             parser_expect(parser, TOKEN_RBRACKET);
         }
         parser_expect(parser, TOKEN_RPAREN);
         /* Check suffix after the closing ")" */
         if (parser->current.type == TOKEN_LBRACKET) {
-            compile_error( "error: pointer to array types are not supported\n");
+            PARSER_ERROR(parser, "error: pointer to array types are not supported\n");
         }
         if (parser->current.type == TOKEN_LPAREN) {
             if (inner_stars > 0) {
@@ -863,7 +871,7 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                 if (parser->current.type != TOKEN_RPAREN) {
                     while (1) {
                         if (count >= FUNC_TYPE_MAX_PARAMS) {
-                            compile_error(
+                            PARSER_ERROR(parser, 
                                     "error: too many parameters in function pointer"
                                     " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
                         }
@@ -914,12 +922,12 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
             int length = (int)size_tok.long_value;
             if (length <= 0) {
-                compile_error( "error: array size must be greater than zero\n");
+                PARSER_ERROR(parser, "error: array size must be greater than zero\n");
             }
             d.array_length = length;
             d.has_size = 1;
         } else if (parser->current.type != TOKEN_RBRACKET) {
-            compile_error( "error: array size must be an integer literal\n");
+            PARSER_ERROR(parser, "error: array size must be an integer literal\n");
         }
         parser_expect(parser, TOKEN_RBRACKET);
     } else if (parser->current.type == TOKEN_LPAREN) {
@@ -1035,12 +1043,12 @@ static ASTNode *parse_primary(Parser *parser) {
                  * parameter count; non-variadic functions require an exact match. */
                 if (sig->is_variadic) {
                     if (call->child_count < sig->param_count) {
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: function '%s' expects at least %d arguments, got %d\n",
                                 token.value, sig->param_count, call->child_count);
                     }
                 } else if (sig->param_count != call->child_count) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: function '%s' expects %d arguments, got %d\n",
                             token.value, sig->param_count, call->child_count);
                 }
@@ -1075,7 +1083,7 @@ static ASTNode *parse_primary(Parser *parser) {
         parser_expect(parser, TOKEN_RPAREN);
         return expr;
     }
-    compile_error( "error: expected expression, got '%s'\n",
+    PARSER_ERROR(parser, "error: expected expression, got '%s'\n",
             parser->current.value);
 }
 
@@ -1122,7 +1130,7 @@ static ASTNode *parse_postfix(Parser *parser) {
              * pointer-array element subscripts like names[0][1] work. */
             if (expr->type != AST_VAR_REF && expr->type != AST_DEREF &&
                 expr->type != AST_ARRAY_INDEX) {
-                compile_error( "error: subscript base must be an identifier\n");
+                PARSER_ERROR(parser, "error: subscript base must be an identifier\n");
             }
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *index = parse_expression(parser);
@@ -1150,7 +1158,7 @@ static ASTNode *parse_postfix(Parser *parser) {
             continue;
         }
         if (expr->type != AST_VAR_REF) {
-            compile_error( "error: postfix %s requires an identifier\n",
+            PARSER_ERROR(parser, "error: postfix %s requires an identifier\n",
                     parser->current.value);
         }
         Token op = parser->current;
@@ -1189,7 +1197,7 @@ static ASTNode *parse_unary(Parser *parser) {
         /* Peek past '(' to distinguish sizeof(type) from sizeof(expression) */
         parser->current = lexer_next_token(parser->lexer); /* consume '(' */
         if (parser->current.type == TOKEN_VOID) {
-            compile_error( "error: sizeof applied to void type\n");
+            PARSER_ERROR(parser, "error: sizeof applied to void type\n");
         }
         if (parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
@@ -1211,7 +1219,7 @@ static ASTNode *parse_unary(Parser *parser) {
             return node;
         }
         if (parser->current.type == TOKEN_RPAREN) {
-            compile_error( "error: expected expression or type in sizeof\n");
+            PARSER_ERROR(parser, "error: expected expression or type in sizeof\n");
         }
         /* sizeof(<expression>) */
         ASTNode *operand = parse_expression(parser);
@@ -1226,7 +1234,7 @@ static ASTNode *parse_unary(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
         if (operand->type != AST_VAR_REF) {
-            compile_error( "error: prefix %s requires an identifier\n", op.value);
+            PARSER_ERROR(parser, "error: prefix %s requires an identifier\n", op.value);
         }
         ASTNode *node = ast_new(AST_PREFIX_INC_DEC, op.value);
         ast_add_child(node, operand);
@@ -1239,7 +1247,7 @@ static ASTNode *parse_unary(Parser *parser) {
          * `&a[i]` produces a pointer to the i-th element. */
         if (operand->type != AST_VAR_REF &&
             operand->type != AST_ARRAY_INDEX) {
-            compile_error( "error: address-of requires an lvalue\n");
+            PARSER_ERROR(parser, "error: address-of requires an lvalue\n");
         }
         ASTNode *node = ast_new(AST_ADDR_OF, NULL);
         ast_add_child(node, operand);
@@ -1512,11 +1520,11 @@ static ASTNode *parse_conditional(Parser *parser) {
     }
     parser->current = lexer_next_token(parser->lexer); /* consume '?' */
     if (parser->current.type == TOKEN_COLON) {
-        compile_error( "error: expected expression after '?'\n");
+        PARSER_ERROR(parser, "error: expected expression after '?'\n");
     }
     ASTNode *true_expr = parse_expression(parser);
     if (parser->current.type != TOKEN_COLON) {
-        compile_error( "error: expected ':' in conditional expression\n");
+        PARSER_ERROR(parser, "error: expected ':' in conditional expression\n");
     }
     parser->current = lexer_next_token(parser->lexer); /* consume ':' */
     ASTNode *false_expr = parse_conditional(parser);
@@ -1557,7 +1565,7 @@ static ASTNode *parse_initializer(Parser *parser) {
         ast_add_child(list, parse_initializer(parser));
     }
     if (parser->current.type != TOKEN_RBRACE) {
-        compile_error( "error: expected '}' to close initializer list\n");
+        PARSER_ERROR(parser, "error: expected '}' to close initializer list\n");
     }
     parser->current = lexer_next_token(parser->lexer);
     return list;
@@ -1629,7 +1637,7 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
             lhs->type != AST_ARRAY_INDEX &&
             lhs->type != AST_MEMBER_ACCESS &&
             lhs->type != AST_ARROW_ACCESS) {
-            compile_error( "error: assignment target must be an lvalue\n");
+            PARSER_ERROR(parser, "error: assignment target must be an lvalue\n");
         }
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *rhs = parse_assignment_expression(parser);
@@ -1834,7 +1842,7 @@ static ASTNode *parse_statement(Parser *parser) {
     /* Stage 23: storage class specifiers are not supported at block scope. */
     if (parser->current.type == TOKEN_EXTERN ||
         parser->current.type == TOKEN_STATIC) {
-        compile_error(
+        PARSER_ERROR(parser, 
                 "error: storage class specifier not allowed in block scope\n");
     }
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at block scope. */
@@ -1844,13 +1852,13 @@ static ASTNode *parse_statement(Parser *parser) {
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
         if (d.is_function) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: only scalar, pointer, and array typedefs are supported\n");
         }
         /* Stage 28-04: array typedef — register with the full array Type*. */
         if (d.is_array) {
             if (!d.has_size) {
-                compile_error( "error: array typedef requires explicit size\n");
+                PARSER_ERROR(parser, "error: array typedef requires explicit size\n");
             }
             parser_expect(parser, TOKEN_SEMICOLON);
             Type *array_type = type_array(base_type, d.array_length);
@@ -1858,7 +1866,7 @@ static ASTNode *parse_statement(Parser *parser) {
             return ast_new(AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: typedef declaration cannot have an initializer\n");
         }
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -1938,7 +1946,7 @@ static ASTNode *parse_statement(Parser *parser) {
         /* Reject `void x;` — void cannot be an object type. */
         if (base_kind == TYPE_VOID && d.pointer_count == 0 &&
             !d.is_func_pointer && !d.is_array) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: cannot declare variable '%s' of type void\n", d.name);
         }
 
@@ -1994,7 +2002,7 @@ static ASTNode *parse_statement(Parser *parser) {
                     }
                 } else if (parser->current.type == TOKEN_STRING_LITERAL) {
                     if (full_type->kind != TYPE_CHAR) {
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: string initializer only supported for char arrays\n");
                     }
                     Token str_tok = parser->current;
@@ -2008,7 +2016,7 @@ static ASTNode *parse_statement(Parser *parser) {
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {
-                            compile_error(
+                            PARSER_ERROR(parser, 
                                     "error: array too small for string literal initializer\n");
                         }
                     } else {
@@ -2017,15 +2025,15 @@ static ASTNode *parse_statement(Parser *parser) {
                     init_node = str_init;
                 } else {
                     if (!has_size) {
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: omitted array size requires string literal initializer\n");
                     } else {
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: array initializer must be a brace-enclosed list or string literal\n");
                     }
                 }
             } else if (!has_size) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: array size required unless initialized from string literal\n");
             }
 
@@ -2060,7 +2068,7 @@ static ASTNode *parse_statement(Parser *parser) {
             ASTNode *init = parse_initializer(parser); /* stage 32: allows brace lists */
             if (init->type == AST_INITIALIZER_LIST &&
                 decl->decl_type != TYPE_STRUCT && decl->decl_type != TYPE_ARRAY) {
-                compile_error( "error: brace initializer not valid for scalar type\n");
+                PARSER_ERROR(parser, "error: brace initializer not valid for scalar type\n");
             }
             ast_add_child(decl, init);
         }
@@ -2075,7 +2083,7 @@ static ASTNode *parse_statement(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
             ParsedDeclarator d2 = parse_declarator(parser);
             if (d2.is_array) {
-                compile_error( "error: array declarator in multi-declarator list not supported\n");
+                PARSER_ERROR(parser, "error: array declarator in multi-declarator list not supported\n");
             }
             /* Stage 66: propagate const base for multi-declarator const pointer lists. */
             Type *effective_base2 = (local_is_const && d2.pointer_count > 0)
@@ -2142,7 +2150,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_CASE) {
         if (parser->switch_depth == 0) {
-            compile_error( "error: 'case' label outside of switch\n");
+            PARSER_ERROR(parser, "error: 'case' label outside of switch\n");
         }
         parser->current = lexer_next_token(parser->lexer);
         Token value = parser_expect(parser, TOKEN_INT_LITERAL);
@@ -2154,7 +2162,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_DEFAULT) {
         if (parser->switch_depth == 0) {
-            compile_error( "error: 'default' label outside of switch\n");
+            PARSER_ERROR(parser, "error: 'default' label outside of switch\n");
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_COLON);
@@ -2167,7 +2175,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_BREAK) {
         if (parser->loop_depth == 0 && parser->switch_depth == 0) {
-            compile_error( "error: break outside of loop or switch\n");
+            PARSER_ERROR(parser, "error: break outside of loop or switch\n");
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -2175,7 +2183,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_CONTINUE) {
         if (parser->loop_depth == 0) {
-            compile_error( "error: continue outside of loop\n");
+            PARSER_ERROR(parser, "error: continue outside of loop\n");
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -2291,7 +2299,7 @@ static void parse_parameter_list(Parser *parser, ASTNode *func) {
                 if (func->children[i]->type == AST_PARAM &&
                     func->children[i]->value[0] != '\0' &&
                     strcmp(func->children[i]->value, next->value) == 0) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: duplicate parameter '%s' in function '%s'\n",
                             next->value, func->value);
                 }
@@ -2334,7 +2342,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
             parser->current.type == TOKEN_STATIC ||
             parser->current.type == TOKEN_TYPEDEF) {
             if (has_sc) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: multiple storage class specifiers are not allowed\n");
             }
             has_sc = 1;
@@ -2356,7 +2364,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
                     parser->current.type == TOKEN_IDENTIFIER &&
                     parser_find_typedef(parser, parser->current.value))) {
             if (has_type) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: multiple type specifiers are not allowed\n");
             }
             has_type = 1;
@@ -2367,7 +2375,7 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
     }
 
     if (!has_type) {
-        compile_error( "error: expected type specifier\n");
+        PARSER_ERROR(parser, "error: expected type specifier\n");
     }
 
     return r;
@@ -2412,13 +2420,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
         if (d.is_function) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: only scalar, pointer, and array typedefs are supported\n");
         }
         /* Stage 28-04: array typedef — register with the full array Type*. */
         if (d.is_array) {
             if (!d.has_size) {
-                compile_error( "error: array typedef requires explicit size\n");
+                PARSER_ERROR(parser, "error: array typedef requires explicit size\n");
             }
             parser_expect(parser, TOKEN_SEMICOLON);
             Type *array_type = type_array(base_type, d.array_length);
@@ -2426,7 +2434,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             return ast_new(AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: typedef declaration cannot have an initializer\n");
         }
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -2453,12 +2461,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     if (d.is_func_pointer) {
         Type *fp_type = build_fp_type(base_type, &d);
         if (sc == SC_EXTERN && parser->current.type == TOKEN_ASSIGN) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: extern declaration of '%s' cannot have an initializer\n",
                     d.name);
         }
         if (parser_find_function(parser, d.name)) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: '%s' redeclared as a different kind of symbol\n", d.name);
         }
         parser_register_global(parser, d.name, TYPE_POINTER, sc, fp_type);
@@ -2470,28 +2478,28 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         if (parser->current.type == TOKEN_ASSIGN) {
             parser->current = lexer_next_token(parser->lexer);
             if (parser->current.type != TOKEN_IDENTIFIER) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: function pointer initializer must be a function name\n");
             }
             Token init_tok = parser->current;
             parser->current = lexer_next_token(parser->lexer);
             FuncSig *sig = parser_find_function(parser, init_tok.value);
             if (!sig) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: '%s' is not a declared function\n", init_tok.value);
             }
             /* Verify compatibility against the declared function pointer type. */
             Type *fp_fn = fp_type->base; /* TYPE_FUNCTION node */
             if (fp_fn->base->kind != sig->return_type ||
                 fp_fn->param_count != sig->param_count) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: incompatible function pointer type in initializer of '%s'\n",
                         d.name);
             }
             for (int i = 0; i < sig->param_count; i++) {
                 if (!fp_fn->params[i] ||
                     fp_fn->params[i]->kind != sig->param_types[i]) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: incompatible function pointer type in initializer of '%s'\n",
                             d.name);
                 }
@@ -2505,12 +2513,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
     if (!d.is_function) {
         if (parser->current.type == TOKEN_LBRACE) {
-            compile_error( "error: '%s' is not a function declarator\n", d.name);
+            PARSER_ERROR(parser, "error: '%s' is not a function declarator\n", d.name);
         }
         /* Reject `void g;` — void cannot be an object type. */
         if (base_kind == TYPE_VOID && d.pointer_count == 0 &&
             !d.is_func_pointer && !d.is_array) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: cannot declare variable '%s' of type void\n", d.name);
         }
         /* Stage 66: propagate const base for file-scope const pointer declarations. */
@@ -2522,14 +2530,14 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
         /* Stage 23: extern with initializer is invalid. */
         if (sc == SC_EXTERN && parser->current.type == TOKEN_ASSIGN) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: extern declaration of '%s' cannot have an initializer\n",
                     d.name);
         }
 
         /* Stage 22-02/23: detect function/object name conflicts and register. */
         if (parser_find_function(parser, d.name)) {
-            compile_error(
+            PARSER_ERROR(parser, 
                     "error: '%s' redeclared as a different kind of symbol\n", d.name);
         }
         TypeKind obj_kind = d.is_array ? TYPE_ARRAY :
@@ -2559,12 +2567,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                         has_size = 1;
                     } else if (init_node->child_count > length) {
                         /* Stage 44: too many initializers for explicitly-sized array. */
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: too many initializers for array '%s'\n", d.name);
                     }
                 } else if (parser->current.type == TOKEN_STRING_LITERAL) {
                     if (full_type->kind != TYPE_CHAR) {
-                        compile_error(
+                        PARSER_ERROR(parser, 
                                 "error: string initializer only supported for char arrays\n");
                     }
                     Token str_tok = parser->current;
@@ -2576,7 +2584,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {
-                            compile_error(
+                            PARSER_ERROR(parser, 
                                     "error: array too small for string literal initializer\n");
                         }
                     } else {
@@ -2584,11 +2592,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     }
                     init_node = str_init;
                 } else {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: array initializer must be a brace-enclosed list or string literal\n");
                 }
             } else if (!has_size) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: array size required for file-scope declaration '%s'\n",
                         d.name);
             }
@@ -2620,7 +2628,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             if (parser->current.type == TOKEN_LBRACE) {
                 /* Stage 44: struct global initialized with brace list. */
                 if (decl->decl_type != TYPE_STRUCT) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: brace initializer not valid for non-struct global '%s'\n",
                             d.name);
                 }
@@ -2629,11 +2637,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 init = parse_primary(parser);
                 if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
                     init->type != AST_STRING_LITERAL) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: non-constant initializer for global '%s'\n", d.name);
                 }
                 if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: string literal can only initialize a pointer\n");
                 }
             }
@@ -2650,11 +2658,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
             ParsedDeclarator d2 = parse_declarator(parser);
             if (d2.is_array || d2.is_function) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: invalid declarator in file-scope list\n");
             }
             if (parser_find_function(parser, d2.name)) {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: '%s' redeclared as a different kind of symbol\n", d2.name);
             }
             TypeKind k2 = (d2.pointer_count > 0 || base_kind == TYPE_POINTER)
@@ -2682,7 +2690,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 parser->current = lexer_next_token(parser->lexer);
                 ASTNode *init2 = parse_primary(parser);
                 if (init2->type != AST_INT_LITERAL && init2->type != AST_CHAR_LITERAL) {
-                    compile_error(
+                    PARSER_ERROR(parser, 
                             "error: non-constant initializer for global '%s'\n", d2.name);
                 }
                 ast_add_child(next_decl, init2);
@@ -2723,7 +2731,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     parser_expect(parser, TOKEN_RPAREN);
 
     if (parser->current.type == TOKEN_ASSIGN) {
-        compile_error(
+        PARSER_ERROR(parser, 
                 "error: function declaration cannot have an initializer\n");
     }
 
@@ -2735,7 +2743,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         for (int i = 0; i < param_count; i++) {
             if (func->children[i]->type == AST_PARAM &&
                 func->children[i]->value[0] == '\0') {
-                compile_error(
+                PARSER_ERROR(parser, 
                         "error: unnamed parameter in definition of '%s'\n",
                         d.name);
             }
@@ -2745,7 +2753,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     /* Collect parameter types for registration. */
     TypeKind param_types[FUNC_MAX_PARAMS];
     if (param_count > FUNC_MAX_PARAMS) {
-        compile_error(
+        PARSER_ERROR(parser, 
                 "error: function '%s' has %d parameters; max supported is %d\n",
                 d.name, param_count, FUNC_MAX_PARAMS);
     }
@@ -2771,7 +2779,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
  * parser_register_function; multiple declarations of the same function
  * are permitted.
  *
- * When max-errors > 1 or unlimited (0), compile_error() longjmps back
+ * When max-errors > 1 or unlimited (0), PARSER_ERROR(parser, ) longjmps back
  * here rather than exiting; parser_sync() advances to the next declaration
  * boundary so parsing can continue.
  */
@@ -2803,7 +2811,7 @@ ASTNode *parse_translation_unit(Parser *parser) {
     g_error_jmp_valid = 1;
     while (parser->current.type != TOKEN_EOF) {
         if (setjmp(g_error_jmp)) {
-            /* Returned via longjmp from compile_error().
+            /* Returned via longjmp from PARSER_ERROR(parser, ).
              * Reset scope and advance past the failed declaration. */
             parser->scope_depth = 0;
             parser_sync(parser);

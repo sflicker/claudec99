@@ -8,18 +8,12 @@ int     g_max_errors    = 1;
 int     g_error_count   = 0;
 jmp_buf g_error_jmp;
 int     g_error_jmp_valid = 0;
+int     g_warnings_are_errors = 0;
 
-/* Report a compilation error.
- * Always prints the message. Increments g_error_count. Exits when the
- * error limit is reached (g_max_errors > 0 && g_error_count >= g_max_errors).
- * Otherwise performs a long jump to the recovery point in
- * parse_translation_unit if one is active; exits unconditionally if not. */
+/* Core error-reporting logic shared by compile_error and compile_error_at. */
 __attribute__((noreturn))
-void compile_error(const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
+static void do_compile_error(const char *fmt, va_list ap) {
     vfprintf(stderr, fmt, ap);
-    va_end(ap);
     g_error_count++;
     if (g_max_errors > 0 && g_error_count >= g_max_errors) {
         exit(1);
@@ -28,6 +22,40 @@ void compile_error(const char *fmt, ...) {
         longjmp(g_error_jmp, 1);
     }
     exit(1);
+}
+
+/* Report a compilation error without source position. */
+__attribute__((noreturn))
+void compile_error(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    do_compile_error(fmt, ap);
+}
+
+/* Stage 70-03: report a compilation error with a file:line:col: prefix.
+ * When file is NULL or line is 0, behaves like compile_error. */
+__attribute__((noreturn))
+void compile_error_at(const char *file, int line, int col, const char *fmt, ...) {
+    if (file && line > 0)
+        fprintf(stderr, "%s:%d:%d: ", file, line, col);
+    va_list ap;
+    va_start(ap, fmt);
+    do_compile_error(fmt, ap);
+}
+
+/* Stage 70-03: report a compilation warning with a file:line:col: prefix.
+ * Becomes a fatal error when g_warnings_are_errors is set. */
+void compile_warning_at(const char *file, int line, int col, const char *fmt, ...) {
+    if (file && line > 0)
+        fprintf(stderr, "%s:%d:%d: ", file, line, col);
+    va_list ap;
+    va_start(ap, fmt);
+    if (g_warnings_are_errors) {
+        do_compile_error(fmt, ap);
+    } else {
+        vfprintf(stderr, fmt, ap);
+        va_end(ap);
+    }
 }
 
 char *read_file(const char *path) {
