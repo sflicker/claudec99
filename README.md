@@ -136,7 +136,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 67-05 (snprintf stub):
+Through stage 68 (7+ argument calls):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -228,8 +228,7 @@ Through stage 67-05 (snprintf stub):
   _Bool type with value-normalization semantics (any nonzero value assigned to _Bool becomes 1; zero stays 0); integer promotion applies in expressions.
 - **Functions**: multiple functions per translation unit, forward
   declarations with compatibility checking (return type and parameter type
-  matching between declarations and definitions), SysV AMD64 calls with up to
-  6 arguments, typed parameter and return-type conversions at the call boundary,
+  matching between declarations and definitions), SysV AMD64 calls with any number of integer, pointer, _Bool, enum, and struct-pointer arguments (args 1–6 in registers per ABI, args 7+ passed on the stack right-to-left with automatic 16-byte alignment), typed parameter and return-type conversions at the call boundary,
   calls into libc via `extern` emission for declared-but-not-defined functions
   with support for void* parameters/returns (e.g., `malloc`, `free`), const char*
   parameters (e.g., `puts`, `strcmp`, `strlen`), and typedef-based size_t.
@@ -369,8 +368,7 @@ Anonymous structs, bit-fields, struct by-value parameters/return values (pointer
 unions; floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope storage class specifiers;
 defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
-`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
-calls with more than 6 arguments.
+`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -396,7 +394,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 67-05 all tests pass (698 valid, 213 invalid, 59 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1129 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 68 all tests pass (705 valid, 212 invalid, 60 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1136 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

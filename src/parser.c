@@ -1089,12 +1089,6 @@ static ASTNode *parse_primary(Parser *parser) {
                             token.value, sig->param_count, call->child_count);
                     exit(1);
                 }
-                if (call->child_count > 6) {
-                    fprintf(stderr,
-                            "error: function '%s' call has %d arguments; max supported is 6\n",
-                            token.value, call->child_count);
-                    exit(1);
-                }
                 /* The call expression is typed with the callee's declared
                  * return type so downstream type rules see it. */
                 call->decl_type = sig->return_type;

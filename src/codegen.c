@@ -2075,84 +2075,104 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             "rdi", "rsi", "rdx", "rcx", "r8", "r9"
         };
         int nargs = node->child_count;
-        /* Resolve the callee so each argument can be converted to its
-         * declared parameter type before being passed. The parser has
-         * already validated that the callee exists and its parameter
-         * count matches `nargs`. */
         ASTNode *callee = codegen_find_function_decl(cg, node->value);
-        /* Evaluate arguments left-to-right, converting each to the
-         * callee's declared parameter type, then pushing the result.
-         * Stage 12-04: when either side is a pointer, the integer
-         * widen/narrow conversion does not apply — the address is
-         * already in the full rax. Instead enforce strict pointer/
-         * integer matching and pointer-base-type equality. */
-        for (int i = 0; i < nargs; i++) {
-            codegen_expression(cg, node->children[i]);
-            if (callee && i < callee->child_count &&
-                callee->children[i]->type == AST_PARAM) {
-                ASTNode *param = callee->children[i];
-                TypeKind src = node->children[i]->result_type;
-                TypeKind dst = param->decl_type;
-                if (dst == TYPE_POINTER || src == TYPE_POINTER) {
-                    if (dst != TYPE_POINTER) {
-                        fprintf(stderr,
-                                "error: function '%s' parameter '%s' expected integer argument, got pointer\n",
-                                node->value, param->value);
-                        exit(1);
-                    }
-                    if (src != TYPE_POINTER) {
-                        fprintf(stderr,
-                                "error: function '%s' parameter '%s' expected pointer argument, got integer\n",
-                                node->value, param->value);
-                        exit(1);
-                    }
-                    /* Stage 45: argument-to-parameter pointer compatibility
-                     * follows assignment rules — void* is interchangeable
-                     * with any object pointer type. */
-                    if (!pointer_types_assignable(param->full_type,
-                                                  node->children[i]->full_type)) {
-                        fprintf(stderr,
-                                "error: function '%s' parameter '%s' has incompatible pointer type\n",
-                                node->value, param->value);
-                        exit(1);
-                    }
-                } else {
-                    emit_convert(cg, src, dst);
-                }
+
+/* Emit type conversion for argument i against its declared parameter type. */
+#define EMIT_ARG_CONVERT(call_node, callee_node, i) do { \
+    if ((callee_node) && (i) < (callee_node)->child_count && \
+        (callee_node)->children[(i)]->type == AST_PARAM) { \
+        ASTNode *_p = (callee_node)->children[(i)]; \
+        TypeKind _src = (call_node)->children[(i)]->result_type; \
+        TypeKind _dst = _p->decl_type; \
+        if (_dst == TYPE_POINTER || _src == TYPE_POINTER) { \
+            if (_dst != TYPE_POINTER) { \
+                fprintf(stderr, \
+                        "error: function '%s' parameter '%s' expected integer argument, got pointer\n", \
+                        (call_node)->value, _p->value); \
+                exit(1); \
+            } \
+            if (_src != TYPE_POINTER) { \
+                fprintf(stderr, \
+                        "error: function '%s' parameter '%s' expected pointer argument, got integer\n", \
+                        (call_node)->value, _p->value); \
+                exit(1); \
+            } \
+            if (!pointer_types_assignable(_p->full_type, (call_node)->children[(i)]->full_type)) { \
+                fprintf(stderr, \
+                        "error: function '%s' parameter '%s' has incompatible pointer type\n", \
+                        (call_node)->value, _p->value); \
+                exit(1); \
+            } \
+        } else { \
+            emit_convert(cg, _src, _dst); \
+        } \
+    } \
+} while (0)
+
+        if (nargs <= 6) {
+            /* Evaluate all args left-to-right, push, then pop into regs. */
+            for (int i = 0; i < nargs; i++) {
+                codegen_expression(cg, node->children[i]);
+                EMIT_ARG_CONVERT(node, callee, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
             }
-            fprintf(cg->output, "    push rax\n");
-            cg->push_depth++;
+            for (int i = nargs - 1; i >= 0; i--) {
+                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                cg->push_depth--;
+            }
+            int needs_pad = (cg->push_depth % 2) != 0;
+            if (needs_pad)
+                fprintf(cg->output, "    sub rsp, 8\n");
+            if (callee && callee->is_variadic)
+                fprintf(cg->output, "    xor eax, eax\n");
+            fprintf(cg->output, "    call %s\n", node->value);
+            if (needs_pad)
+                fprintf(cg->output, "    add rsp, 8\n");
+        } else {
+            /* Stage 68: N > 6 args — SysV AMD64 stack-passing protocol.
+             * Alignment padding (if needed) goes deepest; then stack args
+             * are pushed right-to-left (argN-1 first, arg6 last) so arg6
+             * lands at the top of the stack and the callee finds it at
+             * [rbp+16].  Register args are pushed after, then popped. */
+            int num_stack = nargs - 6;
+            int pad = ((cg->push_depth + num_stack) % 2) != 0 ? 1 : 0;
+            int cleanup = (num_stack + pad) * 8;
+
+            if (pad) {
+                fprintf(cg->output, "    sub rsp, 8\n");
+                cg->push_depth++;
+            }
+            /* Push stack args right-to-left. */
+            for (int i = nargs - 1; i >= 6; i--) {
+                codegen_expression(cg, node->children[i]);
+                EMIT_ARG_CONVERT(node, callee, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+            }
+            /* Push register args left-to-right. */
+            for (int i = 0; i < 6; i++) {
+                codegen_expression(cg, node->children[i]);
+                EMIT_ARG_CONVERT(node, callee, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+            }
+            /* Pop register args into rdi..r9. */
+            for (int i = 5; i >= 0; i--) {
+                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                cg->push_depth--;
+            }
+            if (callee && callee->is_variadic)
+                fprintf(cg->output, "    xor eax, eax\n");
+            fprintf(cg->output, "    call %s\n", node->value);
+            fprintf(cg->output, "    add rsp, %d\n", cleanup);
+            cg->push_depth -= (num_stack + pad);
         }
-        /* Pop into argument registers in reverse order. */
-        for (int i = nargs - 1; i >= 0; i--) {
-            fprintf(cg->output, "    pop %s\n", arg_regs[i]);
-            cg->push_depth--;
-        }
-        /* SysV AMD64 requires rsp 16-aligned at the call. The frame prologue
-         * leaves rsp 16-aligned; each live `push rax` offsets it by 8. */
-        int needs_pad = (cg->push_depth % 2) != 0;
-        if (needs_pad) {
-            fprintf(cg->output, "    sub rsp, 8\n");
-        }
-        /* Stage 57-03: SysV AMD64 requires AL = number of vector registers used
-         * for variadic calls. We never pass FP arguments, so always zero. */
-        if (callee && callee->is_variadic) {
-            fprintf(cg->output, "    xor eax, eax\n");
-        }
-        fprintf(cg->output, "    call %s\n", node->value);
-        if (needs_pad) {
-            fprintf(cg->output, "    add rsp, 8\n");
-        }
-        /* The call returns its value in rax; type it with the callee's
-         * declared return type so surrounding expressions promote and
-         * combine with the correct common type. Stage 12-05: when the
-         * callee returns a pointer, attach its full Type chain so
-         * downstream pointer checks (return statement, declaration
-         * init) see the correct pointer type. */
+#undef EMIT_ARG_CONVERT
+
         node->result_type = node->decl_type;
-        if (callee && callee->decl_type == TYPE_POINTER) {
+        if (callee && callee->decl_type == TYPE_POINTER)
             node->full_type = callee->full_type;
-        }
         return;
     }
     if (node->type == AST_INDIRECT_CALL) {
@@ -2194,52 +2214,90 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     fn->param_count, nargs);
             exit(1);
         }
-        if (nargs > 6) {
-            fprintf(stderr,
-                    "error: indirect call has %d arguments; max supported is 6\n",
-                    nargs);
-            exit(1);
-        }
         /* Save callee address below the arguments. */
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
-        /* Evaluate each argument with type checking. */
-        for (int i = 0; i < nargs; i++) {
-            codegen_expression(cg, node->children[i + 1]);
-            TypeKind src = node->children[i + 1]->result_type;
-            TypeKind dst = fn->params[i]->kind;
-            if (dst == TYPE_POINTER || src == TYPE_POINTER) {
-                if (dst != TYPE_POINTER) {
-                    fprintf(stderr,
-                            "error: indirect call argument %d: expected integer, got pointer\n",
-                            i + 1);
-                    exit(1);
-                }
-                if (src != TYPE_POINTER) {
-                    fprintf(stderr,
-                            "error: indirect call argument %d: expected pointer, got integer\n",
-                            i + 1);
-                    exit(1);
-                }
-            } else {
-                emit_convert(cg, src, dst);
+
+/* Emit type conversion for indirect-call argument i. */
+#define EMIT_INDIRECT_ARG_CONVERT(fn_type, call_node, i) do { \
+    TypeKind _src = (call_node)->children[(i) + 1]->result_type; \
+    TypeKind _dst = (fn_type)->params[(i)]->kind; \
+    if (_dst == TYPE_POINTER || _src == TYPE_POINTER) { \
+        if (_dst != TYPE_POINTER) { \
+            fprintf(stderr, \
+                    "error: indirect call argument %d: expected integer, got pointer\n", \
+                    (i) + 1); \
+            exit(1); \
+        } \
+        if (_src != TYPE_POINTER) { \
+            fprintf(stderr, \
+                    "error: indirect call argument %d: expected pointer, got integer\n", \
+                    (i) + 1); \
+            exit(1); \
+        } \
+    } else { \
+        emit_convert(cg, _src, _dst); \
+    } \
+} while (0)
+
+        if (nargs <= 6) {
+            for (int i = 0; i < nargs; i++) {
+                codegen_expression(cg, node->children[i + 1]);
+                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
             }
-            fprintf(cg->output, "    push rax\n");
-            cg->push_depth++;
-        }
-        /* Pop arguments into registers in reverse order. */
-        for (int i = nargs - 1; i >= 0; i--) {
-            fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+            for (int i = nargs - 1; i >= 0; i--) {
+                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                cg->push_depth--;
+            }
+            fprintf(cg->output, "    pop r10\n");
             cg->push_depth--;
+            int needs_pad = (cg->push_depth % 2) != 0;
+            if (needs_pad) fprintf(cg->output, "    sub rsp, 8\n");
+            fprintf(cg->output, "    call r10\n");
+            if (needs_pad) fprintf(cg->output, "    add rsp, 8\n");
+        } else {
+            /* Stage 68: N > 6 indirect call.
+             * Callee addr was pushed first (deepest).  Push padding if
+             * needed (accounting for the callee slot), push stack args
+             * right-to-left, push reg args, pop reg args, then read
+             * callee addr via rsp-relative load before calling. */
+            int num_stack = nargs - 6;
+            int pad = ((cg->push_depth + num_stack) % 2) != 0 ? 1 : 0;
+            /* Note: push_depth already incremented by the callee push above.
+             * We need (push_depth + pad + num_stack) % 2 == 0 for alignment.
+             * Since push_depth was already incremented: pad compensates for
+             * (updated_push_depth + num_stack) being odd. */
+            if (pad) {
+                fprintf(cg->output, "    sub rsp, 8\n");
+                cg->push_depth++;
+            }
+            for (int i = nargs - 1; i >= 6; i--) {
+                codegen_expression(cg, node->children[i + 1]);
+                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+            }
+            for (int i = 0; i < 6; i++) {
+                codegen_expression(cg, node->children[i + 1]);
+                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+            }
+            for (int i = 5; i >= 0; i--) {
+                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                cg->push_depth--;
+            }
+            /* Callee addr is below stack args and padding. */
+            int callee_slot = (num_stack + pad) * 8;
+            fprintf(cg->output, "    mov r10, [rsp + %d]\n", callee_slot);
+            fprintf(cg->output, "    call r10\n");
+            int cleanup = (num_stack + pad + 1) * 8;
+            fprintf(cg->output, "    add rsp, %d\n", cleanup);
+            cg->push_depth -= (num_stack + pad + 1);
         }
-        /* Pop callee address into r10 (caller-saved scratch register). */
-        fprintf(cg->output, "    pop r10\n");
-        cg->push_depth--;
-        /* SysV AMD64 requires rsp 16-aligned at the call. */
-        int needs_pad = (cg->push_depth % 2) != 0;
-        if (needs_pad) fprintf(cg->output, "    sub rsp, 8\n");
-        fprintf(cg->output, "    call r10\n");
-        if (needs_pad) fprintf(cg->output, "    add rsp, 8\n");
+#undef EMIT_INDIRECT_ARG_CONVERT
         /* Result type from the function's declared return type. */
         Type *ret = fn->base;
         node->result_type = ret->kind;
@@ -3325,12 +3383,6 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         if (num_params == node->child_count) {
             return;
         }
-        if (num_params > 6) {
-            fprintf(stderr,
-                    "error: function '%s' has %d parameters; max supported is 6\n",
-                    node->value, num_params);
-            exit(1);
-        }
         ASTNode *body = node->children[num_params];
 
         /* Reset per-function symbol table */
@@ -3398,7 +3450,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         static const char *param_regs_64[6] = {
             "rdi", "rsi", "rdx", "rcx", "r8",  "r9"
         };
-        for (int i = 0; i < num_params; i++) {
+        int reg_params = num_params < 6 ? num_params : 6;
+        for (int i = 0; i < reg_params; i++) {
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
@@ -3413,6 +3466,39 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             default: reg = param_regs_32[i]; break;
             }
             fprintf(cg->output, "    mov [rbp - %d], %s\n", offset, reg);
+        }
+        /* Stage 68: params 7+ arrive as stack arguments at [rbp + 16 + (i-6)*8].
+         * Copy each into a local slot so the rest of codegen uses uniform
+         * negative-rbp-offset access for all parameters. */
+        for (int i = 6; i < num_params; i++) {
+            TypeKind pt = node->children[i]->decl_type;
+            int sz = type_kind_bytes(pt);
+            int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
+                                         pt, node->children[i]->full_type);
+            cg->locals[cg->local_count - 1].is_unsigned = node->children[i]->is_unsigned;
+            int src = 16 + (i - 6) * 8;
+            switch (sz) {
+            case 1:
+                if (node->children[i]->is_unsigned)
+                    fprintf(cg->output, "    movzx eax, byte [rbp + %d]\n", src);
+                else
+                    fprintf(cg->output, "    movsx eax, byte [rbp + %d]\n", src);
+                break;
+            case 2:
+                if (node->children[i]->is_unsigned)
+                    fprintf(cg->output, "    movzx eax, word [rbp + %d]\n", src);
+                else
+                    fprintf(cg->output, "    movsx eax, word [rbp + %d]\n", src);
+                break;
+            case 8:
+                fprintf(cg->output, "    mov rax, [rbp + %d]\n", src);
+                break;
+            case 4:
+            default:
+                fprintf(cg->output, "    mov eax, [rbp + %d]\n", src);
+                break;
+            }
+            emit_store_local(cg, offset, sz, sz == 8 ? 1 : 0);
         }
 
         /* Generate body statements directly — the function body acts as the outermost scope. */
