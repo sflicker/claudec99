@@ -1,2 +1,2 @@
-[1] TOKEN:: ]                   TOKEN_TYPE: TOKEN_RBRACKET
-[2] TOKEN::                     TOKEN_TYPE: TOKEN_EOF
+[1] [1:1] TOKEN:: ]                   TOKEN_TYPE: TOKEN_RBRACKET
+[2] [2:1] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

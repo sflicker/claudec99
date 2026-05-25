@@ -1371,9 +1371,25 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
                 char *included = preprocess_file(include_path, depth + 1, macros,
                                                   include_dirs, n_include_dirs);
+                /* Inject enter-file marker: \x01<1>:<include_path>\n */
+                char loc_marker[512];
+                int mlen = snprintf(loc_marker, sizeof(loc_marker),
+                                    "\x01" "1:%s\n", include_path);
+                if (mlen > 0 && (size_t)mlen < sizeof(loc_marker))
+                    gbuf_append(&out, loc_marker, (size_t)mlen);
                 free(include_path);
                 gbuf_append(&out, included, strlen(included));
                 free(included);
+                /* Inject return-to-parent marker: \x01<current_line>:<source_path>\n
+                 * The \n from the #include directive line (still in the preprocessed
+                 * output after this handler returns) will advance the line count by 1,
+                 * landing on the correct next line of the parent file. */
+                mlen = snprintf(loc_marker, sizeof(loc_marker),
+                                "\x01" "%d:%s\n",
+                                current_line,
+                                source_path ? source_path : "");
+                if (mlen > 0 && (size_t)mlen < sizeof(loc_marker))
+                    gbuf_append(&out, loc_marker, (size_t)mlen);
                 continue;
             }
 

@@ -120,7 +120,9 @@ static const char *token_type_name(TokenType t) {
  * printed value remains readable and the buffer length still maps
  * onto a single line.
  */
-static void print_token_row(int index, int index_width, const Token *tok) {
+static void print_token_row(int index, int index_width,
+                            int line_width, int col_width,
+                            const Token *tok) {
     char display[512];
     size_t display_len = 0;
     if (tok->type == TOKEN_STRING_LITERAL ||
@@ -182,8 +184,11 @@ static void print_token_row(int index, int index_width, const Token *tok) {
         }
         value_buf[18] = '\0';
     }
-    printf("[%-*d] TOKEN:: %s  TOKEN_TYPE: %s\n",
-           index_width, index, value_buf, token_type_name(tok->type));
+    printf("[%-*d] [%0*d:%0*d] TOKEN:: %s  TOKEN_TYPE: %s\n",
+           index_width, index,
+           line_width, tok->line,
+           col_width,  tok->col,
+           value_buf, token_type_name(tok->type));
 }
 
 static int digit_width(int n) {
@@ -195,9 +200,9 @@ static int digit_width(int n) {
     return w;
 }
 
-static void print_tokens_mode(const char *source) {
+static void print_tokens_mode(const char *source, const char *source_file) {
     Lexer lexer;
-    lexer_init(&lexer, source);
+    lexer_init(&lexer, source, source_file);
 
     /* Lex into a growable buffer so we know the final token count
      * (including TOKEN_EOF) before printing — needed for the
@@ -228,12 +233,22 @@ static void print_tokens_mode(const char *source) {
         n++;
     }
 
+    /* Compute max line and col for width formatting. */
+    int max_line = 1, max_col = 1;
+    for (size_t i = 0; i < n; i++) {
+        if (tokens[i].line > max_line) max_line = tokens[i].line;
+        if (tokens[i].col  > max_col)  max_col  = tokens[i].col;
+    }
+    int line_width = digit_width(max_line);
+    int col_width  = digit_width(max_col);
+
     int index_width = digit_width((int)n);
     for (size_t i = 0; i < n; i++) {
-        print_token_row((int)(i + 1), index_width, &tokens[i]);
+        print_token_row((int)(i + 1), index_width, line_width, col_width, &tokens[i]);
     }
 
     free(tokens);
+    lexer_free(&lexer);
 }
 
 int main(int argc, char *argv[]) {
@@ -368,14 +383,14 @@ int main(int argc, char *argv[]) {
     free(include_dirs);
 
     if (print_tokens) {
-        print_tokens_mode(preprocessed);
+        print_tokens_mode(preprocessed, source_file);
         free(preprocessed);
         return 0;
     }
 
     /* Lex + Parse */
     Lexer lexer;
-    lexer_init(&lexer, preprocessed);
+    lexer_init(&lexer, preprocessed, source_file);
 
     Parser parser;
     parser_init(&parser, &lexer);

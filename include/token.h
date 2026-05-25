@@ -3,6 +3,10 @@
 
 #include "type.h"
 
+typedef struct SourceFile {
+    char *path;
+} SourceFile;
+
 typedef enum {
     TOKEN_EOF,
     TOKEN_INT,
@@ -93,6 +97,10 @@ typedef struct {
     TypeKind literal_type;
     /* Stage 00-98: set when the integer literal has a U/u suffix. */
     int is_unsigned;
+    /* Stage 70-02: source position (1-based). */
+    int line;
+    int col;
+    SourceFile *file;  /* not owned by token; points into lexer's file pool */
 } Token;
 
 const char *token_display_name(TokenType type);

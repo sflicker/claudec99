@@ -1,23 +1,23 @@
-[1 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
-[2 ] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
-[3 ] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
-[4 ] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
-[5 ] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
-[6 ] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
-[7 ] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
-[8 ] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
-[9 ] TOKEN:: 10                  TOKEN_TYPE: TOKEN_INT_LITERAL
-[10] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
-[11] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
-[12] TOKEN:: +=                  TOKEN_TYPE: TOKEN_PLUS_ASSIGN
-[13] TOKEN:: 5                   TOKEN_TYPE: TOKEN_INT_LITERAL
-[14] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
-[15] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
-[16] TOKEN:: -=                  TOKEN_TYPE: TOKEN_MINUS_ASSIGN
-[17] TOKEN:: 3                   TOKEN_TYPE: TOKEN_INT_LITERAL
-[18] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
-[19] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
-[20] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
-[21] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
-[22] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
-[23] TOKEN::                     TOKEN_TYPE: TOKEN_EOF
+[1 ] [1:01] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[2 ] [1:05] TOKEN:: main                TOKEN_TYPE: TOKEN_IDENTIFIER
+[3 ] [1:09] TOKEN:: (                   TOKEN_TYPE: TOKEN_LPAREN
+[4 ] [1:10] TOKEN:: )                   TOKEN_TYPE: TOKEN_RPAREN
+[5 ] [1:12] TOKEN:: {                   TOKEN_TYPE: TOKEN_LBRACE
+[6 ] [2:05] TOKEN:: int                 TOKEN_TYPE: TOKEN_INT
+[7 ] [2:09] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[8 ] [2:11] TOKEN:: =                   TOKEN_TYPE: TOKEN_ASSIGN
+[9 ] [2:13] TOKEN:: 10                  TOKEN_TYPE: TOKEN_INT_LITERAL
+[10] [2:15] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[11] [3:05] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[12] [3:07] TOKEN:: +=                  TOKEN_TYPE: TOKEN_PLUS_ASSIGN
+[13] [3:10] TOKEN:: 5                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[14] [3:11] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[15] [4:05] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[16] [4:07] TOKEN:: -=                  TOKEN_TYPE: TOKEN_MINUS_ASSIGN
+[17] [4:10] TOKEN:: 3                   TOKEN_TYPE: TOKEN_INT_LITERAL
+[18] [4:11] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[19] [5:05] TOKEN:: return              TOKEN_TYPE: TOKEN_RETURN
+[20] [5:12] TOKEN:: x                   TOKEN_TYPE: TOKEN_IDENTIFIER
+[21] [5:13] TOKEN:: ;                   TOKEN_TYPE: TOKEN_SEMICOLON
+[22] [6:01] TOKEN:: }                   TOKEN_TYPE: TOKEN_RBRACE
+[23] [7:01] TOKEN::                     TOKEN_TYPE: TOKEN_EOF

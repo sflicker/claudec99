@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 70.01 (versioning and max-errors tooling):
+Through stage 70.02 (line/column tracking in tokens):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -399,7 +399,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 70.01 all tests pass (705 valid, 212 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1143 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 70.02 all tests pass (705 valid, 212 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1143 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
