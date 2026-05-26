@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 73-01 (anonymous struct/union types):
+Through stage 74 (controlled header gap fill):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -151,7 +151,10 @@ Through stage 73-01 (anonymous struct/union types):
     includes detected via a depth limit.
   - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, and `snprintf`), `stddef.h`,
     `stdlib.h` (with `malloc`, `realloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
-    `stdint.h`, and `stdbool.h`, supplied from `test/include/`.
+    `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
+    `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
+    `time()`, `clock()`), and `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`),
+    supplied from `test/include/`.
   - _Object-like macros_: `#define` definition and expansion. Macros defined
     in headers are visible to the including file; compatible redefinitions are
     allowed, incompatible ones rejected.
@@ -406,7 +409,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 73-01 all tests pass (726 valid, 217 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1169 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 74 all tests pass (734 valid, 217 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1177 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

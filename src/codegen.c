@@ -2083,18 +2083,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         ASTNode *_p = (callee_node)->children[(i)]; \
         TypeKind _src = (call_node)->children[(i)]->result_type; \
         TypeKind _dst = _p->decl_type; \
+        int _null_const = is_null_pointer_constant((call_node)->children[(i)]); \
         if (_dst == TYPE_POINTER || _src == TYPE_POINTER) { \
             if (_dst != TYPE_POINTER) { \
                 compile_error( \
                         "error: function '%s' parameter '%s' expected integer argument, got pointer\n", \
                         (call_node)->value, _p->value); \
             } \
-            if (_src != TYPE_POINTER) { \
+            if (_src != TYPE_POINTER && !_null_const) { \
                 compile_error( \
                         "error: function '%s' parameter '%s' expected pointer argument, got integer\n", \
                         (call_node)->value, _p->value); \
             } \
-            if (!pointer_types_assignable(_p->full_type, (call_node)->children[(i)]->full_type)) { \
+            if (!_null_const && \
+                    !pointer_types_assignable(_p->full_type, (call_node)->children[(i)]->full_type)) { \
                 compile_error( \
                         "error: function '%s' parameter '%s' has incompatible pointer type\n", \
                         (call_node)->value, _p->value); \
