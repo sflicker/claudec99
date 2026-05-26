@@ -1,182 +1,190 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-05-25  
-**Compiler:** `build/ccompiler`  
+**Date:** 2026-05-25
+**Compiler:** `build/ccompiler`
 **Flags:** `--max-errors=0 -Iinclude -Itest/include`
-
-Each source module in `src/` was compiled one at a time using the built
-compiler.  This report documents every failure, its root cause, and its
-category.
-
----
 
 ## Summary
 
 | Module | Result | Root cause category |
 |---|---|---|
-| `ast.c` | FAIL | Feature gap (2 kinds) |
-| `ast_pretty_printer.c` | FAIL | Feature gap (2 kinds) |
-| `codegen.c` | FAIL | Missing stub header |
-| `compiler.c` | FAIL | Missing stub header |
-| `lexer.c` | FAIL | Missing stub headers (2) |
-| `parser.c` | FAIL | Missing stub header |
-| `preprocessor.c` | FAIL | Missing stub headers (2) |
-| `type.c` | FAIL | Feature gap (2 kinds) |
-| `util.c` | FAIL | Missing stub header |
-| `version.c` | **PASS** | — |
+| `ast.c` | FAIL | B — subscript of member-access; for-init declaration |
+| `ast_pretty_printer.c` | FAIL | B — for-init declaration; enum case labels |
+| `codegen.c` | FAIL | A — missing `<stdarg.h>` |
+| `compiler.c` | FAIL | A — missing `<stdarg.h>` |
+| `lexer.c` | FAIL | B — `const` in struct member; hex escape sequences |
+| `parser.c` | FAIL | A — missing `<stdarg.h>` |
+| `preprocessor.c` | FAIL | B — compound assignment; for-init; subscript; hex escape; adjacent string literals; postfix `++` on non-identifier |
+| `type.c` | FAIL | B — for-init declaration; enum case labels |
+| `util.c` | FAIL | A — missing `<stdarg.h>` |
+| `version.c` | PASS | — |
 
 ---
 
 ## Category A — Missing stub system headers
 
-The test stub directory (`test/include/`) provides: `limits.h`, `stdbool.h`,
-`stddef.h`, `stdint.h`, `stdio.h`, `stdlib.h`, `string.h`.
+### `<stdarg.h>`
 
-The following headers are required by the compiler's own source but have no
-stub and are not found anywhere on the compiler's include search path.
+Four modules fail immediately with `error: include file not found: <stdarg.h>`.
+No stub exists under `test/include/`.  All other errors in these files are
+unseen (compilation aborts on the first missing include).
 
-### `setjmp.h`
-
-**Needed by:** `util.h` (line 4) — which is included by `util.c`, `codegen.c`,
-`compiler.c`, and `parser.c`.
-
-`util.h` declares `extern jmp_buf g_error_jmp` and `util.c` defines it.
-`jmp_buf` is a typedef from `<setjmp.h>`.  Because the preprocessor fails on
-the very first unresolved `#include`, all four files produce only a single
-error and no further diagnostics.
-
-```
-error: include file not found: <setjmp.h>
-```
-
-**Classification:** Missing stub — not a language/compiler bug.
-
----
-
-### `ctype.h`
-
-**Needed by:** `lexer.c` (line 1), `preprocessor.c` (line 1).
-
-Both files use `isalpha()`, `isdigit()`, `isalnum()`, `isspace()`, and
-`isupper()`/`islower()`.  These are macros or inline functions defined in
-`<ctype.h>`.
-
-```
-error: include file not found: <ctype.h>
-```
-
-**Classification:** Missing stub — not a language/compiler bug.
-
----
-
-### `errno.h`
-
-**Needed by:** `lexer.c` (line 2).
-
-`lexer.c` uses `errno` and the `ERANGE` constant (for overflow detection in
-`strtoul`) after including `<errno.h>`.  The preprocessor stops at `<ctype.h>`
-first (line 1), so `errno.h` is never reached; but it would fail too.
-
-**Classification:** Missing stub — not a language/compiler bug.
-
----
-
-### `time.h`
-
-**Needed by:** `preprocessor.c` (line 5).
-
-`preprocessor.c` includes `<time.h>` to support the `__DATE__`/`__TIME__`
-predefined macros (or similar time-stamped output).  The preprocessor stops at
-`<ctype.h>` first, so `time.h` is never reached; but it would fail too.
-
-**Classification:** Missing stub — not a language/compiler bug.
+**Affected modules:** `codegen.c`, `compiler.c`, `parser.c`, `util.c`
 
 ---
 
 ## Category B — Language features not yet implemented
 
-These errors occur in files whose system includes are all available
-(`stdio.h`, `stdlib.h`, `string.h`, and project headers).
+### B-1 — For-init declarations (`for (type var = …; …; …)`)
 
-### B-1  C99 for-loop variable declarations
+C99 §6.8.5.3 permits a declaration in the `for` initializer clause.  The
+parser expects an expression, not a type specifier, and fails with:
 
-**Pattern:** `for (int i = 0; ...)`  
-**Error:** `error: expected expression, got 'int'`
+```
+error: expected expression, got 'int'
+```
 
-C99 allows a declaration in the first clause of a `for` statement.  The
-compiler's parser treats that clause as an expression and rejects `int` where
-it expects an expression.
+The first occurrence in each file drives a cascade of `expected type
+specifier` errors for the remainder of the function body.
 
-**Affected locations:**
-
-| File | Line | Code |
+| File | Line | Construct |
 |---|---|---|
-| `ast.c` | 27 | `for (int i = 0; i < node->child_count; i++)` |
-| `ast_pretty_printer.c` | 29 | `for (int i = 0; i < depth * 2; i++)` |
-| `ast_pretty_printer.c` | 149 | `for (int i = 0; i < byte_length; i++)` |
-| `ast_pretty_printer.c` | 197 | `for (int i = 0; i < node->child_count; i++)` |
-| `ast_pretty_printer.c` | 280 | `for (int i = 0; i < node->child_count; i++)` |
-| `type.c` | 95 | `for (int i = 0; i < param_count && i < FUNC_TYPE_MAX_PARAMS; i++)` |
+| `src/ast.c` | 27 | `for (int i = 0; i < node->child_count; i++)` |
+| `src/ast_pretty_printer.c` | 29 | `for (int i = 0; i < node->child_count; i++)` |
+| `src/type.c` | 95 | `for (int i = 0; i < …; i++)` |
+| `src/preprocessor.c` | 91 | `for (size_t i = 0; …)` |
+| `src/preprocessor.c` | 104 | `for (size_t i = 0; …)` |
+| `src/preprocessor.c` | 124 | `for (int i = 0; …)` |
+| `src/preprocessor.c` | 162 | `for (size_t i = 0; …)` |
+| `src/preprocessor.c` | 233 | `for (int i = 0; …)` |
+| `src/preprocessor.c` | 268 | `for (int i = 0; …)` |
+| `src/preprocessor.c` | 412 | `for (size_t i = 0; …)` |
 
-Each `for`-init declaration failure causes the parser to lose sync, producing
-a cascade of spurious "expected type specifier" errors for all subsequent
-statements in the same function.
+### B-2 — Enum/identifier `case` labels in `switch`
 
-**Classification:** Feature not yet implemented — C99 §6.8.5.3 for-statement
-with declaration in the init clause.
+C99 §6.8.4.2 allows any integer constant expression as a `case` label,
+including named enum constants.  The compiler only accepts integer literals:
 
----
-
-### B-2  Enum values (and other constant expressions) as `case` labels
-
-**Pattern:** `case ENUM_CONSTANT:`  
-**Error:** `error: expected integer literal, got identifier ('...')`
-
-The parser requires an integer literal in a `case` label.  C99 requires only
-an *integer constant expression*, which includes enum values, macro-expanded
-constants, and `sizeof` expressions.  The compiler does not evaluate constant
-expressions in this position, so any `case` label that is not a bare decimal
-literal fails.
-
-**Affected locations:**
+```
+error: expected integer literal, got identifier ('AST_TRANSLATION_UNIT')
+```
 
 | File | Line | Identifier |
 |---|---|---|
-| `ast_pretty_printer.c` | 69 | `AST_TRANSLATION_UNIT` |
-| `ast_pretty_printer.c` | 72 | `AST_FUNCTION_DECL` |
-| `ast_pretty_printer.c` | 83 | `AST_PARAM` |
-| `ast_pretty_printer.c` | 94 | `AST_BLOCK` |
-| … (many more) | | all `AST_*` and `TYPE_*` enum values |
-| `type.c` | 147 | `TYPE_VOID` |
-| `type.c` | 148 | `TYPE_BOOL` |
-| … (many more) | | all `TYPE_*` enum values |
+| `src/ast_pretty_printer.c` | 69 | `AST_TRANSLATION_UNIT` |
+| `src/type.c` | 147 | `TYPE_VOID` |
+| `src/type.c` | 175 | `TYPE_BOOL` |
 
-`ast_pretty_printer.c` produces over 100 errors from this single root cause.
+### B-3 — Subscript of a member-access (arrow) expression
 
-**Classification:** Feature not yet implemented — C99 §6.8.4.2 requires
-constant expressions (not just literals) as `case` labels.
+C99 §6.5.2.1 allows any expression as the subscript base.  The compiler
+requires a plain identifier:
 
----
+```
+error: subscript base must be an identifier
+```
 
-### B-3  Subscripting a member-access expression
-
-**Pattern:** `expr->field[index]` or `expr.field[index]`  
-**Error:** `error: subscript base must be an identifier`
-
-`ast.c:21` writes `parent->children[parent->child_count++] = child`.  The
-compiler's parser accepts subscript (`[]`) only when the left operand is a
-plain identifier.  It does not support subscripting the result of `->` or `.`
-member access, even though C99 treats `a[i]` as `*(a+i)` and the left operand
-may be any pointer expression.
-
-**Affected locations:**
-
-| File | Line | Code |
+| File | Line | Construct |
 |---|---|---|
-| `ast.c` | 21 | `parent->children[parent->child_count++]` |
+| `src/ast.c` | 21 | `parent->children[parent->child_count++]` |
+| `src/preprocessor.c` | 353 | struct-pointer member subscript (`s->defs[i]`) |
+| `src/preprocessor.c` | 485 | same pattern |
 
-**Classification:** Feature not yet implemented — C99 §6.5.2.1 postfix
-subscript applies to any pointer expression as the first operand.
+### B-4 — Compound assignment operators (`*=`, `+=`, …)
+
+The parser does not recognise compound assignment operators.  After parsing
+the left-hand side it expects `;`:
+
+```
+error: expected ';', got '*=' ('*=')
+error: expected ';', got '+=' ('+=')
+```
+
+The two root-cause sites in `preprocessor.c` are inside `gbuf_push` and
+`gbuf_append`, which are called throughout the file.  Their parse failure
+creates a large cascade of `expected type specifier` errors that accounts
+for the majority of the 200+ errors reported for `preprocessor.c`.
+
+| File | Line | Operator |
+|---|---|---|
+| `src/preprocessor.c` | 36 | `g->cap *= 2;` |
+| `src/preprocessor.c` | 50 | `g->cap += …;` |
+
+### B-5 — Hex escape sequences (`\x…`) in character and string literals
+
+C99 §6.4.4.4 defines `\x` hexadecimal escape sequences.  The compiler
+rejects them:
+
+```
+error: invalid escape sequence in character literal
+error: invalid escape sequence in string literal
+```
+
+| File | Line | Literal |
+|---|---|---|
+| `src/lexer.c` | 100 | `'\x01'` |
+| `src/preprocessor.c` | 1382 | `"\x01"` |
+
+### B-6 — Adjacent string literal concatenation
+
+C99 §6.4.5 requires adjacent string literals to be concatenated during
+translation.  The compiler treats the second literal as a spurious token:
+
+```
+error: expected ')', got string literal (' expected %s%d, got %d\n')
+```
+
+| File | Line | Construct |
+|---|---|---|
+| `src/preprocessor.c` | 1382 | `"\x01" "1:%s\n"` |
+
+Note: this site also triggers B-5 (`\x01`); both gaps apply simultaneously.
+
+### B-7 — Postfix `++`/`--` on non-identifier lvalues
+
+C99 §6.5.2.4 allows postfix increment/decrement on any modifiable lvalue.
+The compiler requires a plain identifier:
+
+```
+error: postfix ++ requires an identifier
+```
+
+The pattern `(*ptr)++` appears repeatedly in `preprocessor.c`'s
+`eval_cond_*` family of functions:
+
+| File | Line | Construct |
+|---|---|---|
+| `src/preprocessor.c` | 735 | `(*in)++` |
+| `src/preprocessor.c` | 823 | `s[(*in)++]` |
+| `src/preprocessor.c` | 844 | `(*in)++` |
+| `src/preprocessor.c` | 882 | `(*in)++` |
+| `src/preprocessor.c` | 907 | `(*in)++` |
+| `src/preprocessor.c` | 932 | `(*in)++` |
+| `src/preprocessor.c` | 967 | `(*in)++` |
+| `src/preprocessor.c` | 992 | `(*in)++` |
+| `src/preprocessor.c` | 1012 | `(*in)++` |
+| `src/preprocessor.c` | 1032 | `(*in)++` |
+| `src/preprocessor.c` | 1052 | `(*in)++` |
+| `src/preprocessor.c` | 1072 | `(*in)++` |
+
+### B-8 — `const` type qualifier in struct member declarations
+
+The struct-member type parser does not accept the `const` qualifier; it
+requires a bare type keyword:
+
+```
+include/lexer.h:7:5: error: expected integer type, got 'const'
+```
+
+The `Lexer` struct's first member (`const char *source`) triggers the
+failure, leaving `Lexer` undefined.  Every reference to `Lexer` in
+`lexer.c` then fails with `unknown type name 'Lexer'`.
+
+| File | Line | Construct |
+|---|---|---|
+| `include/lexer.h` | 7 | `const char *source;` inside `typedef struct { … } Lexer` |
+
+**Transitively blocked:** all of `src/lexer.c`.
 
 ---
 
@@ -184,14 +192,9 @@ subscript applies to any pointer expression as the first operand.
 
 ### `version.c`
 
-Compiles and links without error:
-
-```
-compiled: src/version.c -> version.asm
-```
-
-`version.c` uses only `stdio.h` and `stdlib.h` (both stubbed), has no
-for-loop declarations, and contains no switch/case on enum values.
+Compiles cleanly (`EXIT:0`, emits `version.asm`).  This module contains no
+control-flow, no includes beyond simple macros, and uses no type qualifiers,
+compound assignment, or subscript expressions — none of the current gaps apply.
 
 ---
 
@@ -199,10 +202,11 @@ for-loop declarations, and contains no switch/case on enum values.
 
 | Gap | C99 section | Affected modules |
 |---|---|---|
-| Missing `setjmp.h` stub | — | `util.c`, `codegen.c`, `compiler.c`, `parser.c` |
-| Missing `ctype.h` stub | — | `lexer.c`, `preprocessor.c` |
-| Missing `errno.h` stub | — | `lexer.c` |
-| Missing `time.h` stub | — | `preprocessor.c` |
-| `for`-init declarations | §6.8.5.3 | `ast.c`, `ast_pretty_printer.c`, `type.c` |
-| Enum values in `case` labels | §6.8.4.2 | `ast_pretty_printer.c`, `type.c` |
-| Subscript of member-access expr | §6.5.2.1 | `ast.c` |
+| For-init declarations | §6.8.5.3 | `ast.c`, `ast_pretty_printer.c`, `type.c`, `preprocessor.c` |
+| Enum/identifier `case` labels | §6.8.4.2 | `ast_pretty_printer.c`, `type.c` |
+| Subscript of member-access expr | §6.5.2.1 | `ast.c`, `preprocessor.c` |
+| Compound assignment operators | §6.5.16.2 | `preprocessor.c` |
+| Hex escape sequences (`\x`) | §6.4.4.4 | `lexer.c`, `preprocessor.c` |
+| Adjacent string literal concat | §6.4.5 | `preprocessor.c` |
+| Postfix `++`/`--` on non-ident lvalue | §6.5.2.4 | `preprocessor.c` |
+| `const` qualifier in struct members | §6.7.3 | `lexer.c` (via `lexer.h`) |
