@@ -2464,6 +2464,10 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     if (d.pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
+    } else if (base_kind == TYPE_ARRAY) {
+        /* C99 6.7.5.3p7: array parameter type is adjusted to pointer-to-element. */
+        param->decl_type = TYPE_POINTER;
+        param->full_type = type_pointer(base_type->base);
     } else {
         param->decl_type = base_kind;
         param->is_unsigned = !base_type->is_signed;

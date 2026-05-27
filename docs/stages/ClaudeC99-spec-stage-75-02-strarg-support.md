@@ -1,8 +1,7 @@
-# ClaudeC99 stage 75-01 stdard.h support
+# ClaudeC99 stage 75-02 add stdard.h and va_list surface; macros may be present by unused 
 
 ## Task
   - add stdarg.h to <project-root>/test/include
-  - add additional declarations to <project-root>/test/include/stdio.h
 
 controlled stdarg.h -> <project-root>/test/include
 ```C
@@ -26,16 +25,35 @@ typedef struct __claudec00_va_list_tag {
 ---------------------------------------
 ```
 
-updates to <project-root>/test/include/stdio.h
+Note the va_* macros in stdard.h are being defined to expand to the __buildin* s which don't
+exist yet. This stage is only defining them in the macros however using those macros will be
+out of scope.
+
+## Out of Scope
+  - using any of the va macros in stdarg.h
+    - (va_start, va_end, va_copy, va_arg)
+  - callee side handling of variadic arguments
+  - register save area
+
+## Tests
 ```C
---------------- stdio.h -------------------
-...
+#include <stdarg.h>
 
-int vfprint(FILE *, const char *, va_list);
-int vprintf(const char *, va_list);
-int vsnprintf(char *, size_t, const char *, va_list);
+int main(void) {
+    va_list ap;
+    return sizeof(ap) > 0;     expect 1;
+}
+```
 
-fseek(FILE*, long offset, int origin);
-...
---------------------------------------------
+```C
+#include <stdarg.h>
+
+int helper(va_list ap) {
+    return ap != 0;
+}
+
+int main(void) {
+    va_list ap;
+    return helper(ap);     expect 1;
+}
 ```

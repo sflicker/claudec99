@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-01 (variadic function definitions):
+Through stage 75-02 (stdarg.h and va_list surface):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -153,7 +153,7 @@ Through stage 75-01 (variadic function definitions):
     `stdlib.h` (with `malloc`, `realloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
-    `time()`, `clock()`), and `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`),
+    `time()`, `clock()`), `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`), and `stdarg.h` (`va_list` typedef and va_* macro stubs),
     supplied from `test/include/`.
   - _Object-like macros_: `#define` definition and expansion. Macros defined
     in headers are visible to the including file; compatible redefinitions are
@@ -378,9 +378,8 @@ Through stage 75-01 (variadic function definitions):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; array
-typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope `extern`; block-scope `static` arrays and structs;
-callee-side access to variadic arguments (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
+Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; block-scope `extern`; block-scope `static` arrays and structs;
+callee-side access to variadic arguments via va_* macros (`va_start`, `va_arg`, `va_end`, `va_copy`—va_list type is declared but the intrinsics do not yet exist);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
@@ -407,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-01 all tests pass (737 valid, 219 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1182 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-02 all tests pass (739 valid, 219 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1184 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
