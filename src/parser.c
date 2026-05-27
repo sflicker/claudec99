@@ -2944,12 +2944,14 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     int param_count = func->child_count;
     int is_definition = (parser->current.type == TOKEN_LBRACE);
 
-    /* Stage 26: function definitions require named parameters. */
-    if (is_definition) {
+    /* Stage 26: function definitions require named parameters.
+     * Stage 75-01: variadic definitions may have unnamed fixed parameters
+     * (e.g. int f(const char *, ...)) since the callee can ignore them. */
+    if (is_definition && !func->is_variadic) {
         for (int i = 0; i < param_count; i++) {
             if (func->children[i]->type == AST_PARAM &&
                 func->children[i]->value[0] == '\0') {
-                PARSER_ERROR(parser, 
+                PARSER_ERROR(parser,
                         "error: unnamed parameter in definition of '%s'\n",
                         d.name);
             }

@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 74 (controlled header gap fill):
+Through stage 75-01 (variadic function definitions):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -244,9 +244,7 @@ Through stage 74 (controlled header gap fill):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations (e.g., `int printf(const char *, ...)`) and calls
-  to external variadic functions are supported; code generation emits `xor eax, eax`
-  before calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments (`va_list`, `va_start`, `va_arg`, `<stdarg.h>`) is not yet supported. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -382,7 +380,7 @@ Through stage 74 (controlled header gap fill):
 
 Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; array
 typedefs (pointer, function-pointer, and struct typedefs are now supported); block-scope `extern`; block-scope `static` arrays and structs;
-defining variadic functions (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
+callee-side access to variadic arguments (`va_list`, `va_start`, `va_arg`, `va_end`, `<stdarg.h>`);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
@@ -409,7 +407,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 74 all tests pass (734 valid, 217 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1177 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-01 all tests pass (737 valid, 219 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1182 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

@@ -3505,6 +3505,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         };
         int reg_params = num_params < 6 ? num_params : 6;
         for (int i = 0; i < reg_params; i++) {
+            /* Stage 75-01: unnamed params in variadic definitions are ignored. */
+            if (node->children[i]->value[0] == '\0') continue;
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
@@ -3524,6 +3526,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * Copy each into a local slot so the rest of codegen uses uniform
          * negative-rbp-offset access for all parameters. */
         for (int i = 6; i < num_params; i++) {
+            /* Stage 75-01: unnamed params in variadic definitions are ignored. */
+            if (node->children[i]->value[0] == '\0') continue;
             TypeKind pt = node->children[i]->decl_type;
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
