@@ -1,0 +1,19 @@
+TranslationUnit:
+  FunctionDecl: int f
+    Parameter: int first
+    Block
+      VariableDeclaration: int ap
+      VariableDeclaration: int x
+      ExpressionStatement
+        BuiltinVaStart:
+          VariableExpression: ap
+          VariableExpression: first
+      ExpressionStatement
+        Assignment: x
+          BuiltinVaArg: int
+            VariableExpression: ap
+      ExpressionStatement
+        BuiltinVaEnd:
+          VariableExpression: ap
+      ReturnStmt:
+        VariableExpression: x

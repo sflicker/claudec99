@@ -275,6 +275,18 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_INITIALIZER_LIST:
         printf("InitializerList:\n");
         break;
+    case AST_BUILTIN_VA_START:
+        printf("BuiltinVaStart:\n");
+        break;
+    case AST_BUILTIN_VA_END:
+        printf("BuiltinVaEnd:\n");
+        break;
+    case AST_BUILTIN_VA_COPY:
+        printf("BuiltinVaCopy:\n");
+        break;
+    case AST_BUILTIN_VA_ARG:
+        printf("BuiltinVaArg: %s\n", node->value);
+        break;
     }
 
     for (int i = 0; i < node->child_count; i++) {

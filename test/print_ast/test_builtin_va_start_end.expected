@@ -1,0 +1,20 @@
+TranslationUnit:
+  FunctionDecl: int f
+    Parameter: char *fmt
+    Block
+      VariableDeclaration: int ap
+      ExpressionStatement
+        BuiltinVaStart:
+          VariableExpression: ap
+          VariableExpression: fmt
+      ExpressionStatement
+        BuiltinVaEnd:
+          VariableExpression: ap
+      ReturnStmt:
+        IntLiteral: 42
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        FunctionCall: f
+          StringLiteral: "%d" (length 2)
+          IntLiteral: 1

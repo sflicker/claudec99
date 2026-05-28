@@ -96,6 +96,9 @@ typedef struct {
     /* Stage 72: union tag table (flat, global scope). */
     UnionTag union_tags[PARSER_MAX_UNION_TAGS];
     int union_tag_count;
+    /* Stage 75-03: set while parsing the body of a variadic function
+     * definition so __builtin_va_start can verify its context. */
+    int current_func_is_variadic;
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);

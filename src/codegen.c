@@ -2806,6 +2806,21 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->full_type   = node->children[1]->full_type;
         return;
     }
+    /* Stage 75-03: __builtin_va_* are no-ops in this stage.  The three
+     * side-effecting forms (va_start, va_end, va_copy) emit nothing and
+     * leave rax undefined; va_arg emits xor eax,eax so callers that use
+     * the result get a defined (zero) value. */
+    if (node->type == AST_BUILTIN_VA_START ||
+        node->type == AST_BUILTIN_VA_END   ||
+        node->type == AST_BUILTIN_VA_COPY) {
+        node->result_type = TYPE_VOID;
+        return;
+    }
+    if (node->type == AST_BUILTIN_VA_ARG) {
+        fprintf(cg->output, "    xor eax, eax\n");
+        node->result_type = node->decl_type ? node->decl_type : TYPE_INT;
+        return;
+    }
 }
 
 /*

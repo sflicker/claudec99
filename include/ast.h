@@ -52,7 +52,11 @@ typedef enum {
     AST_TYPEDEF_DECL,
     AST_MEMBER_ACCESS,     /* stage 31: expr "." identifier */
     AST_ARROW_ACCESS,      /* stage 31: expr "->" identifier */
-    AST_INITIALIZER_LIST   /* stage 32: "{" expr, ... "}" aggregate initializer */
+    AST_INITIALIZER_LIST,  /* stage 32: "{" expr, ... "}" aggregate initializer */
+    AST_BUILTIN_VA_START,  /* stage 75-03: __builtin_va_start(ap, last) */
+    AST_BUILTIN_VA_END,    /* stage 75-03: __builtin_va_end(ap) */
+    AST_BUILTIN_VA_COPY,   /* stage 75-03: __builtin_va_copy(dst, src) */
+    AST_BUILTIN_VA_ARG     /* stage 75-03: __builtin_va_arg(ap, type) */
 } ASTNodeType;
 
 #define AST_MAX_CHILDREN 64

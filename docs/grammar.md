@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 75-02)
+# Claude C99 Grammar (Current through Stage 75-03)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -185,6 +185,13 @@
                          | <character_literal>
                          | <identifier>
                          | "(" <expression> ")"
+                         | <builtin_expression>
+
+<builtin_expression> ::=
+     "__builtin_va_start" "(" <expression> "," <expression> ")"
+   | "__builtin_va_end"   "(" <expression> ")"
+   | "__builtin_va_copy"  "(" <expression> "," <expression> ")"
+   | "__builtin_va_arg"   "(" <expression> "," <type_name> ")"
 
 <argument_expression_list> ::= <assignment_expression> { "," <assignment_expression> }
 
@@ -299,6 +306,11 @@
 
 <parameter_list> ::= <identifier> { "," <identifier> }
 
+# Builtin expressions (stage 75-03):
+#   - `__builtin_va_start`, `__builtin_va_end`, `__builtin_va_copy`, and
+#     `__builtin_va_arg` are recognized as primary expressions.
+#   - `__builtin_va_start` must appear inside the body of a variadic function.
+#
 # Current Restrictions:
 #
 # Declarations:

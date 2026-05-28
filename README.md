@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-02 (stdarg.h and va_list surface):
+Through stage 75-03 (builtin va_* parsing and semantic recognition):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -244,7 +244,7 @@ Through stage 75-02 (stdarg.h and va_list surface):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments (`va_list`, `va_start`, `va_arg`, `<stdarg.h>`) is not yet supported. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments (`va_list`, `va_start`, `va_arg`, `<stdarg.h>`) recognizes the `__builtin_va_*` forms (parsed and semantically validated; codegen is a no-op in this stage). Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -379,7 +379,7 @@ Through stage 75-02 (stdarg.h and va_list surface):
 ## Not yet supported
 
 Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; block-scope `extern`; block-scope `static` arrays and structs;
-callee-side access to variadic arguments via va_* macros (`va_start`, `va_arg`, `va_end`, `va_copy`—va_list type is declared but the intrinsics do not yet exist);
+callee-side va_* runtime behavior (va_start ABI initialization, va_arg extraction, va_copy—parsing and semantic validation are implemented but codegen is a no-op);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
@@ -406,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-02 all tests pass (739 valid, 219 invalid, 67 integration, 39 print-AST, 99 print-tokens, 21 print-asm; 1184 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-03 all tests pass (739 valid, 222 invalid, 67 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1189 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

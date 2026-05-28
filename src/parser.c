@@ -1181,6 +1181,59 @@ static ASTNode *parse_primary(Parser *parser) {
         return node;
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
+        /* Stage 75-03: recognize __builtin_va_* intrinsics before general
+         * identifier resolution.  Each form has fixed argument counts and
+         * specific rules; all produce typed AST nodes. */
+        if (strcmp(parser->current.value, "__builtin_va_start") == 0) {
+            parser->current = lexer_next_token(parser->lexer);
+            parser_expect(parser, TOKEN_LPAREN);
+            if (!parser->current_func_is_variadic) {
+                PARSER_ERROR(parser,
+                        "error: __builtin_va_start used outside a variadic function\n");
+            }
+            ASTNode *node = ast_new(AST_BUILTIN_VA_START, "__builtin_va_start");
+            ast_add_child(node, parse_assignment_expression(parser));
+            if (parser->current.type != TOKEN_COMMA) {
+                PARSER_ERROR(parser,
+                        "error: __builtin_va_start requires exactly 2 arguments\n");
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            ast_add_child(node, parse_assignment_expression(parser));
+            parser_expect(parser, TOKEN_RPAREN);
+            return node;
+        }
+        if (strcmp(parser->current.value, "__builtin_va_end") == 0) {
+            parser->current = lexer_next_token(parser->lexer);
+            parser_expect(parser, TOKEN_LPAREN);
+            ASTNode *node = ast_new(AST_BUILTIN_VA_END, "__builtin_va_end");
+            ast_add_child(node, parse_assignment_expression(parser));
+            parser_expect(parser, TOKEN_RPAREN);
+            return node;
+        }
+        if (strcmp(parser->current.value, "__builtin_va_copy") == 0) {
+            parser->current = lexer_next_token(parser->lexer);
+            parser_expect(parser, TOKEN_LPAREN);
+            ASTNode *node = ast_new(AST_BUILTIN_VA_COPY, "__builtin_va_copy");
+            ast_add_child(node, parse_assignment_expression(parser));
+            parser_expect(parser, TOKEN_COMMA);
+            ast_add_child(node, parse_assignment_expression(parser));
+            parser_expect(parser, TOKEN_RPAREN);
+            return node;
+        }
+        if (strcmp(parser->current.value, "__builtin_va_arg") == 0) {
+            parser->current = lexer_next_token(parser->lexer);
+            parser_expect(parser, TOKEN_LPAREN);
+            ASTNode *node = ast_new(AST_BUILTIN_VA_ARG, NULL);
+            ast_add_child(node, parse_assignment_expression(parser));
+            parser_expect(parser, TOKEN_COMMA);
+            Type *arg_type = parse_type_name(parser);
+            node->decl_type = arg_type->kind;
+            node->full_type = arg_type;
+            snprintf(node->value, sizeof(node->value), "%s",
+                     type_kind_name(arg_type->kind));
+            parser_expect(parser, TOKEN_RPAREN);
+            return node;
+        }
         /* Stage 29: fold enum constants to integer literals before any other
          * identifier resolution. */
         for (int i = 0; i < parser->enum_const_count; i++) {
@@ -2977,7 +3030,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                              return_kind, param_types, sc, func->is_variadic);
 
     if (is_definition) {
+        /* Stage 75-03: expose the variadic flag to nested expression parsers
+         * so __builtin_va_start can enforce its "must be inside variadic
+         * function" rule. */
+        int saved_variadic = parser->current_func_is_variadic;
+        parser->current_func_is_variadic = func->is_variadic;
         ast_add_child(func, parse_block(parser));
+        parser->current_func_is_variadic = saved_variadic;
     } else {
         parser_expect(parser, TOKEN_SEMICOLON);
     }
