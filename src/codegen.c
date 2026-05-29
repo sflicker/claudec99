@@ -254,6 +254,9 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->string_pool_count = 0;
     cg->warnings_are_errors = 0;
     cg->local_static_count = 0;
+    cg->variadic_reg_save_offset = 0;
+    cg->variadic_named_gp_params = 0;
+    cg->variadic_named_stack_params = 0;
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -2806,12 +2809,37 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->full_type   = node->children[1]->full_type;
         return;
     }
-    /* Stage 75-03: __builtin_va_* are no-ops in this stage.  The three
-     * side-effecting forms (va_start, va_end, va_copy) emit nothing and
-     * leave rax undefined; va_arg emits xor eax,eax so callers that use
-     * the result get a defined (zero) value. */
-    if (node->type == AST_BUILTIN_VA_START ||
-        node->type == AST_BUILTIN_VA_END   ||
+    /* Stage 75-04: __builtin_va_start initializes the va_list fields.
+     * __builtin_va_end is a no-op per spec.  va_copy and va_arg remain
+     * stubs (out of scope for this stage). */
+    if (node->type == AST_BUILTIN_VA_START) {
+        /* children[0] = ap (va_list local), children[1] = last named param */
+        ASTNode *ap_node = node->children[0];
+        LocalVar *lv_ap = codegen_find_var(cg, ap_node->value);
+        if (!lv_ap) {
+            compile_error("error: va_start: 'ap' is not a local variable\n");
+        }
+        int ap_off = lv_ap->offset;
+        /* gp_offset = named_gp_params * 8, already clamped to ≤ 48 */
+        int gp_off_val  = cg->variadic_named_gp_params * 8;
+        /* fp_offset = 48 (start of reserved FP/XMM area) */
+        int fp_off_val  = 48;
+        /* overflow_arg_area = rbp + 16 + 8 * named_stack_params */
+        int overflow_disp = 16 + cg->variadic_named_stack_params * 8;
+        /* ap[0].gp_offset (unsigned int, 4 bytes at ap+0) */
+        fprintf(cg->output, "    mov dword [rbp - %d], %d\n", ap_off, gp_off_val);
+        /* ap[0].fp_offset (unsigned int, 4 bytes at ap+4) */
+        fprintf(cg->output, "    mov dword [rbp - %d], %d\n", ap_off - 4, fp_off_val);
+        /* ap[0].overflow_arg_area (void *, 8 bytes at ap+8) */
+        fprintf(cg->output, "    lea rax, [rbp + %d]\n", overflow_disp);
+        fprintf(cg->output, "    mov [rbp - %d], rax\n", ap_off - 8);
+        /* ap[0].reg_save_area (void *, 8 bytes at ap+16) */
+        fprintf(cg->output, "    lea rax, [rbp - %d]\n", cg->variadic_reg_save_offset);
+        fprintf(cg->output, "    mov [rbp - %d], rax\n", ap_off - 16);
+        node->result_type = TYPE_VOID;
+        return;
+    }
+    if (node->type == AST_BUILTIN_VA_END ||
         node->type == AST_BUILTIN_VA_COPY) {
         node->result_type = TYPE_VOID;
         return;
@@ -3470,8 +3498,12 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Compute stack space: 8 bytes per parameter (conservative
          * upper bound covering long plus worst-case alignment) plus a
          * conservative 8-byte upper bound per body declaration.
+         * Stage 75-04: variadic functions also reserve 304 bytes for the
+         * hidden GP/FP register save area.
          * Rounded up to a 16-byte multiple. */
         int stack_size = num_params * 8 + compute_decl_bytes(body);
+        if (node->is_variadic)
+            stack_size += 304;
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
@@ -3493,6 +3525,27 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    mov rbp, rsp\n");
         if (stack_size > 0) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
+        }
+
+        /* Stage 75-04: variadic function register save area.
+         * Reserve 304 bytes at the top of the frame (before named params) and
+         * save all 6 GP argument registers so va_start can reference them. */
+        if (node->is_variadic) {
+            cg->stack_offset += 304;
+            cg->variadic_reg_save_offset    = cg->stack_offset;
+            cg->variadic_named_gp_params    = num_params < 6 ? num_params : 6;
+            cg->variadic_named_stack_params = num_params > 6 ? num_params - 6 : 0;
+            int rso = cg->variadic_reg_save_offset;
+            fprintf(cg->output, "    mov [rbp - %d], rdi\n", rso);
+            fprintf(cg->output, "    mov [rbp - %d], rsi\n", rso - 8);
+            fprintf(cg->output, "    mov [rbp - %d], rdx\n", rso - 16);
+            fprintf(cg->output, "    mov [rbp - %d], rcx\n", rso - 24);
+            fprintf(cg->output, "    mov [rbp - %d], r8\n",  rso - 32);
+            fprintf(cg->output, "    mov [rbp - %d], r9\n",  rso - 40);
+        } else {
+            cg->variadic_reg_save_offset    = 0;
+            cg->variadic_named_gp_params    = 0;
+            cg->variadic_named_stack_params = 0;
         }
 
         /*

@@ -2475,7 +2475,13 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     if (parser->current.type == TOKEN_COMMA ||
         parser->current.type == TOKEN_RPAREN) {
         ASTNode *param = ast_new(AST_PARAM, "");
-        param->decl_type = base_kind;
+        if (base_kind == TYPE_ARRAY) {
+            /* C99 6.7.5.3p7: unnamed array param is adjusted to pointer-to-element. */
+            param->decl_type = TYPE_POINTER;
+            param->full_type = type_pointer(base_type->base);
+        } else {
+            param->decl_type = base_kind;
+        }
         return param;
     }
 

@@ -149,6 +149,16 @@ typedef struct {
      * function bodies and emitted to .data/.bss after function code. */
     LocalStaticVar local_statics[MAX_LOCAL_STATICS];
     int local_static_count;
+    /* Stage 75-04: variadic function register save area.
+     * variadic_reg_save_offset: rbp-relative offset of the 304-byte register
+     * save area (0 for non-variadic functions).
+     * variadic_named_gp_params: min(named_param_count, 6) — used by va_start
+     * to initialize gp_offset.
+     * variadic_named_stack_params: max(0, named_param_count - 6) — used by
+     * va_start to compute overflow_arg_area. */
+    int variadic_reg_save_offset;
+    int variadic_named_gp_params;
+    int variadic_named_stack_params;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

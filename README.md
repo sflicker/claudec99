@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-03 (builtin va_* parsing and semantic recognition):
+Through stage 75-04 (va_start codegen foundation):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -149,7 +149,7 @@ Through stage 75-03 (builtin va_* parsing and semantic recognition):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, and `snprintf`), `stddef.h`,
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, and `vsnprintf`), `stddef.h`,
     `stdlib.h` (with `malloc`, `realloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
@@ -244,7 +244,7 @@ Through stage 75-03 (builtin va_* parsing and semantic recognition):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments (`va_list`, `va_start`, `va_arg`, `<stdarg.h>`) recognizes the `__builtin_va_*` forms (parsed and semantically validated; codegen is a no-op in this stage). Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` and `va_copy` remain stubs (out of scope). Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -379,7 +379,7 @@ Through stage 75-03 (builtin va_* parsing and semantic recognition):
 ## Not yet supported
 
 Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; block-scope `extern`; block-scope `static` arrays and structs;
-callee-side va_* runtime behavior (va_start ABI initialization, va_arg extraction, va_copy—parsing and semantic validation are implemented but codegen is a no-op);
+`va_arg` extraction and `va_copy` (va_start/va_end are now implemented; va_arg and va_copy remain stubs); floating-point variadic arguments;
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
@@ -406,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-03 all tests pass (739 valid, 222 invalid, 67 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1189 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-04 all tests pass (739 valid, 222 invalid, 68 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1190 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
