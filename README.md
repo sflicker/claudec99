@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-04 (va_start codegen foundation):
+Through stage 75-05 (additional va_list tests):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -406,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-04 all tests pass (739 valid, 222 invalid, 68 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1190 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-05 all tests pass (739 valid, 222 invalid, 71 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1193 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
