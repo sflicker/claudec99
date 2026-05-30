@@ -1976,10 +1976,14 @@ static ASTNode *parse_do_while_statement(Parser *parser) {
 }
 
 /*
- * <for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
+ * <for_statement> ::= "for" "(" <for_init> [<expression>] ";" [<expression>] ")" <statement>
+ * <for_init>      ::= <declaration> | [<expression>] ";"
  *
  * Children layout: [init, condition, update, body]
  * Any of init/condition/update may be NULL when omitted.
+ * init may be an AST_DECLARATION or AST_DECL_LIST (stage 76) when a C99
+ * declaration appears in the for-init clause.  In that case the variable's
+ * scope covers the condition, update, and body of the loop.
  */
 static ASTNode *parse_for_statement(Parser *parser) {
     parser_expect(parser, TOKEN_FOR);
@@ -1987,12 +1991,37 @@ static ASTNode *parse_for_statement(Parser *parser) {
 
     ASTNode *for_node = ast_new(AST_FOR_STATEMENT, NULL);
 
-    /* init */
+    /* Open a new scope so any declaration in the init lives exactly as long
+     * as the for statement (init + condition + update + body). */
+    parser->scope_depth++;
+
+    /* init: may be a declaration or an optional expression */
     ASTNode *init = NULL;
-    if (parser->current.type != TOKEN_SEMICOLON) {
+    int init_is_decl = 0;
+    if (parser->current.type == TOKEN_CONST ||
+        parser->current.type == TOKEN_VOID  ||
+        parser->current.type == TOKEN_BOOL  ||
+        parser->current.type == TOKEN_CHAR  ||
+        parser->current.type == TOKEN_SHORT ||
+        parser->current.type == TOKEN_INT   ||
+        parser->current.type == TOKEN_LONG  ||
+        parser->current.type == TOKEN_SIGNED ||
+        parser->current.type == TOKEN_UNSIGNED ||
+        parser->current.type == TOKEN_ENUM  ||
+        parser->current.type == TOKEN_STRUCT ||
+        parser->current.type == TOKEN_UNION  ||
+        (parser->current.type == TOKEN_IDENTIFIER &&
+         parser_find_typedef(parser, parser->current.value))) {
+        /* parse_statement handles the full declaration (type specifier,
+         * declarator list, optional initializer) and consumes the ";". */
+        init = parse_statement(parser);
+        init_is_decl = 1;
+    } else if (parser->current.type != TOKEN_SEMICOLON) {
         init = parse_expression(parser);
     }
-    parser_expect(parser, TOKEN_SEMICOLON);
+    if (!init_is_decl) {
+        parser_expect(parser, TOKEN_SEMICOLON);
+    }
 
     /* condition */
     ASTNode *condition = NULL;
@@ -2011,6 +2040,9 @@ static ASTNode *parse_for_statement(Parser *parser) {
     parser->loop_depth++;
     ASTNode *body = parse_statement(parser);
     parser->loop_depth--;
+
+    /* Close the for-scope: typedefs declared in the init are now invisible. */
+    parser_leave_scope(parser);
 
     /* Store as children — NULLs are stored directly */
     for_node->children[0] = init;

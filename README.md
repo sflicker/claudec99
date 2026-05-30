@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-06 (va_arg extraction for GP register class types):
+Through stage 76 (for-loop initializer declarations):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -207,7 +207,7 @@ Through stage 75-06 (va_arg extraction for GP register class types):
     `-I<dir>` or `-I <dir>` (repeatable): quoted includes search the including
     file's directory first, then `-I` directories in order; angle-bracket
     includes search `-I` directories only, in order.
-- **Statements**: `if/else`, `while`, `do/while`, `for`, `switch/case/default`,
+- **Statements**: `if/else`, `while`, `do/while`, `for` (with C99 declaration initializers), `switch/case/default`,
   `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
   `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
@@ -406,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-06 all tests pass (745 valid, 224 invalid, 71 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1201 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 76 all tests pass (752 valid, 226 invalid, 71 integration, 42 print-AST, 99 print-tokens, 21 print-asm; 1211 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

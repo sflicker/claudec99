@@ -3406,8 +3406,18 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         cg->break_stack[cg->break_depth].break_label = label_id;
         cg->break_stack[cg->break_depth].continue_label = label_id;
         cg->break_depth++;
+        /* Save scope: variables declared in the for-init are scoped to the loop. */
+        int saved_scope_start = cg->scope_start;
+        int saved_local_count = cg->local_count;
+        cg->scope_start = cg->local_count;
         if (node->children[0]) {
-            codegen_expression(cg, node->children[0]);
+            /* Stage 76: init may be a declaration or an expression. */
+            if (node->children[0]->type == AST_DECLARATION ||
+                node->children[0]->type == AST_DECL_LIST) {
+                codegen_statement(cg, node->children[0], is_main);
+            } else {
+                codegen_expression(cg, node->children[0]);
+            }
         }
         fprintf(cg->output, ".L_for_start_%d:\n", label_id);
         if (node->children[1]) {
@@ -3424,6 +3434,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_for_end_%d:\n", label_id);
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         cg->break_depth--;
+        /* Pop for-scope variables. */
+        cg->local_count = saved_local_count;
+        cg->scope_start = saved_scope_start;
     } else if (node->type == AST_SWITCH_STATEMENT) {
         /* children: [0]=controlling expression, [1]=body statement.
          * Pre-walk the body to collect every case/default label

@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 75-03)
+# Claude C99 Grammar (Current through Stage 76)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -113,7 +113,9 @@
 
 <do_while_statement> ::= "do" <statement> "while" "(" <expression> ")" ";"
 
-<for_statement> ::= "for" "(" [<expression>] ";" [<expression>] ";" [<expression>] ")" <statement>
+<for_statement> ::= "for" "(" <for_init> [<expression>] ";" [<expression>] ")" <statement>
+
+<for_init> ::= <declaration> | [<expression>] ";"
 
 <switch_statement> ::= "switch" "(" <expression> ")" <statement>
 
@@ -369,7 +371,7 @@
 #     the same struct type; mismatched struct types are rejected (stage 33).
 #
 # Statements:
-#   - for-loop initializers are expressions only, not declarations.
+#   - for-loop initializers support both declarations (C99 style) and expressions.
 #
 # Function pointers:
 #   - Nested function-pointer parameters (function pointer taking function

@@ -1,0 +1,21 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int total
+        IntLiteral: 0
+      ForStmt:
+        VariableDeclaration: int i
+          IntLiteral: 0
+        Binary: LESSTHAN
+          VariableExpression: i
+          IntLiteral: 6
+        PostfixIncDec: INCREMENT
+          VariableExpression: i
+        Block
+          ExpressionStatement
+            Assignment: total
+              Binary: ADD
+                VariableExpression: total
+                VariableExpression: i
+      ReturnStmt:
+        VariableExpression: total
