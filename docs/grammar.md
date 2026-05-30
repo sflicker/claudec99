@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 76)
+# Claude C99 Grammar (Current through Stage 77)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -120,8 +120,16 @@
 <switch_statement> ::= "switch" "(" <expression> ")" <statement>
 
 <labeled_statement> ::= <identifier> ":" <statement>
-                      | "case" <constant_expression> ":" <statement>
+                      | "case" <case_constant_expr> ":" <statement>
                       | "default" ":" <statement>
+
+<case_constant_expr>  ::= <case_additive>
+
+<case_additive>       ::= <case_unary> { ("+" | "-") <case_unary> }
+
+<case_unary>          ::= ("+" | "-")? <case_primary>
+
+<case_primary>        ::= <integer_literal> | <character_literal> | <identifier>
 
 <constant_expression> ::= <integer_literal> | <character_literal>
 

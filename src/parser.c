@@ -2055,13 +2055,76 @@ static ASTNode *parse_for_statement(Parser *parser) {
 }
 
 /*
+ * Stage 77: Compile-time case constant expression evaluator.
+ *
+ * Grammar:
+ *   case_expr    := case_additive
+ *   case_additive := case_unary ( ('+' | '-') case_unary )*
+ *   case_unary   := ('+' | '-') case_unary | case_primary
+ *   case_primary := INT_LITERAL | CHAR_LITERAL | enum-constant-IDENTIFIER
+ *
+ * Calls PARSER_ERROR (does not return) if a non-constant operand is found.
+ */
+static long eval_case_const_primary(Parser *parser) {
+    if (parser->current.type == TOKEN_INT_LITERAL) {
+        long v = parser->current.long_value;
+        parser->current = lexer_next_token(parser->lexer);
+        return v;
+    }
+    if (parser->current.type == TOKEN_CHAR_LITERAL) {
+        long v = parser->current.long_value;
+        parser->current = lexer_next_token(parser->lexer);
+        return v;
+    }
+    if (parser->current.type == TOKEN_IDENTIFIER) {
+        for (int i = 0; i < parser->enum_const_count; i++) {
+            if (strcmp(parser->enum_consts[i].name, parser->current.value) == 0) {
+                long v = parser->enum_consts[i].value;
+                parser->current = lexer_next_token(parser->lexer);
+                return v;
+            }
+        }
+        PARSER_ERROR(parser,
+            "error: case label expression is not an integer constant expression\n");
+    }
+    PARSER_ERROR(parser,
+        "error: case label expression is not an integer constant expression\n");
+}
+
+static long eval_case_const_unary(Parser *parser) {
+    if (parser->current.type == TOKEN_MINUS) {
+        parser->current = lexer_next_token(parser->lexer);
+        return -eval_case_const_unary(parser);
+    }
+    if (parser->current.type == TOKEN_PLUS) {
+        parser->current = lexer_next_token(parser->lexer);
+        return eval_case_const_unary(parser);
+    }
+    return eval_case_const_primary(parser);
+}
+
+static long eval_case_const_expr(Parser *parser) {
+    long val = eval_case_const_unary(parser);
+    while (parser->current.type == TOKEN_PLUS || parser->current.type == TOKEN_MINUS) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_case_const_unary(parser);
+        if (op == TOKEN_PLUS) val += rhs;
+        else val -= rhs;
+    }
+    return val;
+}
+
+/*
  * <switch_statement>   ::= "switch" "(" <expression> ")" <statement>
- * <labeled_statement>  ::= "case" <integer_literal> ":" <statement>
+ * <labeled_statement>  ::= "case" <case_constant_expr> ":" <statement>
  *                        | "default" ":" <statement>
  *
  * Stage 10-03-03: the switch body is any statement. `case` and
  * `default` labels are parsed as labeled statements inside
  * parse_statement and are only legal while switch_depth > 0.
+ * Stage 77: case expression is a compile-time constant (int/char
+ * literal, enum constant, or simple +/- combination thereof).
  */
 static ASTNode *parse_switch_statement(Parser *parser) {
     parser_expect(parser, TOKEN_SWITCH);
@@ -2434,10 +2497,12 @@ static ASTNode *parse_statement(Parser *parser) {
             PARSER_ERROR(parser, "error: 'case' label outside of switch\n");
         }
         parser->current = lexer_next_token(parser->lexer);
-        Token value = parser_expect(parser, TOKEN_INT_LITERAL);
+        long case_val = eval_case_const_expr(parser);
         parser_expect(parser, TOKEN_COLON);
+        char case_buf[32];
+        snprintf(case_buf, sizeof(case_buf), "%ld", case_val);
         ASTNode *node = ast_new(AST_CASE_SECTION, NULL);
-        ast_add_child(node, ast_new(AST_INT_LITERAL, value.value));
+        ast_add_child(node, ast_new(AST_INT_LITERAL, case_buf));
         ast_add_child(node, parse_statement(parser));
         return node;
     }
