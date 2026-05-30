@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 75-05 (additional va_list tests):
+Through stage 75-06 (va_arg extraction for GP register class types):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -244,7 +244,7 @@ Through stage 75-05 (additional va_list tests):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` and `va_copy` remain stubs (out of scope). Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP register class types (int, unsigned int, long, unsigned long, long long, unsigned long long, and pointer types) including register-save area and overflow stack paths; `va_copy` remains a stub. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant.
@@ -379,7 +379,7 @@ Through stage 75-05 (additional va_list tests):
 ## Not yet supported
 
 Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; block-scope `extern`; block-scope `static` arrays and structs;
-`va_arg` extraction and `va_copy` (va_start/va_end are now implemented; va_arg and va_copy remain stubs); floating-point variadic arguments;
+floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
 The authoritative grammar for the supported language is in
@@ -406,7 +406,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 75-05 all tests pass (739 valid, 222 invalid, 71 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1193 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 75-06 all tests pass (745 valid, 224 invalid, 71 integration, 41 print-AST, 99 print-tokens, 21 print-asm; 1201 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

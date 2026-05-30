@@ -2845,8 +2845,85 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_BUILTIN_VA_ARG) {
-        fprintf(cg->output, "    xor eax, eax\n");
-        node->result_type = node->decl_type ? node->decl_type : TYPE_INT;
+        /* Stage 75-06: va_arg codegen for GP register class types.
+         * Implements the SysV AMD64 ABI va_arg algorithm for integer
+         * and pointer types using the existing va_list layout:
+         *   [ap+0]  gp_offset          (unsigned int, 4 bytes)
+         *   [ap+8]  overflow_arg_area  (void *, 8 bytes)
+         *   [ap+16] reg_save_area      (void *, 8 bytes) */
+        Type *arg_type = node->full_type;
+        TypeKind kind = arg_type ? arg_type->kind : (TypeKind)node->decl_type;
+
+        /* Reject unsupported types */
+        switch (kind) {
+        case TYPE_VOID:
+        case TYPE_BOOL:
+        case TYPE_CHAR:
+        case TYPE_SHORT:
+            compile_error("error: va_arg: type %s is not supported;"
+                          " use int or a larger type\n",
+                          type_kind_name(kind));
+            return;
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            compile_error("error: va_arg: aggregate types are not supported\n");
+            return;
+        case TYPE_ARRAY:
+            compile_error("error: va_arg: array types are not supported\n");
+            return;
+        default:
+            break;
+        }
+
+        ASTNode *ap_node = node->children[0];
+        LocalVar *lv_ap = codegen_find_var(cg, ap_node->value);
+        if (!lv_ap) {
+            compile_error("error: va_arg: 'ap' is not a local variable\n");
+        }
+        int ap_off = lv_ap->offset;
+        int lbl = cg->label_count++;
+
+        /* Load gp_offset; branch to overflow if >= 48 */
+        fprintf(cg->output, "    mov eax, dword [rbp - %d]\n", ap_off);
+        fprintf(cg->output, "    cmp eax, 48\n");
+        fprintf(cg->output, "    jae .L_va_arg_ovf_%d\n", lbl);
+
+        /* GP register save area path: src = reg_save_area + gp_offset */
+        fprintf(cg->output, "    mov rcx, [rbp - %d]\n", ap_off - 16);
+        fprintf(cg->output, "    lea rdx, [rcx + rax]\n");
+        fprintf(cg->output, "    add eax, 8\n");
+        fprintf(cg->output, "    mov dword [rbp - %d], eax\n", ap_off);
+        fprintf(cg->output, "    jmp .L_va_arg_load_%d\n", lbl);
+
+        /* Overflow stack area path: src = overflow_arg_area */
+        fprintf(cg->output, ".L_va_arg_ovf_%d:\n", lbl);
+        fprintf(cg->output, "    mov rdx, [rbp - %d]\n", ap_off - 8);
+        fprintf(cg->output, "    lea rcx, [rdx + 8]\n");
+        fprintf(cg->output, "    mov [rbp - %d], rcx\n", ap_off - 8);
+
+        /* Load the value from [rdx] according to the requested type */
+        fprintf(cg->output, ".L_va_arg_load_%d:\n", lbl);
+        switch (kind) {
+        case TYPE_INT:
+            /* 4-byte GP slot: load 4 bytes; zero-extends to rax automatically */
+            fprintf(cg->output, "    mov eax, dword [rdx]\n");
+            node->result_type = TYPE_INT;
+            node->is_unsigned = (arg_type && !arg_type->is_signed) ? 1 : 0;
+            break;
+        case TYPE_LONG:
+        case TYPE_LONG_LONG:
+        case TYPE_UNSIGNED_LONG_LONG:
+        case TYPE_POINTER:
+            /* 8-byte GP slot */
+            fprintf(cg->output, "    mov rax, [rdx]\n");
+            node->result_type = kind;
+            node->is_unsigned = (arg_type && !arg_type->is_signed) ? 1 : 0;
+            break;
+        default:
+            compile_error("error: va_arg: type not in GP register class\n");
+            return;
+        }
+        node->full_type = arg_type;
         return;
     }
 }
