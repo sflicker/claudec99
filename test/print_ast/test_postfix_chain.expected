@@ -1,0 +1,31 @@
+TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: struct parser
+      VariableDeclaration: struct *p
+      ExpressionStatement
+        Assignment: p
+          AddressOf:
+            VariableExpression: parser
+      ExpressionStatement
+        Assignment:
+          ArrowAccess: pos
+            VariableExpression: p
+          IntLiteral: 2
+      ExpressionStatement
+        Assignment:
+          MemberAccess: kind
+            ArrayIndex:
+              ArrowAccess: tokens
+                VariableExpression: p
+              IntLiteral: 2
+          IntLiteral: 42
+      ReturnStmt:
+        MemberAccess: kind
+          ArrayIndex:
+            ArrowAccess: tokens
+              VariableExpression: p
+            ArrowAccess: pos
+              VariableExpression: p

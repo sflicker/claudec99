@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 77 (enum and constant expressions in case labels):
+Through stage 78 (general postfix expression chaining):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -286,6 +286,7 @@ Through stage 77 (enum and constant expressions in case labels):
   local and global struct/union variables, sizeof operator on struct/union types and instances,
   member access via "." (dot) and "->" (arrow) operators in both rvalue and lvalue contexts,
   chained arrow access (e.g., `n.next->value`),
+  array-typed struct/union fields with subscript chaining (e.g., `p->tokens[i].kind`),
   brace-enclosed initializer lists for local struct/union variables with automatic zero-fill
   (e.g., `struct Point p = {3, 4};`), whole-struct/union copy assignment and copy initialization
   from another variable of the same type. Pointer-to-struct/union function parameters
@@ -407,7 +408,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 77 all tests pass (758 valid, 227 invalid, 71 integration, 42 print-AST, 99 print-tokens, 21 print-asm; 1218 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 78 all tests pass (765 valid, 231 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1230 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

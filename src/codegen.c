@@ -489,6 +489,12 @@ static void emit_store_global(CodeGen *cg, const char *name, int size,
 
 static void codegen_expression(CodeGen *cg, ASTNode *node);
 
+/* Stage 78: forward declarations needed because emit_array_index_addr calls
+ * emit_member_addr / emit_arrow_addr which are defined later in the file. */
+static StructField *find_struct_field(Type *st, const char *name);
+static StructField *emit_member_addr(CodeGen *cg, ASTNode *node);
+static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node);
+
 /*
  * Emit code to compute the address of an array/pointer subscript
  * `b[i]` into rax. Returns the element Type so the caller can pick
@@ -562,6 +568,75 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         TypeKind index_kind = index_node->result_type;
         if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
             compile_error( "error: array subscript index must be an integer\n");
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        if (elem_size != 1) {
+            fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
+    /* Stage 78: member access (.) as subscript base — e.g. n.values[i].
+     * emit_member_addr leaves the field's address in rax.  For an array
+     * field that address is the base of the array; for a pointer field we
+     * must load the pointer value from that address first. */
+    if (base_node->type == AST_MEMBER_ACCESS) {
+        StructField *f = emit_member_addr(cg, base_node);
+        Type *element;
+        if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+            element = f->full_type->base;
+        } else if (f->kind == TYPE_POINTER && f->full_type && f->full_type->base) {
+            element = f->full_type->base;
+            fprintf(cg->output, "    mov rax, [rax]\n");
+        } else {
+            compile_error("error: subscript applied to member '%s' which is not an array or pointer\n",
+                    base_node->value);
+        }
+        int elem_size = type_size(element);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            compile_error("error: array subscript index must be an integer\n");
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        if (elem_size != 1) {
+            fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
+    /* Stage 78: arrow access (->) as subscript base — e.g. p->values[i].
+     * emit_arrow_addr leaves the field's address in rax.  Same array/pointer
+     * dispatch as the member-access case above. */
+    if (base_node->type == AST_ARROW_ACCESS) {
+        StructField *f = emit_arrow_addr(cg, base_node);
+        Type *element;
+        if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+            element = f->full_type->base;
+        } else if (f->kind == TYPE_POINTER && f->full_type && f->full_type->base) {
+            element = f->full_type->base;
+            fprintf(cg->output, "    mov rax, [rax]\n");
+        } else {
+            compile_error("error: subscript applied to member '%s' which is not an array or pointer\n",
+                    base_node->value);
+        }
+        int elem_size = type_size(element);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            compile_error("error: array subscript index must be an integer\n");
         }
         if (index_kind != TYPE_LONG) {
             fprintf(cg->output, "    movsxd rax, eax\n");

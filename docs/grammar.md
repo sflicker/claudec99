@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 77)
+# Claude C99 Grammar (Current through Stage 78)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }

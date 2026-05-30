@@ -376,6 +376,15 @@ static Type *parse_struct_specifier(Parser *parser) {
                 Type *field_type = field_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
+                /* Stage 78: handle array member fields (e.g. int values[3]). */
+                if (d.is_array) {
+                    if (!d.has_size) {
+                        PARSER_ERROR(parser,
+                                "error: struct array member '%s' requires explicit size\n",
+                                d.name);
+                    }
+                    field_type = type_array(field_type, d.array_length);
+                }
 
                 /* Stage 37/72: a non-pointer field of an incomplete struct or
                  * union type is invalid; pointer-to-incomplete is allowed. */
@@ -530,6 +539,15 @@ static Type *parse_union_specifier(Parser *parser) {
                 Type *field_type = field_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
+                /* Stage 78: handle array member fields (e.g. int values[3]). */
+                if (d.is_array) {
+                    if (!d.has_size) {
+                        PARSER_ERROR(parser,
+                                "error: union array member '%s' requires explicit size\n",
+                                d.name);
+                    }
+                    field_type = type_array(field_type, d.array_length);
+                }
 
                 /* Reject non-pointer field of an incomplete struct or union type. */
                 if ((field_type->kind == TYPE_STRUCT || field_type->kind == TYPE_UNION) &&
@@ -1349,9 +1367,13 @@ static ASTNode *parse_postfix(Parser *parser) {
             /* Stage 28-04: also allow a parenthesized deref as the subscript
              * base, supporting (*ptr_to_array)[idx] patterns.
              * Stage 42: also allow a prior array subscript so that
-             * pointer-array element subscripts like names[0][1] work. */
+             * pointer-array element subscripts like names[0][1] work.
+             * Stage 78: also allow member/arrow access as subscript base so
+             * that expr.field[i] and expr->field[i] chains work. */
             if (expr->type != AST_VAR_REF && expr->type != AST_DEREF &&
-                expr->type != AST_ARRAY_INDEX) {
+                expr->type != AST_ARRAY_INDEX &&
+                expr->type != AST_MEMBER_ACCESS &&
+                expr->type != AST_ARROW_ACCESS) {
                 PARSER_ERROR(parser, "error: subscript base must be an identifier\n");
             }
             parser->current = lexer_next_token(parser->lexer);
