@@ -931,6 +931,118 @@
   - [x] Compound assignment truncation: `uint8_t 250 += 10` → 4 (wraps)
   - [x] Unsigned multiplication wraparound: `1000000ULL * (ull)(-1) > 0`
 
+## Stage 66 - Const Pointer Compatibility Hardening
+
+- [x] Pointer-level const enforcement (semantic, no grammar changes)
+	- [x] Parser tracks `pointer_is_const` in declarators; consumes optional `const` after each `*`
+	- [x] `is_const` field on `Type`; `type_const_copy()` for const-qualified copies without mutating singletons
+	- [x] Write through a const pointer rejected (error)
+	- [x] Reassignment of a const pointer rejected (error)
+	- [x] const-to-non-const conversion in assignments: warning, or error under `-Werror`
+	- [x] `codegen_warn()` / `codegen_warn_const_discard()` helpers; pointer type derivation carries const
+
+## Stage 67 - File I/O Stub Declarations (stdio.h)
+
+- [x] Stage 67-01: opaque `typedef struct FILE FILE;` and `#define EOF (-1)`
+- [x] Stage 67-02: `fopen`, `fclose`, `fgetc` declarations
+- [x] Stage 67-03: `fgets` (line input)
+- [x] Stage 67-04: `fprintf` (file output)
+- [x] Stage 67-05: `snprintf` (formats into buffer via existing variadic mechanism)
+- [x] No compiler changes — declarative stub additions only
+
+## Stage 68 - More Than 6 Function-Call Arguments
+
+- [x] Removed hard-coded 6-argument limit (parser and codegen)
+- [x] Caller side: System V AMD64 stack-passing for args 7+
+	- [x] 16-byte stack alignment padding computed
+	- [x] Stack args (6..N-1) pushed right-to-left; register args (0..5) evaluated left-to-right
+	- [x] Cleanup with `add rsp, (num_stack_args + padding) * 8`
+	- [x] Indirect calls follow same strategy (callee address saved/restored via r10)
+- [x] Callee side: stack parameters copied from `[rbp + 16 + (i-6)*8]` with sign/zero extension by type
+
+## Stage 69 - Memory-Related Standard Header Functions
+
+- [x] `stdlib.h`: `realloc` (corrected to `void *` per C99)
+- [x] `string.h`: `memcpy`, `memset`, `memcmp`, `strchr`
+- [x] No compiler changes — declarative stub additions only
+
+## Stage 70 - Tooling and Diagnostics Infrastructure
+
+- [x] Stage 70-00/70: mini compiler-shaped integration test (exercises existing features end-to-end)
+- [x] Stage 70-01: versioning and error-management infrastructure
+	- [x] `--version` (format MM.mm.SSSSSSSS.BBBBB; build number from `git rev-list --count`)
+	- [x] `--max-errors=N` (default 1 = exit on first error)
+	- [x] Parser error recovery via setjmp/longjmp; `parser_sync()` to next declaration boundary
+	- [x] ~104 parser + ~116 codegen `exit(1)` pairs replaced with uniform `compile_error()`
+- [x] Stage 70-02: line/column tracking in tokens
+	- [x] `SourceFile` struct; `line`, `col`, `file` fields on `Token`; `lexer_advance()` / `token_set_pos()`
+	- [x] `[line:col]` column in print-tokens output (dynamic zero-padded width)
+	- [x] Include-boundary location markers (`\x01<line>:<path>\n`); per-path SourceFile pool
+- [x] Stage 70-03: line/column in errors and warnings
+	- [x] `compile_error_at(file, line, col, ...)` / `compile_warning_at(...)`; `PARSER_ERROR` macro
+	- [x] All 107 parser error sites carry `<file>:<line>:<col>:` prefix
+	- [x] Global `g_warnings_are_errors` controlled by `-Werror`
+	- [ ] Codegen (non-parser) errors/warnings still print without position prefix (AST nodes lack token info)
+
+## Stage 71 - Block-Scope Static Variables
+
+- [x] `static` accepted at block scope in `parse_statement`; constant-initializer validation
+- [x] `is_static` + `static_label[256]` on `LocalVar`; `LocalStaticVar` tracking; scope/shadowing via existing checks
+- [x] All access paths (load/store/address-of/inc-dec/subscript/member) emit RIP-relative `[rel Lstatic_func_N]`
+- [x] `codegen_emit_local_statics()` emits to `.bss` (uninitialized) or `.data` (initialized)
+- [x] Non-constant initializer rejected; arrays/structs out of scope
+
+## Stage 72 - Named Union Support
+
+- [x] Tokenizer: `union` keyword
+- [x] `parse_union_specifier()` with union tag table; `TYPE_UNION` in type/declaration-specifier paths
+- [x] `StructField` reused for members (all offsets 0); union size = max member size
+- [x] Member access (`.` / `->`), sizeof, local/global decls, whole-union assignment, BSS emission
+- [x] First-member initialization via brace lists; incomplete union variable declarations rejected
+
+## Stage 73-01 - Anonymous Struct/Union Type Declarations
+
+- [x] Optional tag when a body is present (struct and union specifiers)
+- [x] Anonymous definitions allocate fresh unique `Type*`; type identity by pointer
+- [x] Distinct anonymous types with identical layouts correctly fail assignment as type mismatch
+- [x] Error when neither tag nor body is present
+
+## Stage 74 - Controlled Header Gap Fill
+
+- [x] Stub headers: `ctype.h`, `errno.h`, `time.h`, `setjmp.h`
+	- [x] `ctype.h`: classification (isalpha, isdigit, isspace, etc.)
+	- [x] `errno.h`: `errno`, `ERANGE`, `EINVAL`, …
+	- [x] `time.h`: `time_t`, time functions
+	- [x] `setjmp.h`: non-local jump support
+- [x] Codegen bugfix: null pointer constant (integer 0) allowed as argument to a pointer parameter (`EMIT_ARG_CONVERT`) — enables `time(0)`
+
+## Stage 75 - Variadic Function Definitions and stdarg.h
+
+- [x] Stage 75-01: variadic function *definitions*
+	- [x] Unnamed fixed parameters allowed when function is variadic
+	- [x] Caller rule: `actual_arg_count >= fixed_param_count`
+	- [x] Prologue skips unnamed parameters (register- and stack-param loops)
+- [x] Stage 75-02: `stdarg.h` surface
+	- [x] `va_list` typedef as `struct __claudec00_va_list_tag [1]`
+	- [x] `va_start`/`va_end`/`va_copy`/`va_arg` macros expand to `__builtin_*` intrinsics
+	- [x] Array-to-pointer decay for array-typedef parameters (C99 §6.7.5.3p7)
+- [x] Stage 75-03: builtin parsing and semantic recognition
+	- [x] `parse_primary` recognizes `__builtin_va_start/end/copy/arg`
+	- [x] AST nodes: `AST_BUILTIN_VA_START`, `_END`, `_COPY`, `_ARG`
+	- [x] `current_func_is_variadic` on Parser; `va_start` requires variadic context + 2 args; `va_arg` parses type-name second arg
+- [x] Stage 75-04: va_start codegen foundation
+	- [x] 304-byte register save area allocated for variadic functions; prologue saves rdi–r9
+	- [x] `__builtin_va_start` initializes gp_offset/fp_offset/overflow_arg_area/reg_save_area
+	- [x] `vfprintf`/`vprintf`/`vsnprintf` added to `stdio.h`; va_list forwarded to libc
+	- [x] Parser fix: unnamed array-typedef parameters get pointer decay in early-return path
+- [x] Stage 75-05: additional va_list integration tests (0, 6, 10 arguments)
+- [x] Stage 75-06: `va_arg` for GP-class types
+	- [x] Full SysV AMD64 impl: gp_offset range check, register-save-area path, overflow-stack path
+	- [x] int / unsigned int (4-byte) and long / long long / unsigned long long / pointer (8-byte) loads
+	- [x] Rejects small promoted types (char, short, _Bool), aggregates by value, arrays, void
+- [ ] `va_arg` for floating-point and struct-by-value types (deferred)
+- [ ] `va_copy` codegen (still a no-op stub)
+
 ---
 
 ## TODO
@@ -946,17 +1058,17 @@
 - [ ] Floating-point literals (decimal and hex forms)
 - [ ] Floating-point conversions (int ↔ float ↔ double)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
-- [ ] Union types
+- [x] Union types (Stage 72; anonymous unions Stage 73-01)
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
 - [ ] Compound literals: (Type){ ... }
 - [ ] volatile qualifier
 - [ ] restrict qualifier on pointers
-- [ ] Full pointer-level const enforcement (writes through const pointers, const-correctness on conversions)
+- [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [ ] static storage class (block scope — local static variables; prerequisite for self-hosting)
+- [x] static storage class (block scope — local static variables) (Stage 71)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables
@@ -988,7 +1100,9 @@
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions
-- [ ] Variadic function definitions: va_list, va_start, va_arg, va_end (<stdarg.h>); only declarations/external calls supported today
+- [x] Variadic function definitions: va_list, va_start, va_end, and va_arg for GP-class types (int/long/long long/pointer) (Stage 75)
+  - [ ] va_arg for floating-point and struct-by-value types
+  - [ ] va_copy codegen (still a no-op stub)
 - [ ] Old-style (K&R) function definitions
 - [ ] Implicit return in void functions
 - [ ] Functions returning function pointers: int (*f())(int)
@@ -1002,10 +1116,13 @@
 - [x] <stdint.h>: full exact-width, least-width, fast, and pointer-size integer typedefs (stub complete)
 - [x] <limits.h>: full set including `LLONG_MIN`, `LLONG_MAX`, `ULLONG_MAX` (stub complete)
 - [x] <stdbool.h>: `bool`, `true`, `false` (stub complete)
-- [ ] <stdio.h>: expand stub to cover `FILE *`, `fprintf`, `fopen`, `fclose`, `fread`, `fgets`, `snprintf`, `stderr` (needed for self-hosting)
-- [ ] <ctype.h>: `isalpha`, `isdigit`, `isspace`, `isalnum`, `toupper`, `tolower` (needed for self-hosting)
-- [ ] <errno.h>: `errno`, `ERANGE`, `EINVAL`, etc. (needed for self-hosting)
-- [ ] <time.h>: `time_t`, `struct tm`, `time()`, `localtime()` (needed for self-hosting)
+- [x] <stdio.h>: expanded with opaque `FILE`, `EOF`, `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf` (Stage 67, 75-04); `fread`/`fwrite`/`stderr` still pending
+- [x] <ctype.h>: classification functions (`isalpha`, `isdigit`, `isspace`, …) (Stage 74)
+- [x] <errno.h>: `errno`, `ERANGE`, `EINVAL`, etc. (Stage 74)
+- [x] <time.h>: `time_t`, time functions (Stage 74)
+- [x] <setjmp.h>: non-local jump support (Stage 74)
+- [x] <stdarg.h>: `va_list`, `va_start`, `va_end`, `va_arg`, `va_copy` macros (Stage 75-02)
+- [ ] <stdio.h>: remaining stubs `fread`, `fwrite`, `stderr` (needed for self-hosting)
 - [ ] <math.h>: basic floating-point math functions
 - [ ] <assert.h>: assert macro
 
@@ -1015,7 +1132,7 @@
 - [ ] Linker invocation
 - [ ] Debug information (DWARF)
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
-- [ ] Spill-and-restore for more than 6 arguments (SysV stack-passing; prerequisite for self-hosting)
+- [x] Stack-passing for more than 6 arguments (SysV; caller and callee side) (Stage 68)
 - [ ] Calling convention for struct arguments and return values (hidden-pointer ABI for large structs; prerequisite for self-hosting)
 - [ ] Floating-point ABI (xmm registers for float/double arguments)
 - [ ] Tail-call opportunities
@@ -1026,10 +1143,11 @@
 - [ ] Red-zone usage or avoidance
 
 ### Diagnostics and Error Recovery
-- [ ] Line and column numbers on all error messages
-- [ ] Structured error output (file:line:col: error: message)
+- [x] Line and column numbers on parser error messages (Stage 70-03; codegen errors still lack position)
+- [x] Structured error output (file:line:col: error: message) (Stage 70-03)
+- [x] `-Werror` (warnings as errors) (Stage 66 / 70-03)
 - [ ] Warning level support (-Wall, -Wextra)
-- [ ] Multiple errors before aborting
+- [x] Multiple errors before aborting (`--max-errors=N`) (Stage 70-01)
 - [ ] Pedantic C99 conformance checks
 - [ ] Signed integer overflow detection mode
 
