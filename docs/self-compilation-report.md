@@ -1,238 +1,232 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-05-29
+**Date:** 2026-05-30
 **Compiler:** `build/ccompiler`
 **Flags:** `--max-errors=0 -Iinclude -Itest/include`
 
-Each `src/*.c` file was compiled independently, in alphabetical order, with the
-project's own built compiler. Every reported error was traced to its **root
-cause**; the long runs of `expected type specifier` that follow each root cause
-are parser-recovery cascades and are not counted as distinct gaps.
-
-There were **no** `include file not found` errors, so **Category A is empty** —
-every stub header the sources need already exists in `test/include/`. All
-failures are Category B (unimplemented language features) plus one fixed-size
-internal-table limit.
-
 ## Summary
+
+Each `src/*.c` file was compiled independently with the project's own
+compiler. Every required system header already has a stub in
+`test/include/`, so **there are no Category A failures** — every failure is a
+Category B unimplemented C99 (or common GNU extension) feature. One module
+(`version.c`) compiles cleanly.
 
 | Module | Result | Root cause category |
 |---|---|---|
-| `ast.c` | FAIL | B3 subscript-of-member; B1 `for`-init |
-| `ast_pretty_printer.c` | FAIL | B1 `for`-init; B2 enum `case` labels |
-| `codegen.c` | FAIL | B9/B8 header (`codegen.h`); B2 enum `case`; B1 `for`-init; L1 too-many-functions |
-| `compiler.c` | FAIL | B7/B8/B9/B11 headers (`codegen.h`,`lexer.h`,`parser.h`,`util.h`); B2; B1 |
-| `lexer.c` | FAIL | B7 header (`lexer.h` `const` member); B6 hex/octal char escape |
-| `parser.c` | FAIL | B7/B11 headers (`lexer.h`,`parser.h`,`util.h`); B1; B2 |
-| `preprocessor.c` | FAIL | B1 `for`-init; B3 subscript-of-member; B4 compound-assign; B5 postfix `++`; B6 hex/octal string escape; L1 too-many-functions |
-| `type.c` | FAIL | B1 `for`-init; B2 enum `case` labels |
-| `util.c` | FAIL | B11 `__attribute__` (`util.h` + `util.c`) |
+| `ast.c` | FAIL | B — member-access subscript base |
+| `ast_pretty_printer.c` | FAIL | B — member-access subscript base |
+| `codegen.c` | FAIL | B — redundant typedef (`ASTNode`); also `__attribute__`, subscript base |
+| `compiler.c` | FAIL | B — redundant typedef (`ASTNode`); also `const` member, `__attribute__`, subscript base |
+| `lexer.c` | FAIL | B — `const`-qualified struct member |
+| `parser.c` | FAIL | B — `const`-qualified struct member; also `__attribute__`, subscript base |
+| `preprocessor.c` | FAIL | B — compound assignment / postfix `++` / subscript on non-identifier |
+| `type.c` | FAIL | B — member-access subscript base |
+| `util.c` | FAIL | B — `__attribute__` GNU extension |
 | `version.c` | **PASS** | — |
 
 ---
 
 ## Category A — Missing stub system headers
 
-None. No `include file not found` diagnostics were emitted by any module; the
-existing stubs under `test/include/` cover every system header the sources
-include.
+**None.** No `include file not found` diagnostics were produced by any module.
+Every `#include <...>` resolved against an existing stub in `test/include/`
+(`ctype.h`, `errno.h`, `limits.h`, `setjmp.h`, `stdarg.h`, `stdbool.h`,
+`stddef.h`, `stdint.h`, `stdio.h`, `stdlib.h`, `string.h`, `time.h`).
 
 ---
 
 ## Category B — Language features not yet implemented
 
-Each subsection gives the reproduced trigger, the diagnostic, the C99 clause,
-and the affected `file:line` sites (root cause only; cascades omitted).
+Each subsection below isolates one **root cause**. A single root-cause
+rejection typically derails the parser for the rest of the declaration or
+function, producing a long cascade of follow-on diagnostics — most commonly
+`expected type specifier`, `unknown type name 'X'`, `non-constant initializer
+for global 'X'`, `too many functions (max 64)`, and stray `invalid escape
+sequence` reports. Those cascades (the bulk of the 556 total errors) are
+**not** independent bugs; only the root causes are catalogued here.
 
-### B1 — `for`-init declarations  ·  C99 §6.8.5.3
+### B1 — Subscript of a member-access (`->` / `.`) expression
 
-`for (int i = 0; …)` is rejected. The declaration in the first clause of a
-`for` is not parsed; the parser expects an expression instead.
+The subscript operator only accepts a bare identifier as its base; indexing
+the result of a member access is rejected.
 
-- Keyword type → `error: expected expression, got 'int'`
-- `typedef`-name type (e.g. `size_t`) → `error: expected ';', got identifier ('i')`
-  (the type name is consumed as the init *expression*, then `i` is unexpected)
+```c
+parent->children[parent->child_count++] = child;   // ast.c:21
+//      ^ "subscript base must be an identifier"
+```
 
-Verified: `for (int i=0;…)` fails; `for (size_t i=0;…)` fails; an equivalent
-loop with the declaration hoisted out compiles.
+Minimal reproduction:
 
-| File:line | Form |
+```c
+struct S { int *a; };
+void f(struct S *p) { p->a[0] = 1; }   // error: subscript base must be an identifier
+```
+
+C99 §6.5.2.1 — the postfix-expression preceding `[` may be any
+postfix-expression, not just an identifier. This is the single most pervasive
+gap, appearing in seven modules.
+
+| Location | Expression |
 |---|---|
-| `src/ast.c:27` | `for (int i = …)` |
-| `src/ast_pretty_printer.c:29` | `for (int i = …)` |
-| `src/codegen.c:124, 156, 654, 870` | `for (int i = …)` |
-| `src/compiler.c:130, 267` | `for (int i = …)` |
-| `src/parser.c:133, 1079` | `for (int i = …)` |
-| `src/preprocessor.c:124, 233, 268` | `for (int i = …)` |
-| `src/preprocessor.c:91, 104, 162, 412` | `for (size_t i = …)` |
-| `src/type.c:95` | `for (int i = …)` |
+| `src/ast.c:21`, `:28` | `parent->children[...]` |
+| `src/ast_pretty_printer.c:127` | `node->value[0]` |
+| `src/codegen.c:125`, `:157`, `:655`, `:871` | member-array subscript |
+| `src/compiler.c:131` | member-array subscript |
+| `src/parser.c:134` | member-array subscript |
+| `src/preprocessor.c:92`, `:105`, `:153`, `:163`, `:353`, `:485` | member-array subscript |
+| `src/type.c:96` | `t->params[i]` |
 
-### B2 — Enum / non-literal constant `case` labels  ·  C99 §6.8.4.2
+### B2 — `const` qualifier on a struct / union member
 
-`case <enum-constant>:` is rejected; the label parser accepts only an integer
-literal.
+A `const`-qualified member declaration is rejected. (Notably, `const` on a
+local, parameter, global, or typedef **does** compile — the gap is specific to
+aggregate members.)
 
-Diagnostic: `error: expected integer literal, got identifier ('…')`
-Verified with `enum E{A,B}; switch(e){case A: … case B: …}`.
+```c
+typedef struct {
+    const char *source;   // include/lexer.h:7
+//  ^ "expected integer type, got 'const'"
+    ...
+} Lexer;
+```
 
-| File:line | Label |
+Minimal reproduction:
+
+```c
+struct S { const int x; };   // error: expected integer type, got 'const'
+```
+
+C99 §6.7.2.1 (struct/union members) with the type-qualifier of §6.7.3. Because
+the failure is in `include/lexer.h`, it blocks every module that includes it:
+`lexer.c`, `parser.c`, and `compiler.c`.
+
+| Location | Member |
 |---|---|
-| `src/ast_pretty_printer.c:69` | `case AST_TRANSLATION_UNIT:` |
-| `src/codegen.c:10, 134, 408, 436` | `case TYPE_VOID:` / `case TYPE_CHAR:` |
-| `src/compiler.c:23` | `case TOKEN_EOF:` |
-| `src/type.c:147, 175` | `case TYPE_VOID:` / `case TYPE_BOOL:` |
+| `include/lexer.h:7` | `const char *source;` (via `lexer.c`, `parser.c`, `compiler.c`) |
 
-### B3 — Subscript of a member-access base  ·  C99 §6.5.2.1
+### B3 — Compound assignment with a non-identifier left operand
 
-`p->arr[i]` and `s.arr[i]` are rejected; the subscript base must be a bare
-identifier.
+Compound assignment operators (`*=`, `+=`, …) are parsed only when the left
+operand is a bare identifier; a member-access lvalue terminates the statement
+early, so the operator is seen where a `;` is expected.
 
-Diagnostic: `error: subscript base must be an identifier`
-Verified: `p->a[i]` fails; `a[i]` compiles.
+```c
+g->cap *= 2;   // preprocessor.c:36  -> error: expected ';', got '*='
+g->len += 1;   // preprocessor.c:50  -> error: expected ';', got '+='
+```
 
-| File:line | Expression |
-|---|---|
-| `src/ast.c:21` | `parent->children[parent->child_count++]` |
-| `src/preprocessor.c:353, 485` | `arg.data[arg.len - 1]` |
+Minimal reproduction:
 
-### B4 — Compound assignment to a non-identifier lvalue  ·  C99 §6.5.16.2
+```c
+struct S { int c; };
+void f(struct S *g) { g->c *= 2; }   // error: expected ';', got '*='
+// but:  int c; c *= 2;              // compiles
+```
 
-`g->cap *= 2;` and `g->len += n;` are rejected; compound-assignment operators
-are accepted only when the left operand is a plain identifier.
+C99 §6.5.16.2 — the left operand of a compound assignment is any modifiable
+lvalue.
 
-Diagnostic: `error: expected ';', got '*='` / `'+='`
-Verified: `x *= 2` (identifier) compiles; `g->cap *= 2` (member) fails.
-
-| File:line | Expression |
+| Location | Expression |
 |---|---|
 | `src/preprocessor.c:36` | `g->cap *= 2;` |
-| `src/preprocessor.c:50` | `g->len += n;` |
+| `src/preprocessor.c:50` | `g->len += …;` |
 
-### B5 — Postfix `++`/`--` on a non-identifier operand  ·  C99 §6.5.2.4
+### B4 — Postfix `++` / `--` on a non-identifier operand
 
-`s[0]++` and `m->n++` are rejected; postfix increment/decrement requires a bare
-identifier operand.
+Like B3, the postfix increment/decrement operators require a bare identifier
+operand and reject a member-access lvalue.
 
-Diagnostic: `error: postfix ++ requires an identifier`
-Verified: `i++` (identifier) and `(*p)++` (dereference) compile; `s[0]++`
-(subscript) and `m->n++` (member) fail.
+```c
+... node->value[len++] ...   // preprocessor.c (11 sites)
+//  error: postfix ++ requires an identifier
+```
 
-| File:line | Expression |
-|---|---|
-| `src/preprocessor.c:735, 844, 907, 932, 967, 992, 1012, 1032, 1052` | postfix on subscript/member operand |
-| `src/preprocessor.c:823, 882` | `s[(*in)++]` form |
+Minimal reproduction:
 
-### B6 — Hexadecimal and octal escape sequences  ·  C99 §6.4.4.4
+```c
+struct S { int c; };
+void f(struct S *g) { g->c++; }   // error: postfix ++ requires an identifier
+```
 
-`'\xNN'` and `'\NNN'` (and their string-literal forms) are rejected. Simple
-escapes (`\n \t \0 \a \b \f \v \r \?`) are accepted.
+C99 §6.5.2.4 — the operand of postfix `++`/`--` is any modifiable lvalue.
 
-Diagnostics (emitted by the lexer, without a position):
-- `error: invalid escape sequence in character literal`
-- `error: invalid escape sequence in string literal`
-
-Verified: `'\x41'` and `'\101'` both fail; the named single-char escapes pass.
-
-| File | Use |
-|---|---|
-| `src/lexer.c` | char literal `'\x01'` (e.g. line 100) — char-literal diagnostic |
-| `src/preprocessor.c` | string literal `"\x01"` (lines 1382, 1393) — string-literal diagnostic |
-
-### B7 — `const`-qualified struct members  ·  C99 §6.7.2.1 / §6.7.3
-
-A `const`-qualified member inside a `struct`/`union` declaration is rejected.
-(`const` on a *function parameter* is accepted, so this is specific to member
-declarations.)
-
-Diagnostic: `error: expected integer type, got 'const'`
-Verified: `struct S { const char *p; };` fails.
-
-| Header:line | Member | Blocks |
-|---|---|---|
-| `include/lexer.h:7` | `const char *source;` (struct `Lexer`) | `lexer.c`, `parser.c`, `compiler.c` |
-| `include/codegen.h` | `const char *current_func;` (struct `CodeGen`) | `codegen.c`, `compiler.c` |
-
-Because the enclosing typedef struct fails to parse, `Lexer`/`CodeGen` become
-unknown type names everywhere they are used, and the would-be struct members
-leak into global scope — this is the origin of the cascade
-`duplicate global declaration 'switch_depth'` seen in `parser.h:83`.
-
-### B8 — Multidimensional (array-of-array) members  ·  C99 §6.7.2.1
-
-A member declared as `T name[N][M];` is rejected after the first dimension.
-
-Diagnostic: `error: expected ';', got '['`
-Verified: `struct S { char m[4][8]; };` fails.
-
-| Header:line | Member | Blocks |
-|---|---|---|
-| `include/codegen.h:121` | `char user_labels[MAX_USER_LABELS][256];` (struct `CodeGen`) | `codegen.c`, `compiler.c` |
-
-### B9 — Redundant typedef of an already-typedef'd name  ·  C99 §6.7
-
-`typedef struct ASTNode ASTNode;` is rejected when `ASTNode` is already a
-typedef (the common forward-declaration idiom). C99 permits redeclaring a
-typedef name to a compatible type within the same scope.
-
-Diagnostic: `error: duplicate typedef '…' in this scope`
-Verified: two identical `typedef struct N N;` lines fail on the second.
-
-| Header:line | Declaration | Blocks |
-|---|---|---|
-| `include/codegen.h:94` | `typedef struct ASTNode ASTNode;` (already in `ast.h`) | `codegen.c`, `compiler.c` |
-
-### B11 — `__attribute__((…))` GNU attribute specifier
-
-A declaration prefixed with `__attribute__((…))` is rejected; the attribute is
-not recognized, so the declaration is read as having no type specifier.
-
-Diagnostic: `error: expected type specifier`
-Verified: `__attribute__((noreturn)) void f(void);` fails.
-
-| File:line | Site | Blocks |
-|---|---|---|
-| `include/util.h:22, 26, 31` | `__attribute__((noreturn, format(printf, …)))` on error/warning prototypes | `util.c`, `codegen.c`, `compiler.c`, `parser.c` |
-| `src/util.c:14, 28, 37` | `__attribute__((noreturn))` on the definitions |
-
----
-
-## Implementation limit (not a syntax gap)
-
-### L1 — Fixed function-table capacity: `max 64`
-
-Large modules exceed a hard-coded limit of 64 functions per translation unit.
-This is a capacity limit in a fixed-size internal table, not a rejected
-construct.
-
-Diagnostic: `error: too many functions (max 64)`
-
-| File:line |
+| Location |
 |---|
-| `src/codegen.c:928, 3710, 3724, 3770, 3864` |
-| `src/preprocessor.c:1068` |
+| `src/preprocessor.c:735, 823, 844, 882, 907, 932, 967, 992, 1012, 1032, 1052` |
+
+### B5 — Redundant typedef redeclaration
+
+A forward typedef that repeats a name already typedef'd in another header is
+rejected as a duplicate. `ASTNode` is defined by `include/ast.h:64` (`typedef
+struct ASTNode { … } ASTNode;`) and re-declared compatibly by
+`include/codegen.h:93` (`typedef struct ASTNode ASTNode;`).
+
+```c
+typedef struct N N;
+typedef struct N N;   // error: duplicate typedef 'N' in this scope
+```
+
+C11 §6.7p3 explicitly permits a typedef to be redeclared to the same type;
+C99 omits this allowance, but the redundant-typedef idiom is universally
+accepted by production compilers and is the established way to share an
+incomplete-type alias across headers. Blocks `codegen.c` and `compiler.c`.
+
+| Location | Name |
+|---|---|
+| `include/codegen.h:94` (vs `include/ast.h:64`) | `ASTNode` |
+
+### B6 — `__attribute__((…))` GNU extension
+
+The compiler does not recognise the `__attribute__` specifier and reads it as a
+stray declaration, emitting `expected type specifier`.
+
+```c
+__attribute__((noreturn, format(printf, 1, 2)))   // include/util.h:22
+void compile_error(const char *fmt, ...);
+```
+
+Minimal reproduction:
+
+```c
+__attribute__((noreturn)) void f(void);   // error: expected type specifier
+```
+
+Not part of C99 (a GNU extension), but used throughout `include/util.h`
+(lines 22, 26, 31, …). Because nearly every module pulls in `util.h`, this
+blocks `util.c`, `parser.c`, `codegen.c`, and `compiler.c`.
+
+| Location |
+|---|
+| `include/util.h:22, 26, 31` (via `util.c`, `parser.c`, `codegen.c`, `compiler.c`) |
 
 ---
 
 ## Successful compilation
 
-| Module | Why it succeeded |
+| Module | Why it compiled |
 |---|---|
-| `src/version.c` | Tiny module: no `for`-init loops, no `switch` on enums, no member-base subscripts, no compound assignment to members, no hex/octal escapes, and it does not include the headers that carry the `const`-member, 2D-array, duplicate-typedef, or `__attribute__` constructs. It uses only features the compiler already supports. |
+| `version.c` | It includes only `version.h` and `<stdio.h>`, neither of which uses any of the six gaps above. Its body performs only plain `printf` calls and simple returns — no member-access subscripting, compound assignment on members, `const` members, redundant typedefs, or `__attribute__`. |
+
+Every other module transitively includes at least one of `lexer.h` (B2),
+`codegen.h` (B5), or `util.h` (B6), and/or directly uses member-access
+subscripting (B1), so all nine fail.
 
 ---
 
 ## Feature gap summary
 
-| Gap | C99 section | Affected modules |
+| Gap | C99 / spec section | Affected modules |
 |---|---|---|
-| B1 `for`-init declarations | §6.8.5.3 | ast, ast_pretty_printer, codegen, compiler, parser, preprocessor, type |
-| B2 enum/constant `case` labels | §6.8.4.2 | ast_pretty_printer, codegen, compiler, type |
-| B3 subscript of member-access base | §6.5.2.1 | ast, preprocessor |
-| B4 compound assignment to member lvalue | §6.5.16.2 | preprocessor |
-| B5 postfix `++`/`--` on non-identifier | §6.5.2.4 | preprocessor |
-| B6 hex/octal escape sequences | §6.4.4.4 | lexer, preprocessor |
-| B7 `const`-qualified struct members | §6.7.2.1 / §6.7.3 | lexer.h→(lexer, parser, compiler); codegen.h→(codegen, compiler) |
-| B8 multidimensional array members | §6.7.2.1 | codegen.h→(codegen, compiler) |
-| B9 redundant typedef of same name | §6.7 | codegen.h→(codegen, compiler) |
-| B11 `__attribute__` specifier | (GNU ext.) | util.h→(util, codegen, compiler, parser) |
-| L1 function-table capacity (max 64) | impl. limit | codegen, preprocessor |
+| B1 — subscript base may be any postfix-expr (`p->a[i]`) | §6.5.2.1 | `ast.c`, `ast_pretty_printer.c`, `codegen.c`, `compiler.c`, `parser.c`, `preprocessor.c`, `type.c` |
+| B2 — `const`-qualified struct/union member | §6.7.2.1, §6.7.3 | `lexer.c`, `parser.c`, `compiler.c` (via `lexer.h`) |
+| B3 — compound assignment on non-identifier lvalue | §6.5.16.2 | `preprocessor.c` |
+| B4 — postfix `++`/`--` on non-identifier lvalue | §6.5.2.4 | `preprocessor.c` |
+| B5 — redundant typedef redeclaration | §6.7 (C11 §6.7p3) | `codegen.c`, `compiler.c` (via `codegen.h`) |
+| B6 — `__attribute__((…))` specifier | GNU ext. (not in C99) | `util.c`, `parser.c`, `codegen.c`, `compiler.c` (via `util.h`) |
+
+**Highest-leverage fixes:** B1 (member-access subscript) unblocks the most
+modules and is pure parser work shared with B3/B4 — all three stem from the
+same "operand/base must be an identifier" restriction on postfix and
+assignment expressions. Generalising that single restriction to accept any
+lvalue/postfix-expression would clear B1, B3, and B4 at once.
