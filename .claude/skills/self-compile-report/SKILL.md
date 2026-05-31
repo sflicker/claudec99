@@ -33,6 +33,12 @@ ccompiler --max-errors=0 <IFLAGS> src/<module>.c
 Capture stdout + stderr for each file.  Record the exit code (0 = success,
 non-zero = failure).
 
+## Limits 
+If the limits are ran into like MAX_FUNCTIONS try overriding the default settings
+in <project-root>/include/constants.h using -D options if possible too increase the 
+limit. Don't change the values in constants.h but if it works with the -D options
+make a note in the report what values worked.
+
 ## Analysis
 
 For each file that fails, identify the **root cause** of the first (or
