@@ -200,7 +200,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 82-03 (const in type-name contexts):
+Through stage 82-04 (minimal volatile handling):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -319,6 +319,9 @@ Through stage 82-03 (const in type-name contexts):
   (or error if `-Werror` is set); const-to-pointer conversions (e.g., `int *q = &x` where
   `const int x`) are allowed as rvalue decay with const-discard warning/error semantics.
   Struct and union member declarations support `const` qualifiers: `const char *name` stores a pointer-to-const member; `const int kind` stores a const scalar member whose direct assignment is rejected. Array subscript writes through const-pointer members (e.g., `s.p[0] = 'H'` where `s.p: const char *`) are properly rejected at compile time.
+- **volatile qualifier**: `volatile` keyword is recognized as a type qualifier in declarations,
+  parameters, and type names. Volatile qualifiers are parsed and stored in the type, but have
+  no code generation or semantic enforcement effects yet (writes to volatile fields are permitted).
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
@@ -473,7 +476,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 82-03 all tests pass (785 valid, 234 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1254 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 82-04 all tests pass (786 valid, 234 invalid, 72 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1256 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

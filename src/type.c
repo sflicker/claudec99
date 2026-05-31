@@ -111,6 +111,19 @@ Type *type_const_copy(Type *t) {
     return c;
 }
 
+/* Stage 82-04: heap-allocate a volatile-qualified copy of t. Never mutates
+ * the original — callers must not modify the returned node's base fields. */
+Type *type_volatile_copy(Type *t) {
+    Type *v = calloc(1, sizeof(Type));
+    if (!v) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(1);
+    }
+    *v = *t;
+    v->is_volatile = 1;
+    return v;
+}
+
 /* Stage 30: heap-allocate a TYPE_STRUCT node with precomputed size and
  * alignment. Fields are not stored in the Type — only the layout totals
  * needed for sizeof and stack allocation. */

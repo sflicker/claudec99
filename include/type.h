@@ -43,6 +43,7 @@ typedef struct {
     TypeKind kind;
     struct Type *full_type; /* non-NULL for pointer/array/struct fields */
     int  is_const;          /* Stage 82-01: set for const-qualified scalar members */
+    int  is_volatile;       /* Stage 82-04: set for volatile-qualified scalar members */
 } StructField;
 
 typedef struct Type {
@@ -65,6 +66,8 @@ typedef struct Type {
     /* Stage 66: set when this type is const-qualified. Used on
      * heap-allocated copies only — never set on static singletons. */
     int is_const;
+    /* Stage 82-04: set when this type is volatile-qualified. */
+    int is_volatile;
 } Type;
 
 Type *type_void(void);
@@ -86,6 +89,8 @@ Type *type_struct(int size, int alignment);
 Type *type_union(int size, int alignment);
 /* Stage 66: allocate a heap copy of t with is_const=1. Never mutates t. */
 Type *type_const_copy(Type *t);
+/* Stage 82-04: allocate a heap copy of t with is_volatile=1. Never mutates t. */
+Type *type_volatile_copy(Type *t);
 
 const char *type_kind_name(TypeKind kind);
 int type_size(Type *t);

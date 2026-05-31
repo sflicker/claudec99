@@ -45,6 +45,7 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_STRUCT:        return "TOKEN_STRUCT";
         case TOKEN_VOID:          return "TOKEN_VOID";
         case TOKEN_CONST:         return "TOKEN_CONST";
+        case TOKEN_VOLATILE:      return "TOKEN_VOLATILE";
         case TOKEN_UNSIGNED:      return "TOKEN_UNSIGNED";
         case TOKEN_SIGNED:        return "TOKEN_SIGNED";
         case TOKEN_BOOL:          return "TOKEN_BOOL";

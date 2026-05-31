@@ -363,10 +363,15 @@ static Type *parse_struct_specifier(Parser *parser) {
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {
-            /* Stage 82-01: consume optional leading const qualifier. */
+            /* Stage 82-01: consume optional leading const qualifier.
+             * Stage 82-04: also consume optional volatile qualifier. */
             int field_is_const = 0;
+            int field_is_volatile = 0;
             if (parser->current.type == TOKEN_CONST) {
                 field_is_const = 1;
+                parser->current = lexer_next_token(parser->lexer);
+            } else if (parser->current.type == TOKEN_VOLATILE) {
+                field_is_volatile = 1;
                 parser->current = lexer_next_token(parser->lexer);
             }
             /* Parse field type specifier. */
@@ -378,9 +383,13 @@ static Type *parse_struct_specifier(Parser *parser) {
                     parser->current = lexer_next_token(parser->lexer);
 
                 ParsedDeclarator d = parse_declarator(parser);
-                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f). */
-                Type *effective_base = (field_is_const && d.pointer_count > 0)
-                    ? type_const_copy(field_base) : field_base;
+                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f).
+                 * Stage 82-04: volatile base for pointer-to-volatile. */
+                Type *effective_base = field_base;
+                if (field_is_const && d.pointer_count > 0)
+                    effective_base = type_const_copy(field_base);
+                else if (field_is_volatile && d.pointer_count > 0)
+                    effective_base = type_volatile_copy(field_base);
                 /* Build the full field type from base + pointer stars. */
                 Type *field_type = effective_base;
                 for (int i = 0; i < d.pointer_count; i++)
@@ -430,6 +439,9 @@ static Type *parse_struct_specifier(Parser *parser) {
                     tmp_fields[n_fields].is_const  =
                         ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
                          d.pointer_is_const) ? 1 : 0;
+                    /* Stage 82-04: volatile scalar member. */
+                    tmp_fields[n_fields].is_volatile =
+                        (field_is_volatile && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
                     n_fields++;
                 }
                 current_offset += fsz;
@@ -542,10 +554,15 @@ static Type *parse_union_specifier(Parser *parser) {
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {
-            /* Stage 82-01: consume optional leading const qualifier. */
+            /* Stage 82-01: consume optional leading const qualifier.
+             * Stage 82-04: also consume optional volatile qualifier. */
             int field_is_const = 0;
+            int field_is_volatile = 0;
             if (parser->current.type == TOKEN_CONST) {
                 field_is_const = 1;
+                parser->current = lexer_next_token(parser->lexer);
+            } else if (parser->current.type == TOKEN_VOLATILE) {
+                field_is_volatile = 1;
                 parser->current = lexer_next_token(parser->lexer);
             }
             Type *field_base = parse_type_specifier(parser, NULL);
@@ -555,9 +572,13 @@ static Type *parse_union_specifier(Parser *parser) {
                     parser->current = lexer_next_token(parser->lexer);
 
                 ParsedDeclarator d = parse_declarator(parser);
-                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f). */
-                Type *effective_base = (field_is_const && d.pointer_count > 0)
-                    ? type_const_copy(field_base) : field_base;
+                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f).
+                 * Stage 82-04: volatile base for pointer-to-volatile. */
+                Type *effective_base = field_base;
+                if (field_is_const && d.pointer_count > 0)
+                    effective_base = type_const_copy(field_base);
+                else if (field_is_volatile && d.pointer_count > 0)
+                    effective_base = type_volatile_copy(field_base);
                 Type *field_type = effective_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
@@ -601,6 +622,9 @@ static Type *parse_union_specifier(Parser *parser) {
                     tmp_fields[n_fields].is_const  =
                         ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
                          d.pointer_is_const) ? 1 : 0;
+                    /* Stage 82-04: volatile scalar member. */
+                    tmp_fields[n_fields].is_volatile =
+                        (field_is_volatile && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
                     n_fields++;
                 }
 
@@ -977,10 +1001,15 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
  * Returns the fully pointer-wrapped Type*.
  */
 static Type *parse_type_name(Parser *parser) {
-    /* Stage 82-03: consume optional leading const qualifier. */
+    /* Stage 82-03: consume optional leading const qualifier.
+     * Stage 82-04: also consume optional leading volatile qualifier. */
     int base_is_const = 0;
+    int base_is_volatile = 0;
     if (parser->current.type == TOKEN_CONST) {
         base_is_const = 1;
+        parser->current = lexer_next_token(parser->lexer);
+    } else if (parser->current.type == TOKEN_VOLATILE) {
+        base_is_volatile = 1;
         parser->current = lexer_next_token(parser->lexer);
     }
     /* Stage 40: optional leading unsigned/signed handled inside
@@ -988,12 +1017,15 @@ static Type *parse_type_name(Parser *parser) {
     Type *t = parse_type_specifier(parser, NULL);
     if (base_is_const)
         t = type_const_copy(t);
+    else if (base_is_volatile)
+        t = type_volatile_copy(t);
     /* Stage 82-03: abstract_pointer_declarator — each "*" may be followed
-     * by optional "const" qualifiers (pointer-level const). */
+     * by optional "const" or "volatile" qualifiers (pointer-level). */
     while (parser->current.type == TOKEN_STAR) {
         parser->current = lexer_next_token(parser->lexer);
-        /* Consume optional const after each star (qualifies the pointer). */
-        if (parser->current.type == TOKEN_CONST)
+        /* Consume optional const/volatile after each star. */
+        if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_VOLATILE)
             parser->current = lexer_next_token(parser->lexer);
         t = type_pointer(t);
     }
@@ -1035,9 +1067,13 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         outer_stars++;
         parser->current = lexer_next_token(parser->lexer);
         /* Stage 66: consume optional "const" qualifier after each star.
+         * Stage 82-04: also consume optional "volatile" qualifier.
          * The last such qualifier marks the pointer itself as const. */
         if (parser->current.type == TOKEN_CONST) {
             pointer_is_const = 1;
+            parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_VOLATILE) {
+            pointer_is_const = 0;
             parser->current = lexer_next_token(parser->lexer);
         } else {
             pointer_is_const = 0;
@@ -1101,8 +1137,10 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                                     "error: too many parameters in function pointer"
                                     " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
                         }
-                        /* Stage 39: consume optional const qualifier. */
-                        if (parser->current.type == TOKEN_CONST)
+                        /* Stage 39: consume optional const qualifier.
+                         * Stage 82-04: also consume optional volatile qualifier. */
+                        if (parser->current.type == TOKEN_CONST ||
+                            parser->current.type == TOKEN_VOLATILE)
                             parser->current = lexer_next_token(parser->lexer);
                         Type *pt = parse_type_specifier(parser, NULL);
                         int stars = 0;
@@ -1483,6 +1521,7 @@ static ASTNode *parse_unary(Parser *parser) {
             PARSER_ERROR(parser, "error: sizeof applied to void type\n");
         }
         if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
@@ -1575,6 +1614,7 @@ static ASTNode *parse_cast(Parser *parser) {
         Token saved_token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_VOID ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
@@ -2095,6 +2135,7 @@ static ASTNode *parse_for_statement(Parser *parser) {
     ASTNode *init = NULL;
     int init_is_decl = 0;
     if (parser->current.type == TOKEN_CONST ||
+        parser->current.type == TOKEN_VOLATILE ||
         parser->current.type == TOKEN_VOID  ||
         parser->current.type == TOKEN_BOOL  ||
         parser->current.type == TOKEN_CHAR  ||
@@ -2344,13 +2385,18 @@ static ASTNode *parse_statement(Parser *parser) {
      * Stage 25-01: a function-pointer declarator (*fp)(params) allocates an
      * 8-byte local with decl_type=TYPE_POINTER.
      * Stage 25-03: optional initializer supported.
-     * Stage 39: optional leading const qualifier. */
+     * Stage 39: optional leading const qualifier.
+     * Stage 82-04: optional leading volatile qualifier. */
     int local_is_const = 0;
+    int local_is_volatile = 0;
     if (parser->current.type == TOKEN_CONST) {
         local_is_const = 1;
         parser->current = lexer_next_token(parser->lexer);
+    } else if (parser->current.type == TOKEN_VOLATILE) {
+        local_is_volatile = 1;
+        parser->current = lexer_next_token(parser->lexer);
     }
-    if (local_is_const ||
+    if (local_is_const || local_is_volatile ||
         parser->current.type == TOKEN_VOID ||
         parser->current.type == TOKEN_BOOL ||
         parser->current.type == TOKEN_CHAR ||
@@ -2398,9 +2444,13 @@ static ASTNode *parse_statement(Parser *parser) {
 
         /* Stage 66: when const precedes a pointer declaration (const T *p),
          * the base type is const-qualified; build a const copy so the
-         * pointer type chain carries is_const on the pointee. */
-        Type *effective_base = (local_is_const && d.pointer_count > 0)
-                               ? type_const_copy(base_type) : base_type;
+         * pointer type chain carries is_const on the pointee.
+         * Stage 82-04: same for volatile. */
+        Type *effective_base = base_type;
+        if (local_is_const && d.pointer_count > 0)
+            effective_base = type_const_copy(base_type);
+        else if (local_is_volatile && d.pointer_count > 0)
+            effective_base = type_volatile_copy(base_type);
 
         /* Build the fully-wrapped element type: base + pointer levels. */
         Type *full_type = effective_base;
@@ -2658,8 +2708,10 @@ static ASTNode *parse_statement(Parser *parser) {
  * ParsedDeclarator.is_func_pointer flag set by parse_declarator.
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
-    /* Stage 39: consume optional leading const qualifier on parameter types. */
-    if (parser->current.type == TOKEN_CONST)
+    /* Stage 39: consume optional leading const qualifier on parameter types.
+     * Stage 82-04: also consume optional volatile qualifier. */
+    if (parser->current.type == TOKEN_CONST ||
+        parser->current.type == TOKEN_VOLATILE)
         parser->current = lexer_next_token(parser->lexer);
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
@@ -2775,6 +2827,7 @@ typedef struct {
     TypeKind base_kind;
     Type *base_type;
     int is_const;
+    int is_volatile;
 } DeclSpecResult;
 
 static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
@@ -2783,12 +2836,16 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
     r.base_kind = TYPE_INT;
     r.base_type = NULL;
     r.is_const = 0;
+    r.is_volatile = 0;
     int has_sc = 0;
     int has_type = 0;
 
     while (1) {
         if (parser->current.type == TOKEN_CONST) {
             r.is_const = 1;
+            parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_VOLATILE) {
+            r.is_volatile = 1;
             parser->current = lexer_next_token(parser->lexer);
         } else if (parser->current.type == TOKEN_EXTERN ||
             parser->current.type == TOKEN_STATIC ||
@@ -2977,8 +3034,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     "error: cannot declare variable '%s' of type void\n", d.name);
         }
         /* Stage 66: propagate const base for file-scope const pointer declarations. */
-        Type *effective_base_fs = (ds.is_const && d.pointer_count > 0)
-                                  ? type_const_copy(base_type) : base_type;
+        Type *effective_base_fs = base_type;
+        if (ds.is_const && d.pointer_count > 0)
+            effective_base_fs = type_const_copy(base_type);
+        else if (ds.is_volatile && d.pointer_count > 0)
+            effective_base_fs = type_volatile_copy(base_type);
         Type *full_type = effective_base_fs;
         for (int i = 0; i < d.pointer_count; i++)
             full_type = type_pointer(full_type);
@@ -3129,9 +3189,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             }
             TypeKind k2 = (d2.pointer_count > 0 || base_kind == TYPE_POINTER)
                           ? TYPE_POINTER : base_kind;
-            /* Stage 66: propagate const base for file-scope multi-declarator lists. */
-            Type *eff_base2 = (ds.is_const && d2.pointer_count > 0)
-                              ? type_const_copy(base_type) : base_type;
+            /* Stage 66: propagate const base for file-scope multi-declarator lists.
+             * Stage 82-04: same for volatile. */
+            Type *eff_base2 = base_type;
+            if (ds.is_const && d2.pointer_count > 0)
+                eff_base2 = type_const_copy(base_type);
+            else if (ds.is_volatile && d2.pointer_count > 0)
+                eff_base2 = type_volatile_copy(base_type);
             Type *ft2 = eff_base2;
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);

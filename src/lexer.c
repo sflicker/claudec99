@@ -491,6 +491,8 @@ Token lexer_next_token(Lexer *lexer) {
             token.type = TOKEN_VOID;
         } else if (strcmp(token.value, "const") == 0) {
             token.type = TOKEN_CONST;
+        } else if (strcmp(token.value, "volatile") == 0) {
+            token.type = TOKEN_VOLATILE;
         } else if (strcmp(token.value, "signed") == 0) {
             token.type = TOKEN_SIGNED;
         } else if (strcmp(token.value, "unsigned") == 0) {
@@ -539,6 +541,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_VOID:             return "'void'";
         case TOKEN_BOOL:             return "'_Bool'";
         case TOKEN_CONST:            return "'const'";
+        case TOKEN_VOLATILE:         return "'volatile'";
         case TOKEN_SIGNED:           return "'signed'";
         case TOKEN_UNSIGNED:         return "'unsigned'";
         case TOKEN_IDENTIFIER:       return "identifier";
