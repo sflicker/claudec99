@@ -22,4 +22,6 @@ int snprintf(char *, size_t, const char *, ...);
 int vfprintf(FILE *, const char *, va_list);
 int vprintf(const char *, va_list);
 int vsnprintf(char *, size_t, const char *, va_list);
+
+int putchar(int);
 #endif

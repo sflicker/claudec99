@@ -69,8 +69,8 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `PARSER_MAX_FUNCTIONS` | 64 | Maximum number of function declarations/definitions in a translation unit. |
-| `PARSER_MAX_GLOBALS` | 64 | Maximum number of file-scope object declarations in a translation unit. |
+| `PARSER_MAX_FUNCTIONS` | 256 | Maximum number of function declarations/definitions in a translation unit. |
+| `PARSER_MAX_GLOBALS` | 256 | Maximum number of file-scope object declarations in a translation unit. |
 | `PARSER_MAX_TYPEDEFS` | 64 | Maximum number of typedef entries visible at any point during parsing. |
 | `PARSER_MAX_ENUM_CONSTS` | 256 | Maximum number of enum constants across all enum declarations in a translation unit. |
 | `PARSER_MAX_ENUM_TAGS` | 32 | Maximum number of distinct named enum tags. |
@@ -83,8 +83,8 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_LOCALS` | 64 | Maximum number of local variables per function. |
-| `MAX_GLOBALS` | 64 | Maximum number of global variables tracked by the code generator. |
+| `MAX_LOCALS` | 256 | Maximum number of local variables per function. |
+| `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
 | `MAX_BREAK_DEPTH` | 32 | Maximum nesting depth of breakable constructs (loops and switches). |
 | `MAX_SWITCH_DEPTH` | 16 | Maximum nesting depth of `switch` statements. |
 | `MAX_SWITCH_LABELS` | 64 | Maximum number of `case`/`default` labels in a single `switch`. |
@@ -200,7 +200,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 80 (prefix/postfix ++/-- on general lvalues):
+Through stage 81 (header updates: `putchar`, `calloc`; raised parser/codegen limits; `!` on pointer operands):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -208,8 +208,8 @@ Through stage 80 (prefix/postfix ++/-- on general lvalues):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, and `vsnprintf`), `stddef.h`,
-    `stdlib.h` (with `malloc`, `realloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, and `putchar`), `stddef.h`,
+    `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
     `time()`, `clock()`), `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`), and `stdarg.h` (`va_list` typedef and va_* macro stubs),
@@ -419,7 +419,7 @@ Through stage 80 (prefix/postfix ++/-- on general lvalues):
   `1 & 3 == 3` parses as `1 & (3 == 3)`.
 - **Unary operators**: `+`, `-`, `!` (logical not), `~` (bitwise
   complement), `++`/`--` (prefix and postfix on any modifiable lvalue including bare identifier, struct/union member via . or ->, array subscript, pointer dereference, and chains thereof; postfix yields the old value and prefix the new value; pointer ++/-- keeps element-size scaling; const-qualified and non-lvalue operands are rejected), `*` (dereference),
-  `&` (address-of). `~` and `!` are integer-only: pointer and array
+  `&` (address-of). `~` is integer-only: pointer and array
   operands are rejected. `~` follows the usual integer promotions
   (`char`/`short`/`int` → `int`; `long` → `long`).
 - **`sizeof`**: `sizeof(<type>)` and `sizeof(<expression>)` return
@@ -469,7 +469,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 80 all tests pass (776 valid, 234 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1244 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 81 all tests pass (779 valid, 232 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1246 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

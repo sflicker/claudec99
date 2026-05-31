@@ -28,10 +28,10 @@
 /* ---- Parser limits ---- */
 
 #ifndef PARSER_MAX_FUNCTIONS
-#define PARSER_MAX_FUNCTIONS     64
+#define PARSER_MAX_FUNCTIONS     256
 #endif
 #ifndef PARSER_MAX_GLOBALS
-#define PARSER_MAX_GLOBALS       64
+#define PARSER_MAX_GLOBALS       256
 #endif
 #ifndef PARSER_MAX_TYPEDEFS
 #define PARSER_MAX_TYPEDEFS      64
@@ -61,10 +61,10 @@
 /* ---- Codegen limits ---- */
 
 #ifndef MAX_LOCALS
-#define MAX_LOCALS          64
+#define MAX_LOCALS          256
 #endif
 #ifndef MAX_GLOBALS
-#define MAX_GLOBALS         64
+#define MAX_GLOBALS         256
 #endif
 #ifndef MAX_BREAK_DEPTH
 #define MAX_BREAK_DEPTH     32

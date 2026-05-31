@@ -2091,11 +2091,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             }
             node->result_type = ot;
         } else if (strcmp(op, "!") == 0) {
-            if (node->children[0]->result_type == TYPE_POINTER) {
-                compile_error(
-                        "error: operator '!' not supported on pointer operands\n");
-            }
-            if (node->children[0]->result_type == TYPE_LONG) {
+            TypeKind ct = node->children[0]->result_type;
+            if (ct == TYPE_LONG || ct == TYPE_POINTER) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
                 fprintf(cg->output, "    cmp eax, 0\n");
