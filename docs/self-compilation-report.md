@@ -8,195 +8,186 @@
 
 | Module | Result | Root cause category |
 |---|---|---|
-| `ast.c` | FAIL | A — `stderr` missing from `stdio.h` stub |
-| `ast_pretty_printer.c` | FAIL | B — member-array does not decay to pointer in call argument |
-| `codegen.c` | FAIL | B — duplicate `typedef ASTNode`; `__attribute__` specifier |
-| `compiler.c` | FAIL | B — `const` in type-name/struct member; `__attribute__`; duplicate typedef (cascades) |
-| `lexer.c` | FAIL | B — `const`-qualified struct member; `\x` hex escape |
-| `parser.c` | FAIL | B — `const`-qualified struct member; `__attribute__` (cascades) |
-| `preprocessor.c` | FAIL | B — adjacent string-literal concatenation; `\x` hex escape |
+| `ast.c` | FAIL | A — `stdio.h` stub lacks `stderr` |
+| `ast_pretty_printer.c` | FAIL | B — array-to-pointer decay of a struct member array argument |
+| `codegen.c` | FAIL | B — `__attribute__`, duplicate typedef, 2D array member (all via headers) |
+| `compiler.c` | FAIL | B — same header gaps as `codegen.c` (cascades into `CodeGen` use) |
+| `lexer.c` | FAIL | B — `\xNN` hex escape in a character literal |
+| `parser.c` | FAIL | B — `__attribute__` (via `util.h`) + adjacent string-literal concatenation |
+| `preprocessor.c` | FAIL | B — adjacent string-literal concatenation |
 | `type.c` | **PASS** | — |
-| `util.c` | FAIL | B — `__attribute__` specifier |
+| `util.c` | FAIL | B — `__attribute__` (via `util.h`) |
 | `version.c` | **PASS** | — |
 
-**Result: 2 passed, 8 failed.** All eight failures trace to language-feature
-gaps (Category B) except `ast.c`, which is blocked by a single missing symbol
-in a stub header (Category A). No `MAX_*` capacity limits were hit, so no
-`-D` overrides of `include/constants.h` were required.
+2 modules passed, 8 failed. No `MAX_*` limits were hit, so no `-D` overrides were needed.
 
 ---
 
-## Category A — Missing stub system headers
+## Category A — Missing / incomplete stub system headers
 
-### `stderr` (and `stdout`/`stdin`) not declared in `test/include/stdio.h`
+### `stdio.h` — missing `stderr` (and the standard streams)
 
 ```
 src/ast.c: error: undeclared variable 'stderr'
 ```
 
-`src/ast.c:9` calls `fprintf(stderr, "error: out of memory\n")`, but the
-`stdio.h` stub declares the `FILE` type and the `f*` functions only — it never
-declares the three standard streams:
+`test/include/stdio.h` declares the `printf`/`fprintf` family but does **not**
+declare the standard stream objects. `grep -n "stderr\|stdout\|stdin"
+test/include/stdio.h` returns nothing.
+
+`ast.c` is the only module whose *first* error is this gap (it includes
+`<stdio.h>` but not `util.h`, so it parses past the header into the body and
+then references `stderr` directly). Many other modules also use `stderr`, but
+they fail earlier on the Category B gaps below.
+
+**Fix:** add the conventional declarations to the stub, e.g.
 
 ```c
-/* test/include/stdio.h — present */
-typedef struct FILE FILE;
-int fprintf(FILE *, const char *, ...);
-/* ...but no: extern FILE *stdin, *stdout, *stderr; */
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
 ```
 
-This is **not** a compiler bug — the stub is simply incomplete. Adding
-`extern FILE *stdin, *stdout, *stderr;` to the stub would unblock `ast.c`.
-
-**Note on transitive impact:** every project module uses `stderr` for its
-out-of-memory / diagnostic paths, so this gap would surface in almost every
-file. It only appears *first* in `ast.c` because that module includes neither
-`util.h`, `lexer.h`, nor `codegen.h`, so no earlier header-level error preempts
-it. In the other modules a Category B error fires before the lexer/parser ever
-reaches a `stderr` reference.
+This is a stub-completeness gap, **not** a compiler bug.
 
 ---
 
 ## Category B — Language features not yet implemented
 
-### B1 — `const` type-qualifier rejected in struct members and type-names
+### B1 — GNU `__attribute__((...))` specifier
 
 ```
-include/lexer.h:7:5:    error: expected integer type, got 'const'   // const char *source;
-src/compiler.c:298:77:  error: expected expression, got 'const'     // sizeof(const char *)
-```
-
-The compiler accepts `const` in **function-parameter** declarations
-(`operator_name(const char *op)` and every `fprintf(... const char *fmt ...)`
-parse fine), but rejects the qualifier in two other positions:
-
-- **Struct member declarations** — `include/lexer.h:7` (`const char *source;`)
-  fails with `expected integer type, got 'const'`. This aborts the `Lexer`
-  typedef, which is the head of a large cascade (see below).
-- **Type-names in `sizeof`/cast operands** — `src/compiler.c:298`
-  (`sizeof(const char *)`) fails with `expected expression, got 'const'`.
-
-C99 §6.7.3 permits `const` anywhere a type qualifier may appear. The fix is to
-make the declaration-specifier / type-name parser consume `const` (and the
-other qualifiers) uniformly, not only in parameter lists.
-
-| File:line | Construct |
-|---|---|
-| `include/lexer.h:7` | `const char *source;` (struct member) |
-| `src/compiler.c:298` | `sizeof(const char *)` (type-name) |
-
-**Cascade:** the `include/lexer.h:7` failure leaves `Lexer` undefined, producing
-`unknown type name 'Lexer'` at `lexer.h:19-21`, then `unknown type name 'Parser'`
-throughout `parser.h` and `parser.c` (~60 lines), and the duplicate
-`switch_depth` "global" reports — all are downstream of this one root cause.
-
-### B2 — `__attribute__` specifier not recognized
-
-```
-include/util.h:22:1: error: expected type specifier   // __attribute__((noreturn, format(printf,1,2)))
+include/util.h:22:1: error: expected type specifier
 include/util.h:26:1: error: expected type specifier
 include/util.h:31:1: error: expected type specifier
 ```
 
-`include/util.h` decorates its diagnostic functions with GCC-style
-`__attribute__((noreturn, format(...)))`. The parser does not recognize the
-`__attribute__` token as a declaration specifier and treats it as a stray
-identifier, so it cannot find a type specifier for the declaration that follows.
+`include/util.h` precedes three function declarations with GNU attributes:
 
-Because `util.h` is included by `util.c`, `parser.c`, `codegen.c`, and
-`compiler.c`, this gap blocks all four. A minimal fix is to lex and discard
-`__attribute__((...))` attribute clauses wherever a declaration specifier is
-expected.
+```c
+__attribute__((noreturn, format(printf, 1, 2)))
+void compile_error(const char *fmt, ...);
+```
 
-| File:line | Affected modules |
+The compiler does not recognize `__attribute__`, so the attribute line is
+consumed as a stray construct and the following declaration line trips
+"expected type specifier". (Lines 22/26/31 are the declaration lines *after*
+the attributes at 21/25/30.)
+
+`__attribute__` is a GNU extension, not strict C99, but because `util.h` is
+included widely it blocks every module that pulls it in.
+
+**Affected locations (transitively, via `include/util.h`):**
+
+| File:line | Declaration |
 |---|---|
-| `include/util.h:22,26,31` | `util.c`, `parser.c`, `codegen.c`, `compiler.c` |
+| `include/util.h:22` | `void compile_error(...)` |
+| `include/util.h:26` | `void compile_error_at(...)` |
+| `include/util.h:31` | `void compile_warning_at(...)` |
 
-### B3 — Idempotent/duplicate `typedef` of the same tag not allowed
+Blocks `parser.c`, `util.c`, `codegen.c`, and `compiler.c`.
+
+### B2 — Redefinition of an identical typedef (C11-legal, C99-illegal)
 
 ```
 include/codegen.h:85:1: error: duplicate typedef 'ASTNode' in this scope
 ```
 
-`include/ast.h:62` declares `typedef struct ASTNode { … } ASTNode;` and
-`include/codegen.h:85` re-declares the forward form
-`typedef struct ASTNode ASTNode;`. Both name the identical type, which C11
-§6.7 explicitly permits and which is a common compatibility idiom; C99 strictly
-forbids it, so this rejection is technically conformant. Supporting redundant
-identical typedefs (the C11 relaxation) would unblock the headers shared by
-`codegen.c` and `compiler.c`.
+`include/ast.h:62` already provides `typedef struct ASTNode { … } ASTNode;`.
+`include/codegen.h:84` (which `#include`s `ast.h`) repeats the forward form
+`typedef struct ASTNode ASTNode;`. C11 §6.7¶3 permits an identical typedef
+redefinition; C99 forbids it. The compiler is correctly strict for C99, but the
+project source relies on the C11 relaxation.
 
-| File:line | Affected modules |
-|---|---|
-| `include/codegen.h:85` (dup of `include/ast.h:62`) | `codegen.c`, `compiler.c` |
+The rejection cascades: with `ASTNode` not installed, `codegen.h:90`
+(`ASTNode *nodes[…]`) and every downstream `CodeGen`/`SwitchCtx` use report
+"unknown type name".
 
-**Cascade:** the failed typedef derails parsing of the anonymous `SwitchCtx`
-and `CodeGen` struct bodies, yielding `unknown type name 'SwitchCtx'`,
-`unknown type name 'CodeGen'` (~40 lines in `codegen.c`), and the
-`int switch_depth;` "duplicate global" report.
+**Fix options:** accept identical-type typedef redefinition (C11 behaviour), or
+drop the redundant typedef from `codegen.h`.
 
-### B4 — Struct-member array does not decay to a pointer in a call argument
+Blocks `codegen.c` and `compiler.c`.
+
+### B3 — Multidimensional (2D) array member declaration
 
 ```
-src/ast_pretty_printer.c:
-  error: function 'operator_name' parameter 'op' expected pointer argument, got integer
+include/codegen.h:112:25: error: expected ';', got '[' ('[')
 ```
 
-`ASTNode.value` is declared `char value[MAX_NAME_LEN]` (`include/ast.h:64`).
-The calls `operator_name(node->value)` at `ast_pretty_printer.c:168, 171, 231,
-234` pass that member array where a `const char *` is expected. The compiler
-fails to apply array-to-pointer decay (C99 §6.3.2.1) to a **member-access**
-array expression — it classifies `node->value` as `integer` instead of
-`char *`. Plain identifier arrays presumably decay correctly; the gap is
-specific to arrays reached through `.`/`->`.
-
-| File:line | Construct |
-|---|---|
-| `src/ast_pretty_printer.c:168,171,231,234` | `operator_name(node->value)` |
-
-### B5 — `\xHH` hex escape sequences not recognized
-
-```
-src/lexer.c:        error: invalid escape sequence in character literal   // '\x01'
-src/preprocessor.c: error: invalid escape sequence in string literal      // "\x01"
-```
-
-The compiler's own lexer does not implement hexadecimal escape sequences
-(C99 §6.4.4.4). It rejects them in both character literals
-(`src/lexer.c:100` `'\x01'`) and string literals (`src/preprocessor.c:1380,1391`
-`"\x01" …`). Decimal/octal/simple escapes (`\0`, `\n`, `\\`, `\'`) are handled;
-only the `\x` form is missing.
-
-| File:line | Construct |
-|---|---|
-| `src/lexer.c:100` | `'\x01'` (char literal) |
-| `src/preprocessor.c:1380,1391` | `"\x01"` (string literal) |
-
-### B6 — Adjacent string-literal concatenation not supported
-
-```
-src/preprocessor.c:602:33: error: expected ')', got string literal
-        (' expected %s%d, got %d\n')
-```
-
-`src/preprocessor.c:602-603` (and `:1380`) rely on translation-phase-6 string
-concatenation:
+The `CodeGen` struct declares a 2-D array member:
 
 ```c
-fprintf(stderr,
-        "error: argument count mismatch for macro '%.*s':"
-        " expected %s%d, got %d\n",
-        ...);
+char user_labels[MAX_USER_LABELS][MAX_NAME_LEN];
 ```
 
-After parsing the first string literal the compiler expects `)` or `,` and
-errors on encountering the second adjacent literal. Implementing adjacent
-string-literal concatenation (C99 §6.4.5) would resolve this.
+The compiler parses the first `[…]` array suffix on a member but rejects the
+second, so multidimensional arrays (C99 §6.7.5.2 / §6.5.2.1) are unsupported in
+member declarations.
 
-| File:line | Construct |
+| File:line | Declaration |
 |---|---|
-| `src/preprocessor.c:602-603` | `"…:" " expected %s%d…"` |
-| `src/preprocessor.c:1380` | `"\x01" "1:%s\n"` |
+| `include/codegen.h:112` | `char user_labels[MAX_USER_LABELS][MAX_NAME_LEN];` |
+
+Blocks `codegen.c` and `compiler.c`.
+
+### B4 — Adjacent string-literal concatenation (C99 §6.4.5)
+
+```
+src/parser.c:1094:37: error: expected ')', got string literal (' type (max %d)\n')
+src/preprocessor.c:602:33: error: expected ')', got string literal (' expected %s%d, got %d\n')
+```
+
+C99 requires adjacent string literals to be concatenated into one literal
+during translation phase 6. The compiler treats the second literal as an
+unexpected token, expecting `)` or `,` after the first.
+
+| File:line | Source |
+|---|---|
+| `src/parser.c:1137-1138` | `"error: too many parameters in function pointer"` `" type (max %d)\n"` |
+| `src/preprocessor.c:601-602` | `"error: argument count mismatch for macro '%.*s':"` `" expected %s%d, got %d\n"` |
+
+Blocks `parser.c` and `preprocessor.c`.
+
+### B5 — `\xNN` hex escape in a character literal
+
+```
+src/lexer.c: error: invalid escape sequence in character literal
+```
+
+The lexer's own character-escape handler (`src/lexer.c:311-327`) supports
+`a b f n r t v \\ ' " ? 0` but **not** the `\x` hex escape form. `lexer.c`
+itself uses `'\x01'` (e.g. `src/lexer.c:100`, `if (c == '\x01')`) as an
+`#include`-boundary sentinel, so the compiler rejects its own source. The
+string-literal escape handler (`src/lexer.c:252-263`) is likewise missing `\x`.
+
+| File:line | Literal |
+|---|---|
+| `src/lexer.c:100` | `'\x01'` |
+
+This is C99 §6.4.4.4 (hexadecimal-escape-sequence). Blocks `lexer.c`.
+
+### B6 — Array-to-pointer decay of a struct member array passed as an argument
+
+```
+src/ast_pretty_printer.c: error: function 'operator_name' parameter 'op'
+    expected pointer argument, got integer
+```
+
+`operator_name(const char *op)` is called as `operator_name(node->value)`
+(e.g. `src/ast_pretty_printer.c:168`). `node->value` is the member
+`char value[MAX_NAME_LEN]` (`include/ast.h:63`). When a member-array expression
+is used as a call argument it must decay to `char *` (C99 §6.3.2.1¶3). The
+compiler instead types the member array as an integer, so the pointer-parameter
+check fails.
+
+| File:line | Call |
+|---|---|
+| `src/ast_pretty_printer.c:168` | `operator_name(node->value)` |
+| `src/ast_pretty_printer.c:171` | `operator_name(node->value)` |
+| `src/ast_pretty_printer.c:231` | `operator_name(node->value)` |
+| `src/ast_pretty_printer.c:234` | `operator_name(node->value)` |
+
+Blocks `ast_pretty_printer.c`.
 
 ---
 
@@ -204,25 +195,21 @@ string-literal concatenation (C99 §6.4.5) would resolve this.
 
 | Module | Why it compiled |
 |---|---|
-| `type.c` | `compiled: src/type.c -> type.asm`. Uses only features already supported; includes no header carrying a `const` struct member or `__attribute__`, and its source avoids hex escapes, adjacent string concatenation, and member-array call arguments. |
-| `version.c` | `compiled: src/version.c -> version.asm`. Small module with no exposure to any of the six feature gaps above. |
+| `type.c` | Includes only `type.h`/`ast.h` and uses no `__attribute__`, adjacent-string, 2-D array, member-array-decay, or `\x`-escape constructs. |
+| `version.c` | Tiny module with no problematic headers or constructs. |
+
+Both produced assembly output (`type.asm`, `version.asm`).
 
 ---
 
 ## Feature gap summary
 
-| Gap | C99 section | Affected modules |
+| Gap | C99 / standard section | Affected modules |
 |---|---|---|
-| `const` qualifier in struct members / type-names | §6.7.3 | `lexer.c`, `parser.c`, `compiler.c`, `codegen.c` (via headers) |
-| `__attribute__` specifier ignored/parsed | (GCC ext.) | `util.c`, `parser.c`, `codegen.c`, `compiler.c` |
-| Redundant identical `typedef` (C11 idiom) | C11 §6.7 (C99 forbids) | `codegen.c`, `compiler.c` |
-| Member-array → pointer decay in call arg | §6.3.2.1 | `ast_pretty_printer.c` |
-| `\xHH` hex escape sequences | §6.4.4.4 / §6.4.5 | `lexer.c`, `preprocessor.c` |
-| Adjacent string-literal concatenation | §6.4.5 | `preprocessor.c` |
-| (Stub) `stderr`/`stdout`/`stdin` undeclared | — | `ast.c` (+ all modules functionally) |
-
-### Capacity limits
-
-No `MAX_*` capacity errors (e.g. `MAX_FUNCTIONS`, `MAX_LOCALS`) were
-encountered, so no `-D` overrides of `include/constants.h` were necessary for
-this pass.
+| GNU `__attribute__` specifier | GNU extension (not C99) | `parser.c`, `util.c`, `codegen.c`, `compiler.c` |
+| Identical typedef redefinition | C11 §6.7¶3 (C99 forbids) | `codegen.c`, `compiler.c` |
+| Multidimensional array member | §6.7.5.2 / §6.5.2.1 | `codegen.c`, `compiler.c` |
+| Adjacent string-literal concatenation | §6.4.5 | `parser.c`, `preprocessor.c` |
+| `\xNN` hex escape in literals | §6.4.4.4 | `lexer.c` |
+| Member-array → pointer decay as argument | §6.3.2.1¶3 | `ast_pretty_printer.c` |
+| Incomplete stub: `stdio.h` standard streams | (stub gap, not a feature) | `ast.c` |
