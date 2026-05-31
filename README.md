@@ -200,7 +200,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 82-02 (const-qualified member lvalue rules):
+Through stage 82-03 (const in type-name contexts):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -437,6 +437,9 @@ Through stage 82-02 (const-qualified member lvalue rules):
   (`element_size × element_count`) as a compile-time constant — no runtime
   code is emitted for the array operand and the array is not decayed to a
   pointer. `sizeof(int[10])` (array-type-name form) is not yet supported.
+  `const`-qualified type names in `sizeof` are supported (e.g.,
+  `sizeof(const int)`, `sizeof(const char *)`); the qualifier does not
+  affect the computed size.
 - **Conditional operator**: `condition ? expr_true : expr_false`. The condition is evaluated first; only the selected branch (true or false) is then evaluated and its value returned. The condition may be any integer or pointer expression. Both branches may be integer expressions (result is common type) or compatible pointer types (result is that pointer type). One branch may be a pointer with the other being the null constant `0`. The conditional expression is right-associative with lower precedence than logical OR and higher precedence than assignment.
 - **Comma operator**: `expr1, expr2` evaluates both expressions left to right, discards the left result, and returns the right result. Comma is the lowest-precedence operator (below assignment), left-associative, and produces an rvalue. Comma-as-separator in function calls and initializers is preserved via parser-level precedence.
 
@@ -470,7 +473,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 82-02 all tests pass (782 valid, 234 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1251 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 82-03 all tests pass (785 valid, 234 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1254 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

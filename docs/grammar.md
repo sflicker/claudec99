@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 78)
+# Claude C99 Grammar (Current through Stage 82-03)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -25,7 +25,7 @@
 <parameter_list> ::= "void"
                    | <parameter_declarator> { "," <parameter_declarator> } [ "," "..." ]
 
-<parameter_declarator> ::= <type_specifier> [ <declarator> ]
+<parameter_declarator> ::= <specifier_qualifier_list> [ <declarator> ]
 
 <block_statement> ::= "{" { <statement> } "}"
 
@@ -69,7 +69,17 @@
 
 <typedef_name> ::= <identifier>
 
-<type_name> ::= <type_specifier> { "*" }
+<specifier_qualifier_list> ::= <specifier_qualifier> { <specifier_qualifier> }
+
+<specifier_qualifier> ::= <type_specifier>
+                         | <sign_specifier>
+                         | <type_qualifier>
+
+<type_name> ::= <specifier_qualifier_list> [ <abstract_declarator> ]
+
+<abstract_declarator> ::= <abstract_pointer_declarator>
+
+<abstract_pointer_declarator> ::= "*" { <type_qualifier> } { "*" { <type_qualifier> } }
 
 <integer_type_specifier> ::= "char"
                            | "short" [ "int" ]
@@ -101,7 +111,7 @@
 
 <struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
 
-<struct_declaration> ::= [ <type_qualifier> ] <type_specifier> <struct_declarator_list> ";"
+<struct_declaration> ::= <specifier_qualifier_list> <struct_declarator_list> ";"
 
 <struct_declarator_list> ::= <declarator> { "," <declarator> }
 

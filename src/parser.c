@@ -968,21 +968,34 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
 }
 
 /*
- * <type_name> ::= <type_specifier> { "*" }
+ * <type_name> ::= <specifier_qualifier_list> [ <abstract_declarator> ]
+ * <specifier_qualifier_list> ::= <specifier_qualifier> { <specifier_qualifier> }
+ * <specifier_qualifier> ::= <type_specifier> | <sign_specifier> | <type_qualifier>
+ * <abstract_declarator> ::= "*" { <type_qualifier> } { "*" { <type_qualifier> } }
  *
- * Nameless type context: cast expressions and sizeof(type).
+ * Nameless type context: cast expressions, sizeof(type), and va_arg.
  * Returns the fully pointer-wrapped Type*.
  */
 static Type *parse_type_name(Parser *parser) {
-    /* Stage 39: consume optional leading const qualifier. */
-    if (parser->current.type == TOKEN_CONST)
+    /* Stage 82-03: consume optional leading const qualifier. */
+    int base_is_const = 0;
+    if (parser->current.type == TOKEN_CONST) {
+        base_is_const = 1;
         parser->current = lexer_next_token(parser->lexer);
-    /* Stage 40: consume optional leading unsigned qualifier (handled inside
-     * parse_type_specifier when TOKEN_UNSIGNED is the current token). */
+    }
+    /* Stage 40: optional leading unsigned/signed handled inside
+     * parse_type_specifier when TOKEN_UNSIGNED/TOKEN_SIGNED is current. */
     Type *t = parse_type_specifier(parser, NULL);
+    if (base_is_const)
+        t = type_const_copy(t);
+    /* Stage 82-03: abstract_pointer_declarator — each "*" may be followed
+     * by optional "const" qualifiers (pointer-level const). */
     while (parser->current.type == TOKEN_STAR) {
-        t = type_pointer(t);
         parser->current = lexer_next_token(parser->lexer);
+        /* Consume optional const after each star (qualifies the pointer). */
+        if (parser->current.type == TOKEN_CONST)
+            parser->current = lexer_next_token(parser->lexer);
+        t = type_pointer(t);
     }
     return t;
 }
@@ -1469,7 +1482,8 @@ static ASTNode *parse_unary(Parser *parser) {
         if (parser->current.type == TOKEN_VOID) {
             PARSER_ERROR(parser, "error: sizeof applied to void type\n");
         }
-        if (parser->current.type == TOKEN_BOOL ||
+        if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
             parser->current.type == TOKEN_INT ||
@@ -1560,7 +1574,8 @@ static ASTNode *parse_cast(Parser *parser) {
         int saved_pos = parser->lexer->pos;
         Token saved_token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        if (parser->current.type == TOKEN_VOID ||
+        if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_VOID ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
