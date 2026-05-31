@@ -359,7 +359,7 @@ static Type *parse_struct_specifier(Parser *parser) {
         int max_align = 1;
 
         /* Stage 31: collect field descriptors while parsing. */
-        StructField tmp_fields[64];
+        StructField tmp_fields[PARSER_MAX_STRUCT_FIELDS];
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {
@@ -525,7 +525,7 @@ static Type *parse_union_specifier(Parser *parser) {
         int max_size  = 0;
         int max_align = 1;
 
-        StructField tmp_fields[64];
+        StructField tmp_fields[PARSER_MAX_STRUCT_FIELDS];
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {

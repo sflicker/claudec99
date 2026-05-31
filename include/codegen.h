@@ -5,17 +5,8 @@
 #include "ast.h"
 #include "type.h"
 
-#define MAX_LOCALS 64
-#define MAX_GLOBALS 64
-#define MAX_BREAK_DEPTH 32
-#define MAX_SWITCH_DEPTH 16
-#define MAX_SWITCH_LABELS 64
-#define MAX_USER_LABELS 64
-#define MAX_STRING_LITERALS 256
-#define MAX_LOCAL_STATICS 128
-
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     int offset;
     int size;
     /* Stage 12-02: declared kind so codegen can distinguish a pointer
@@ -33,14 +24,14 @@ typedef struct {
      * set, storage is in a named static symbol addressed via [rel label]
      * instead of [rbp - offset]; offset is unused. */
     int is_static;
-    char static_label[256];
+    char static_label[MAX_NAME_LEN];
 } LocalVar;
 
 /* Stage 71: one entry per block-scope static variable declared during
  * function body emission. Accumulated during codegen_function and
  * emitted to .data or .bss after all function bodies. */
 typedef struct {
-    char label[256];
+    char label[MAX_NAME_LEN];
     TypeKind kind;
     Type *full_type;
     int size;
@@ -56,7 +47,7 @@ typedef struct {
  * Stage 22-02: is_initialized set for globals with a constant initializer;
  * init_value holds that value. Initialized globals go to .data; others to .bss. */
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     int size;
     TypeKind kind;
     Type *full_type;
@@ -66,7 +57,7 @@ typedef struct {
      * the address of a named symbol (e.g. a function pointer initialized
      * from a function designator). init_label holds the symbol name. */
     int is_label_init;
-    char init_label[256];
+    char init_label[MAX_NAME_LEN];
     /* Stage 39: set when the variable itself is const-qualified. */
     int is_const;
     /* Stage 40: set when the variable has an unsigned integer type. */
@@ -118,7 +109,7 @@ typedef struct {
      * body emission; used to reject duplicates and missing goto
      * targets). Assembly names are prefixed by `current_func` so
      * reused label names in different functions never collide. */
-    char user_labels[MAX_USER_LABELS][256];
+    char user_labels[MAX_USER_LABELS][MAX_NAME_LEN];
     int user_label_count;
     const char *current_func;
     /* Declared return type of the function currently being emitted —

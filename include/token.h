@@ -92,7 +92,7 @@ typedef enum {
 
 typedef struct {
     TokenType type;
-    char value[256];
+    char value[MAX_NAME_LEN];
     int length;
     long long_value;
     TypeKind literal_type;

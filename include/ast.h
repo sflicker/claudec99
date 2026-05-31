@@ -59,11 +59,9 @@ typedef enum {
     AST_BUILTIN_VA_ARG     /* stage 75-03: __builtin_va_arg(ap, type) */
 } ASTNodeType;
 
-#define AST_MAX_CHILDREN 64
-
 typedef struct ASTNode {
     ASTNodeType type;
-    char value[256];
+    char value[MAX_NAME_LEN];
     struct ASTNode *children[AST_MAX_CHILDREN];
     int child_count;
     TypeKind decl_type;

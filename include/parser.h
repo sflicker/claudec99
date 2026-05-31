@@ -7,47 +7,38 @@
 #include "type.h"
 #include <stdio.h>
 
-#define PARSER_MAX_FUNCTIONS 64
-#define PARSER_MAX_GLOBALS 64
-#define PARSER_MAX_TYPEDEFS 64
-#define PARSER_MAX_ENUM_CONSTS 256
-#define PARSER_MAX_ENUM_TAGS 32
-#define PARSER_MAX_STRUCT_TAGS 32
-#define PARSER_MAX_UNION_TAGS  32
-#define FUNC_MAX_PARAMS 16
-
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     long value;
 } EnumConst;
 
 typedef struct {
-    char tag[256];
+    char tag[MAX_NAME_LEN];
     int  is_defined;
 } EnumTag;
 
 /* Stage 30: one entry per named struct tag in the translation unit. */
 typedef struct {
-    char         tag[256];
+    char         tag[MAX_NAME_LEN];
     struct Type *type;   /* NULL until the struct body is parsed */
 } StructTag;
 
 /* Stage 72: one entry per named union tag in the translation unit. */
 typedef struct {
-    char         tag[256];
+    char         tag[MAX_NAME_LEN];
     struct Type *type;   /* NULL until the union body is parsed */
 } UnionTag;
 
 /* Stage 28-01/28-02: entry in the parser-level typedef table. */
 typedef struct {
-    char         name[256];
+    char         name[MAX_NAME_LEN];
     TypeKind     kind;       /* outermost kind; TYPE_POINTER for pointer typedefs */
     struct Type *full_type;  /* NULL for scalar typedefs; pointer chain for pointer typedefs */
     int          scope_depth; /* 0 = file scope, 1+ = block scope */
 } TypedefEntry;
 
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     int param_count;
     int has_definition;
     TypeKind return_type;
@@ -65,7 +56,7 @@ typedef struct {
  * Stage 25-01: full_type carries the complete type chain for function-pointer
  * globals so compatibility between successive declarations can be verified. */
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     TypeKind kind;
     StorageClass storage_class;
     struct Type *full_type;

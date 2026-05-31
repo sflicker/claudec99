@@ -1,6 +1,8 @@
 #ifndef CCOMPILER_TYPE_H
 #define CCOMPILER_TYPE_H
 
+#include "constants.h"
+
 /*
  * Minimal type system — stage 11-01.
  *
@@ -9,9 +11,6 @@
  * variable as a 32-bit int, so most helpers below are stubs that
  * later stages will flesh out.
  */
-
-/* Stage 25-01: maximum number of parameters tracked on a TYPE_FUNCTION node. */
-#define FUNC_TYPE_MAX_PARAMS 16
 
 typedef enum {
     TYPE_VOID,
@@ -39,7 +38,7 @@ typedef enum {
 
 /* Stage 31: field descriptor stored inside a TYPE_STRUCT Type node. */
 typedef struct {
-    char name[256];
+    char name[MAX_NAME_LEN];
     int  offset;            /* byte offset of this field within the struct */
     TypeKind kind;
     struct Type *full_type; /* non-NULL for pointer/array/struct fields */

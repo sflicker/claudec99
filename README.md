@@ -40,6 +40,65 @@ cmake --build build
 
 This produces `build/ccompiler`.
 
+## Compiler limits
+
+All hard-coded capacity limits live in `include/constants.h` as object-like
+macros. Redefine any of them on the compiler command line (e.g.
+`-DPARSER_MAX_FUNCTIONS=256`) or edit the file directly before building to
+raise a limit.
+
+### String buffers
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_NAME_LEN` | 256 | Maximum byte length of any identifier, tag name, assembly label, or value string stored in a fixed-size `char` array throughout the compiler. All `char name[]`, `char tag[]`, `char label[]`, and `char value[]` fields in structs use this size. |
+
+### AST
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `AST_MAX_CHILDREN` | 64 | Maximum number of direct child nodes an `ASTNode` can hold. Limits the number of parameters in a call expression, fields in an initializer list, and statements in a block, among other constructs. |
+
+### Type system
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `FUNC_TYPE_MAX_PARAMS` | 16 | Maximum number of parameter types stored on a `TYPE_FUNCTION` type node (used for function-pointer types). |
+
+### Parser
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `PARSER_MAX_FUNCTIONS` | 64 | Maximum number of function declarations/definitions in a translation unit. |
+| `PARSER_MAX_GLOBALS` | 64 | Maximum number of file-scope object declarations in a translation unit. |
+| `PARSER_MAX_TYPEDEFS` | 64 | Maximum number of typedef entries visible at any point during parsing. |
+| `PARSER_MAX_ENUM_CONSTS` | 256 | Maximum number of enum constants across all enum declarations in a translation unit. |
+| `PARSER_MAX_ENUM_TAGS` | 32 | Maximum number of distinct named enum tags. |
+| `PARSER_MAX_STRUCT_TAGS` | 32 | Maximum number of distinct named struct tags. |
+| `PARSER_MAX_UNION_TAGS` | 32 | Maximum number of distinct named union tags. |
+| `PARSER_MAX_STRUCT_FIELDS` | 64 | Maximum number of fields in a single struct or union definition. |
+| `FUNC_MAX_PARAMS` | 16 | Maximum number of parameters in a function declaration or definition. |
+
+### Code generator
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_LOCALS` | 64 | Maximum number of local variables per function. |
+| `MAX_GLOBALS` | 64 | Maximum number of global variables tracked by the code generator. |
+| `MAX_BREAK_DEPTH` | 32 | Maximum nesting depth of breakable constructs (loops and switches). |
+| `MAX_SWITCH_DEPTH` | 16 | Maximum nesting depth of `switch` statements. |
+| `MAX_SWITCH_LABELS` | 64 | Maximum number of `case`/`default` labels in a single `switch`. |
+| `MAX_USER_LABELS` | 64 | Maximum number of user-defined `goto` labels per function. |
+| `MAX_STRING_LITERALS` | 256 | Maximum number of distinct string literal values in a translation unit. |
+| `MAX_LOCAL_STATICS` | 128 | Maximum number of block-scope `static` variables across all functions in a translation unit. |
+
+### Preprocessor
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_INCLUDE_DEPTH` | 64 | Maximum `#include` nesting depth. |
+| `MAX_COND_DEPTH` | 64 | Maximum nesting depth of `#if`/`#ifdef`/`#ifndef` conditional blocks. |
+
 ## Usage
 
 ```

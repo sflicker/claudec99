@@ -3,10 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "constants.h"
 #include "preprocessor.h"
-
-#define MAX_INCLUDE_DEPTH 64
-#define MAX_COND_DEPTH 64
 
 typedef struct {
     int emitting;        /* current branch is active? */
