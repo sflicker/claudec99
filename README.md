@@ -200,7 +200,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 82-04 (minimal volatile handling):
+Through stage 82-05 (interaction with pointer compatibility diagnostics):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -318,7 +318,7 @@ Through stage 82-04 (minimal volatile handling):
   conversions in pointer assignments (e.g., `int *q = p` where `const int *p`) issue a warning
   (or error if `-Werror` is set); const-to-pointer conversions (e.g., `int *q = &x` where
   `const int x`) are allowed as rvalue decay with const-discard warning/error semantics.
-  Struct and union member declarations support `const` qualifiers: `const char *name` stores a pointer-to-const member; `const int kind` stores a const scalar member whose direct assignment is rejected. Array subscript writes through const-pointer members (e.g., `s.p[0] = 'H'` where `s.p: const char *`) are properly rejected at compile time.
+  Struct and union member declarations support `const` qualifiers: `const char *name` stores a pointer-to-const member; `const int kind` stores a const scalar member whose direct assignment is rejected. Array subscript writes through const-pointer members (e.g., `s.p[0] = 'H'` where `s.p: const char *`) are properly rejected at compile time. Assignments to any member of a `const`-qualified struct/union object (e.g., `const struct S s; s.x = 1`) and assignments through a pointer to const struct (e.g., `const struct S *p; p->x = 1`) are rejected.
 - **volatile qualifier**: `volatile` keyword is recognized as a type qualifier in declarations,
   parameters, and type names. Volatile qualifiers are parsed and stored in the type, but have
   no code generation or semantic enforcement effects yet (writes to volatile fields are permitted).
@@ -476,7 +476,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 82-04 all tests pass (786 valid, 234 invalid, 72 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1256 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 82-05 all tests pass (787 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1259 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

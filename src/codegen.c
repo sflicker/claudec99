@@ -496,6 +496,24 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node);
 static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node);
 
 /*
+ * Stage 82-05: walk a chain of AST_MEMBER_ACCESS nodes to the root
+ * AST_VAR_REF and return 1 if the variable is const-qualified.
+ * Used to reject assignment to any member of a const struct/union object.
+ */
+static int member_base_is_const(CodeGen *cg, ASTNode *node) {
+    if (!node) return 0;
+    if (node->type == AST_VAR_REF) {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        if (lv) return lv->is_const;
+        GlobalVar *gv = codegen_find_global(cg, node->value);
+        return gv ? gv->is_const : 0;
+    }
+    if (node->type == AST_MEMBER_ACCESS && node->child_count > 0)
+        return member_base_is_const(cg, node->children[0]);
+    return 0;
+}
+
+/*
  * Emit code to compute the address of an array/pointer subscript
  * `b[i]` into rax. Returns the element Type so the caller can pick
  * the matching load/store width. The base must be an identifier
@@ -1637,6 +1655,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: assignment to const member '%s'\n",
                         node->children[0]->value);
             }
+            /* Stage 82-05: reject assignment when the base object is const. */
+            if (member_base_is_const(cg, node->children[0])) {
+                compile_error(
+                        "error: assignment to member of const object\n");
+            }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
                 switch (f->kind) {
@@ -1674,6 +1697,27 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 compile_error(
                         "error: assignment to const member '%s'\n",
                         node->children[0]->value);
+            }
+            /* Stage 82-05: reject assignment when the pointer points to a
+             * const-qualified struct/union (e.g. const struct S *p; p->x = 1). */
+            {
+                ASTNode *arrow_base = node->children[0]->children[0];
+                if (arrow_base && arrow_base->type == AST_VAR_REF) {
+                    LocalVar *plv = codegen_find_var(cg, arrow_base->value);
+                    if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
+                        plv->full_type->base && plv->full_type->base->is_const) {
+                        compile_error(
+                                "error: assignment to member of const object\n");
+                    }
+                    if (!plv) {
+                        GlobalVar *pgv = codegen_find_global(cg, arrow_base->value);
+                        if (pgv && pgv->kind == TYPE_POINTER && pgv->full_type &&
+                            pgv->full_type->base && pgv->full_type->base->is_const) {
+                            compile_error(
+                                    "error: assignment to member of const object\n");
+                        }
+                    }
+                }
             }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
