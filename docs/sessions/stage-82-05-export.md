@@ -693,4 +693,36 @@ ter-compatibility-diagnostics.md
   volatile member, sizeof(const T*), const-discard warnings) were already
   working correctly. Test total: 1259 (was 1256).
 
-✻ Worked for 20m 53s
+✻ Crunched for 20m 53s
+
+❯ /export docs/sessions/stage-82-05-export.md                                   
+  ⎿  Conversation exported to:
+     /home/scott/code/claude/claudec99/docs/sessions/stage-82-05-export.md
+
+❯ /usage 
+  ⎿  Settings dialog dismissed
+
+❯ commit changes                                                                
+
+● Bash(git status && git diff --stat)
+  ⎿  On branch master
+     Your branch is up to date with 'origin/master'.
+     … +23 lines (ctrl+o to expand)
+
+● Bash(git log --oneline -5)
+  ⎿  ff10284 stage 82-05 spec
+     27e6b14 stage 82-04 session usage and export
+     3f9b26a stage 82-04: minimal volatile handling
+     … +2 lines (ctrl+o to expand)
+
+● Bash(git add README.md src/codegen.c src/version.c \
+          docs/kickoffs/stage-82-05-kickoff.md \…)
+  ⎿  [master cd18e22] stage 82-05: interaction with pointer compatibility d
+     iagnostics
+      12 files changed, 934 insertions(+), 4 deletions(-)
+     … +13 lines (ctrl+o to expand)
+
+● Committed as cd18e22. The stage-82-05-usage.md file was left unstaged since
+  it's a usage export not part of the implementation.
+
+✻ Churned for 22s
