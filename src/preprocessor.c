@@ -5,6 +5,7 @@
 #include <time.h>
 #include "constants.h"
 #include "preprocessor.h"
+#include "util.h"
 
 typedef struct {
     int emitting;        /* current branch is active? */
@@ -52,9 +53,9 @@ static void gbuf_append(GrowBuf *g, const char *s, size_t n) {
 
 /* Return heap-allocated directory portion of path (caller frees). */
 static char *get_dir(const char *path) {
-    if (!path) return strdup(".");
+    if (!path) return util_strdup(".");
     const char *slash = strrchr(path, '/');
-    if (!slash) return strdup(".");
+    if (!slash) return util_strdup(".");
     size_t len = (size_t)(slash - path);
     char *dir = malloc(len + 1);
     if (!dir) { fprintf(stderr, "error: out of memory\n"); exit(1); }
@@ -359,7 +360,7 @@ static void collect_args(const char *s, size_t *pos,
                 if (!args || !lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
             }
             size_t alen = arg.len - 1;
-            args[count] = strdup(arg.data);
+            args[count] = util_strdup(arg.data);
             lens[count] = alen;
             count++;
             free(arg.data);
@@ -378,7 +379,7 @@ static void collect_args(const char *s, size_t *pos,
                 if (!args || !lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
             }
             size_t alen = arg.len - 1;
-            args[count] = strdup(arg.data);
+            args[count] = util_strdup(arg.data);
             lens[count] = alen;
             count++;
             free(arg.data);
@@ -612,7 +613,7 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                     size_t *raw_arg_lens = malloc(((size_t)arg_count + 1) * sizeof(size_t));
                     if (!raw_args || !raw_arg_lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
                     for (int i = 0; i < arg_count; i++) {
-                        raw_args[i]     = strdup(args[i]);
+                        raw_args[i]     = util_strdup(args[i]);
                         raw_arg_lens[i] = arg_lens[i];
                     }
                     /* pre-expand each argument before substitution */
@@ -1730,7 +1731,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             size_t *raw_arg_lens = malloc(((size_t)arg_count + 1) * sizeof(size_t));
                             if (!raw_args || !raw_arg_lens) { fprintf(stderr, "error: out of memory\n"); exit(1); }
                             for (int i = 0; i < arg_count; i++) {
-                                raw_args[i]     = strdup(args[i]);
+                                raw_args[i]     = util_strdup(args[i]);
                                 raw_arg_lens[i] = arg_lens[i];
                             }
                             /* pre-expand each argument */

@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(ccompiler C)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 # Derive a build number from the git commit count so --version reflects
 # the current revision automatically on each cmake configure step.
@@ -32,3 +33,4 @@ add_executable(ccompiler
 
 target_compile_definitions(ccompiler PRIVATE VERSION_BUILD=${VERSION_BUILD})
 target_include_directories(ccompiler PRIVATE include)
+target_compile_options(ccompiler PRIVATE -Wall -Wextra -pedantic)

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "lexer.h"
+#include "util.h"
 
 /* Look up or create a SourceFile for the given path in the lexer's pool.
  * Returns a pointer into the pool (valid for the lifetime of the lexer). */
@@ -24,7 +25,7 @@ static SourceFile *lexer_intern_file(Lexer *lexer, const char *path) {
     }
     SourceFile *sf = malloc(sizeof(SourceFile));
     if (!sf) { fprintf(stderr, "error: out of memory in lexer\n"); exit(1); }
-    sf->path = strdup(path);
+    sf->path = util_strdup(path);
     if (!sf->path) { fprintf(stderr, "error: out of memory in lexer\n"); exit(1); }
     lexer->file_pool[lexer->n_files++] = sf;
     return sf;

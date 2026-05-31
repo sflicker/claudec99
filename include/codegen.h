@@ -81,7 +81,6 @@ typedef struct {
  * switches) and assigns each a unique label id. During body emission
  * a case/default node is matched against this table to emit its
  * pre-assigned label. */
-typedef struct ASTNode ASTNode;
 typedef struct {
     ASTNode *nodes[MAX_SWITCH_LABELS];
     int labels[MAX_SWITCH_LABELS];

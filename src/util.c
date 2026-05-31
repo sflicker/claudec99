@@ -11,7 +11,7 @@ int     g_error_jmp_valid = 0;
 int     g_warnings_are_errors = 0;
 
 /* Core error-reporting logic shared by compile_error and compile_error_at. */
-__attribute__((noreturn))
+CC_NORETURN
 static void do_compile_error(const char *fmt, va_list ap) {
     vfprintf(stderr, fmt, ap);
     g_error_count++;
@@ -25,7 +25,7 @@ static void do_compile_error(const char *fmt, va_list ap) {
 }
 
 /* Report a compilation error without source position. */
-__attribute__((noreturn))
+CC_NORETURN
 void compile_error(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -34,7 +34,7 @@ void compile_error(const char *fmt, ...) {
 
 /* Stage 70-03: report a compilation error with a file:line:col: prefix.
  * When file is NULL or line is 0, behaves like compile_error. */
-__attribute__((noreturn))
+CC_NORETURN
 void compile_error_at(const char *file, int line, int col, const char *fmt, ...) {
     if (file && line > 0)
         fprintf(stderr, "%s:%d:%d: ", file, line, col);
@@ -94,4 +94,17 @@ void make_output_path(char *out, size_t out_size, const char *input_path) {
         *dot = '\0';
     }
     strncat(out, ".asm", out_size - strlen(out) - 1);
+}
+
+/* Stage 83: ISO C99 replacement for POSIX strdup. */
+char *util_strdup(const char *s) {
+    if (!s) {
+        return NULL;
+    }
+    size_t len = strlen(s) + 1;
+    char *copy = malloc(len);
+    if (copy) {
+        memcpy(copy, s, len);
+    }
+    return copy;
 }

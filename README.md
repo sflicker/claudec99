@@ -9,9 +9,10 @@ translates a growing subset of C99 to x86_64 assembly (NASM, ELF64, Linux).
 source.c -> Lexer -> Parser (AST) -> Code Generator -> source.asm
 ```
 
-The compiler is implemented in C11. The output `.asm` file is assembled
-with `nasm -f elf64` and linked with `ld -e main` to produce a Linux
-executable.
+The compiler is implemented in strict ISO C99. It compiles cleanly under
+both `gcc -std=c99 -pedantic-errors` and `clang -std=c99 -pedantic-errors`.
+The output `.asm` file is assembled with `nasm -f elf64` and linked with
+`ld -e main` to produce a Linux executable.
 
 ## Project layout
 
@@ -200,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 82-05 (interaction with pointer compatibility diagnostics):
+Through stage 83 (project source converted to strict ISO C99):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -497,6 +498,6 @@ stage has:
 
 ## Requirements
 
-- A C11 toolchain and CMake (>= 3.10) to build the compiler.
+- A C99 toolchain and CMake (>= 3.10) to build the compiler.
 - `nasm` and `ld` to assemble and link the generated `.asm` files.
 - Linux x86_64 to run the produced binaries.
