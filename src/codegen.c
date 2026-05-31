@@ -1349,6 +1349,125 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     return t;
 }
 
+/*
+ * Stage 80: prefix/postfix ++ and -- on a general modifiable lvalue that is
+ * not a bare identifier — *p, a[i], s.field, p->field, and chains thereof.
+ * The element address is computed once via the same per-kind address helpers
+ * the assignment path uses (which preserve their base on the stack across
+ * index/sub-expression evaluation), the value is loaded with the element
+ * width, adjusted (pointers scale by the pointee size; integers step by one)
+ * and stored back. The expression result is the new value for prefix forms
+ * and the old value for postfix forms. Non-lvalue operands are rejected here.
+ */
+static void codegen_inc_dec_general(CodeGen *cg, ASTNode *node) {
+    ASTNode *operand = node->children[0];
+    int is_inc  = strcmp(node->value, "++") == 0;
+    int is_post = node->type == AST_POSTFIX_INC_DEC;
+    TypeKind kind;
+    Type *full = NULL;
+    int sz = 0;
+
+    /* Compute &operand into rax and recover the element type. */
+    if (operand->type == AST_ARRAY_INDEX) {
+        Type *element = emit_array_index_addr(cg, operand);
+        kind = element->kind;
+        full = element;
+        sz = type_size(element);
+    } else if (operand->type == AST_MEMBER_ACCESS) {
+        StructField *f = emit_member_addr(cg, operand);
+        kind = f->kind;
+        full = f->full_type;
+        sz = full ? type_size(full) : 0;
+    } else if (operand->type == AST_ARROW_ACCESS) {
+        StructField *f = emit_arrow_addr(cg, operand);
+        kind = f->kind;
+        full = f->full_type;
+        sz = full ? type_size(full) : 0;
+    } else if (operand->type == AST_DEREF) {
+        codegen_expression(cg, operand->children[0]);   /* pointer -> rax */
+        Type *pt = operand->children[0]->full_type;
+        if (!pt || pt->kind != TYPE_POINTER) {
+            compile_error( "error: cannot dereference non-pointer value\n");
+        }
+        Type *base = pt->base;
+        if (base && base->is_const) {
+            compile_error(
+                    "error: assignment through pointer to const-qualified type\n");
+        }
+        kind = base ? base->kind : TYPE_INT;
+        full = base;
+        sz = base ? type_size(base) : 4;
+    } else {
+        compile_error( "error: operand of ++/-- must be a modifiable lvalue\n");
+        return;
+    }
+
+    if (sz == 0) {
+        switch (kind) {
+        case TYPE_CHAR:  sz = 1; break;
+        case TYPE_SHORT: sz = 2; break;
+        case TYPE_LONG_LONG:
+        case TYPE_UNSIGNED_LONG_LONG:
+        case TYPE_LONG:
+        case TYPE_POINTER: sz = 8; break;
+        default: sz = 4; break;
+        }
+    }
+
+    /* Pointer increments scale by the pointee size. */
+    int step = 1;
+    if (kind == TYPE_POINTER && full && full->base) {
+        step = type_size(full->base);
+    }
+
+    /* rbx = &operand (preserved across the load/adjust/store). */
+    fprintf(cg->output, "    mov rbx, rax\n");
+
+    /* Load the current value into rax with the element width. Mirrors the
+     * sign-extending rvalue load paths used for these lvalue kinds. */
+    switch (sz) {
+    case 1: fprintf(cg->output, "    movsx eax, byte [rbx]\n"); break;
+    case 2: fprintf(cg->output, "    movsx eax, word [rbx]\n"); break;
+    case 8: fprintf(cg->output, "    mov rax, [rbx]\n"); break;
+    case 4:
+    default: fprintf(cg->output, "    mov eax, [rbx]\n"); break;
+    }
+
+    /* Postfix: keep the old value to return after the store. */
+    if (is_post) {
+        fprintf(cg->output, "    mov rcx, rax\n");  /* save old value */
+    }
+
+    /* Adjust. Pointers and 8-byte integers use 64-bit ops. */
+    if (sz == 8) {
+        if (is_inc) fprintf(cg->output, "    add rax, %d\n", step);
+        else        fprintf(cg->output, "    sub rax, %d\n", step);
+    } else {
+        if (is_inc) fprintf(cg->output, "    add eax, %d\n", step);
+        else        fprintf(cg->output, "    sub eax, %d\n", step);
+    }
+
+    /* Store the new value back through the saved address. */
+    switch (sz) {
+    case 1: fprintf(cg->output, "    mov [rbx], al\n"); break;
+    case 2: fprintf(cg->output, "    mov [rbx], ax\n"); break;
+    case 8: fprintf(cg->output, "    mov [rbx], rax\n"); break;
+    case 4:
+    default: fprintf(cg->output, "    mov [rbx], eax\n"); break;
+    }
+
+    /* Result: old value (postfix) or new value (prefix), in rax. */
+    if (is_post) {
+        fprintf(cg->output, "    mov rax, rcx\n");  /* result: old value */
+    }
+
+    node->result_type = (kind == TYPE_POINTER) ? TYPE_POINTER
+                        : promote_kind(kind);
+    if (kind == TYPE_POINTER && full) {
+        node->full_type = full;
+    }
+}
+
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_INT_LITERAL) {
         if (node->decl_type == TYPE_LONG ||
@@ -2004,10 +2123,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_PREFIX_INC_DEC) {
         /* ++x or --x: update variable, result is new value.
-         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops. */
+         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops.
+         * Stage 80: non-identifier lvalues use the general path. */
+        if (node->children[0]->type != AST_VAR_REF) {
+            codegen_inc_dec_general(cg, node);
+            return;
+        }
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
+            if (lv->is_const) {
+                compile_error(
+                        "error: assignment to const variable '%s'\n", lv->name);
+            }
             if (lv->is_static)
                 emit_load_global(cg, lv->static_label, lv->size, lv->is_unsigned);
             else
@@ -2067,10 +2195,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_POSTFIX_INC_DEC) {
         /* x++ or x--: result is old value, then update variable.
-         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops. */
+         * Stage 41: pointers scale by sizeof(*p) and use 64-bit ops.
+         * Stage 80: non-identifier lvalues use the general path. */
+        if (node->children[0]->type != AST_VAR_REF) {
+            codegen_inc_dec_general(cg, node);
+            return;
+        }
         const char *var_name = node->children[0]->value;
         LocalVar *lv = codegen_find_var(cg, var_name);
         if (lv) {
+            if (lv->is_const) {
+                compile_error(
+                        "error: assignment to const variable '%s'\n", lv->name);
+            }
             if (lv->is_static)
                 emit_load_global(cg, lv->static_label, lv->size, lv->is_unsigned);
             else

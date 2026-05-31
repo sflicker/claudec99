@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 79 (general lvalue compound assignment):
+Through stage 80 (prefix/postfix ++/-- on general lvalues):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -359,7 +359,7 @@ Through stage 79 (general lvalue compound assignment):
   first) `&` > `^` > `|`, so `1 | 2 & 4` parses as `1 | (2 & 4)` and
   `1 & 3 == 3` parses as `1 & (3 == 3)`.
 - **Unary operators**: `+`, `-`, `!` (logical not), `~` (bitwise
-  complement), `++`/`--` (prefix and postfix), `*` (dereference),
+  complement), `++`/`--` (prefix and postfix on any modifiable lvalue including bare identifier, struct/union member via . or ->, array subscript, pointer dereference, and chains thereof; postfix yields the old value and prefix the new value; pointer ++/-- keeps element-size scaling; const-qualified and non-lvalue operands are rejected), `*` (dereference),
   `&` (address-of). `~` and `!` are integer-only: pointer and array
   operands are rejected. `~` follows the usual integer promotions
   (`char`/`short`/`int` → `int`; `long` → `long`).
@@ -410,7 +410,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 79 all tests pass (768 valid, 231 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1233 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 80 all tests pass (776 valid, 234 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1244 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

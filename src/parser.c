@@ -1401,10 +1401,10 @@ static ASTNode *parse_postfix(Parser *parser) {
             expr = node;
             continue;
         }
-        if (expr->type != AST_VAR_REF) {
-            PARSER_ERROR(parser, "error: postfix %s requires an identifier\n",
-                    parser->current.value);
-        }
+        /* Stage 80: postfix ++/-- attaches to whatever postfix expression
+         * has already been built (identifier, subscript, member, arrow, or
+         * a chain thereof). Whether the operand is a modifiable lvalue is
+         * enforced later during code generation. */
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *node = ast_new(AST_POSTFIX_INC_DEC, op.value);
@@ -1478,9 +1478,8 @@ static ASTNode *parse_unary(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
-        if (operand->type != AST_VAR_REF) {
-            PARSER_ERROR(parser, "error: prefix %s requires an identifier\n", op.value);
-        }
+        /* Stage 80: prefix ++/-- accepts any unary expression as operand;
+         * lvalue validity is enforced later during code generation. */
         ASTNode *node = ast_new(AST_PREFIX_INC_DEC, op.value);
         ast_add_child(node, operand);
         return node;
