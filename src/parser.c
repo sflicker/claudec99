@@ -363,6 +363,12 @@ static Type *parse_struct_specifier(Parser *parser) {
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {
+            /* Stage 82-01: consume optional leading const qualifier. */
+            int field_is_const = 0;
+            if (parser->current.type == TOKEN_CONST) {
+                field_is_const = 1;
+                parser->current = lexer_next_token(parser->lexer);
+            }
             /* Parse field type specifier. */
             Type *field_base = parse_type_specifier(parser, NULL);
 
@@ -372,8 +378,11 @@ static Type *parse_struct_specifier(Parser *parser) {
                     parser->current = lexer_next_token(parser->lexer);
 
                 ParsedDeclarator d = parse_declarator(parser);
+                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f). */
+                Type *effective_base = (field_is_const && d.pointer_count > 0)
+                    ? type_const_copy(field_base) : field_base;
                 /* Build the full field type from base + pointer stars. */
-                Type *field_type = field_base;
+                Type *field_type = effective_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
                 /* Stage 78: handle array member fields (e.g. int values[3]). */
@@ -417,6 +426,10 @@ static Type *parse_struct_specifier(Parser *parser) {
                                                      field_type->kind == TYPE_STRUCT  ||
                                                      field_type->kind == TYPE_UNION)
                                                      ? field_type : NULL;
+                    /* Stage 82-01: const scalar member or const-pointer member. */
+                    tmp_fields[n_fields].is_const  =
+                        ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
+                         d.pointer_is_const) ? 1 : 0;
                     n_fields++;
                 }
                 current_offset += fsz;
@@ -529,6 +542,12 @@ static Type *parse_union_specifier(Parser *parser) {
         int n_fields = 0;
 
         while (parser->current.type != TOKEN_RBRACE) {
+            /* Stage 82-01: consume optional leading const qualifier. */
+            int field_is_const = 0;
+            if (parser->current.type == TOKEN_CONST) {
+                field_is_const = 1;
+                parser->current = lexer_next_token(parser->lexer);
+            }
             Type *field_base = parse_type_specifier(parser, NULL);
 
             do {
@@ -536,7 +555,10 @@ static Type *parse_union_specifier(Parser *parser) {
                     parser->current = lexer_next_token(parser->lexer);
 
                 ParsedDeclarator d = parse_declarator(parser);
-                Type *field_type = field_base;
+                /* Stage 82-01: const base for pointer-to-const (e.g. const T *f). */
+                Type *effective_base = (field_is_const && d.pointer_count > 0)
+                    ? type_const_copy(field_base) : field_base;
+                Type *field_type = effective_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
                 /* Stage 78: handle array member fields (e.g. int values[3]). */
@@ -575,6 +597,10 @@ static Type *parse_union_specifier(Parser *parser) {
                                                      field_type->kind == TYPE_STRUCT  ||
                                                      field_type->kind == TYPE_UNION)
                                                      ? field_type : NULL;
+                    /* Stage 82-01: const scalar member or const-pointer member. */
+                    tmp_fields[n_fields].is_const  =
+                        ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
+                         d.pointer_is_const) ? 1 : 0;
                     n_fields++;
                 }
 

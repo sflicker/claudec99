@@ -101,7 +101,7 @@
 
 <struct_declaration_list> ::= <struct_declaration> { <struct_declaration> }
 
-<struct_declaration> ::= <type_specifier> <struct_declarator_list> ";"
+<struct_declaration> ::= [ <type_qualifier> ] <type_specifier> <struct_declarator_list> ";"
 
 <struct_declarator_list> ::= <declarator> { "," <declarator> }
 

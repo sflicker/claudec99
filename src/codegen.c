@@ -1625,6 +1625,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (node->child_count == 2 &&
             node->children[0]->type == AST_MEMBER_ACCESS) {
             StructField *f = emit_member_addr(cg, node->children[0]);
+            /* Stage 82-01: reject assignment to a const-qualified member. */
+            if (f->is_const) {
+                compile_error(
+                        "error: assignment to const member '%s'\n",
+                        node->children[0]->value);
+            }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
                 switch (f->kind) {
@@ -1657,6 +1663,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (node->child_count == 2 &&
             node->children[0]->type == AST_ARROW_ACCESS) {
             StructField *f = emit_arrow_addr(cg, node->children[0]);
+            /* Stage 82-01: reject assignment to a const-qualified member. */
+            if (f->is_const) {
+                compile_error(
+                        "error: assignment to const member '%s'\n",
+                        node->children[0]->value);
+            }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
                 switch (f->kind) {

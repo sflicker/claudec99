@@ -42,6 +42,7 @@ typedef struct {
     int  offset;            /* byte offset of this field within the struct */
     TypeKind kind;
     struct Type *full_type; /* non-NULL for pointer/array/struct fields */
+    int  is_const;          /* Stage 82-01: set for const-qualified scalar members */
 } StructField;
 
 typedef struct Type {

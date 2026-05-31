@@ -200,7 +200,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 81 (header updates: `putchar`, `calloc`; raised parser/codegen limits; `!` on pointer operands):
+Through stage 82-01 (const qualifiers in struct/union members):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -318,6 +318,7 @@ Through stage 81 (header updates: `putchar`, `calloc`; raised parser/codegen lim
   conversions in pointer assignments (e.g., `int *q = p` where `const int *p`) issue a warning
   (or error if `-Werror` is set); const-to-pointer conversions (e.g., `int *q = &x` where
   `const int x`) are allowed as rvalue decay with const-discard warning/error semantics.
+  Struct and union member declarations support `const` qualifiers: `const char *name` stores a pointer-to-const member; `const int kind` stores a const scalar member whose direct assignment is rejected.
 - **Function pointers**: declarations of function-pointer typed variables (local, file-scope,
   static, extern) and parameters with full type compatibility checking across redeclarations.
   Function-pointer types are distinguished by return type, parameter count, and parameter types.
@@ -469,7 +470,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 81 all tests pass (779 valid, 232 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1246 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 82-01 all tests pass (781 valid, 233 invalid, 72 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1249 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
