@@ -184,11 +184,12 @@
                     
 <postfix_expression> ::= <primary_expression> 
                     { "[" <expression> "]"                     
-                      | "++" 
-                      | "--"
                       | "(" [ <argument_expression_list> ] ")"
                       | "." <identifier>
-                      | "->" <identifier> }                    
+                      | "->" <identifier>
+                      | "++" 
+                      | "--" 
+                      }                    
 
 <primary_expression> ::= <integer_literal>
                          | <string_literal>
