@@ -1877,18 +1877,52 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
         parser->current = saved_token;
     }
     ASTNode *lhs = parse_conditional(parser);
-    if (parser->current.type == TOKEN_ASSIGN) {
+    if (parser->current.type == TOKEN_ASSIGN ||
+        parser->current.type == TOKEN_PLUS_ASSIGN ||
+        parser->current.type == TOKEN_MINUS_ASSIGN ||
+        parser->current.type == TOKEN_STAR_ASSIGN ||
+        parser->current.type == TOKEN_SLASH_ASSIGN ||
+        parser->current.type == TOKEN_PERCENT_ASSIGN ||
+        parser->current.type == TOKEN_LEFT_SHIFT_ASSIGN ||
+        parser->current.type == TOKEN_RIGHT_SHIFT_ASSIGN ||
+        parser->current.type == TOKEN_AMP_ASSIGN ||
+        parser->current.type == TOKEN_CARET_ASSIGN ||
+        parser->current.type == TOKEN_PIPE_ASSIGN) {
         if (lhs->type != AST_DEREF && lhs->type != AST_VAR_REF &&
             lhs->type != AST_ARRAY_INDEX &&
             lhs->type != AST_MEMBER_ACCESS &&
             lhs->type != AST_ARROW_ACCESS) {
             PARSER_ERROR(parser, "error: assignment target must be an lvalue\n");
         }
+        Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *rhs = parse_assignment_expression(parser);
         ASTNode *assign = ast_new(AST_ASSIGNMENT, NULL);
         ast_add_child(assign, lhs);
-        ast_add_child(assign, rhs);
+        if (op.type != TOKEN_ASSIGN) {
+            /* Stage 79: general-lvalue compound assignment.
+             * a op= b  =>  a = a op b. The lvalue is cloned so it can serve
+             * both as the assignment target and the binary op's left operand. */
+            const char *bin_op;
+            switch (op.type) {
+            case TOKEN_PLUS_ASSIGN:         bin_op = "+";  break;
+            case TOKEN_MINUS_ASSIGN:        bin_op = "-";  break;
+            case TOKEN_STAR_ASSIGN:         bin_op = "*";  break;
+            case TOKEN_SLASH_ASSIGN:        bin_op = "/";  break;
+            case TOKEN_PERCENT_ASSIGN:      bin_op = "%";  break;
+            case TOKEN_LEFT_SHIFT_ASSIGN:   bin_op = "<<"; break;
+            case TOKEN_RIGHT_SHIFT_ASSIGN:  bin_op = ">>"; break;
+            case TOKEN_AMP_ASSIGN:          bin_op = "&";  break;
+            case TOKEN_CARET_ASSIGN:        bin_op = "^";  break;
+            default:                        bin_op = "|";  break;
+            }
+            ASTNode *binop = ast_new(AST_BINARY_OP, bin_op);
+            ast_add_child(binop, ast_clone(lhs));
+            ast_add_child(binop, rhs);
+            ast_add_child(assign, binop);
+        } else {
+            ast_add_child(assign, rhs);
+        }
         return assign;
     }
     return lhs;

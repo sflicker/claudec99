@@ -141,7 +141,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 78 (general postfix expression chaining):
+Through stage 79 (general lvalue compound assignment):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -334,9 +334,11 @@ Through stage 78 (general postfix expression chaining):
   `'\q'`, unterminated literals, and raw newline inside a literal)
   are rejected with diagnostic messages.
 - **Compound assignment operators**: `+=`, `-=`, `*=`, `/=`, `%=`,
-  `<<=`, `>>=`, `&=`, `^=`, `|=` on integer variables. Each
-  desugars to `a op= b` → `a = a op b`, so all arithmetic, shift,
-  and bitwise rules apply to the right-hand expression.
+  `<<=`, `>>=`, `&=`, `^=`, `|=` on any modifiable lvalue (struct/union member
+  access via `.` or `->`, array subscripts, pointer dereferences, and chains thereof).
+  Each desugars to `lhs op= rhs` → `lhs = lhs op rhs`, enabling expressions like
+  `p->cap *= 2`, `arr[i] += 2`, and `*p *= 2`, with all arithmetic, shift,
+  and bitwise rules applying to the right-hand expression.
 - **Arithmetic operators**: `+`, `-`, `*`, `/`, and `%` (remainder)
   on integer operands, with the usual `*`/`/`/`%` over `+`/`-`
   precedence and left-to-right associativity. `%` is integer-only:
@@ -408,7 +410,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 78 all tests pass (765 valid, 231 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1230 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 79 all tests pass (768 valid, 231 invalid, 71 integration, 43 print-AST, 99 print-tokens, 21 print-asm; 1233 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

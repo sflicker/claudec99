@@ -92,6 +92,7 @@ typedef struct ASTNode {
 
 ASTNode *ast_new(ASTNodeType type, const char *value);
 void ast_add_child(ASTNode *parent, ASTNode *child);
+ASTNode *ast_clone(ASTNode *node);
 void ast_free(ASTNode *node);
 
 #endif
