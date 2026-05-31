@@ -1,6 +1,6 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-05-30
+**Date:** 2026-05-31
 **Compiler:** `build/ccompiler`
 **Flags:** `--max-errors=0 -Iinclude -Itest/include`
 
@@ -8,250 +8,222 @@
 
 | Module | Result | Root cause category |
 |---|---|---|
-| `ast.c` | FAIL | B — postfix `++` on a member-access lvalue |
-| `ast_pretty_printer.c` | FAIL | A — `putchar` missing from `stdio.h` stub |
-| `codegen.c` | FAIL | B — duplicate `typedef ASTNode` (+ function-table capacity limit) |
-| `compiler.c` | FAIL | B — cascade of B gaps from `codegen.h`/`lexer.h`/`parser.h`/`util.h` |
-| `lexer.c` | FAIL | B — `const` struct member + `\xNN` hex escape |
-| `parser.c` | FAIL | B — cascade (`Lexer`/`Parser` undefined via `lexer.h`/`util.h`) |
-| `preprocessor.c` | FAIL | B — postfix/prefix `++`/`--` on lvalues, `\xNN` escape, string concatenation |
-| `type.c` | **PASS** | — |
-| `util.c` | FAIL | B — GNU `__attribute__` specifier |
-| `version.c` | **PASS** | — |
+| `ast.c` | FAIL | A — `stdlib.h` stub missing `calloc` |
+| `ast_pretty_printer.c` | FAIL | A — `stdio.h` stub missing `putchar` |
+| `codegen.c` | FAIL | B — idempotent typedef redefinition, multidimensional array member, `__attribute__`; capacity limit (max 64 functions) |
+| `compiler.c` | FAIL | B — cascades from `codegen.h`/`lexer.h`/`parser.h`/`util.h` (typedef redef, `const` member, `__attribute__`) |
+| `lexer.c` | FAIL | B — `const` struct member (`lexer.h`), `\x` hex escape |
+| `parser.c` | FAIL | B — `const` struct member (`lexer.h`), `__attribute__` (`util.h`) |
+| `preprocessor.c` | FAIL | B — adjacent string-literal concatenation, `\x` hex escape; capacity limit (max 64 functions) |
+| `type.c` | PASS | — |
+| `util.c` | FAIL | B — `__attribute__` specifier (`util.h` + definitions) |
+| `version.c` | PASS | — |
 
-**8 of 10 modules failed; 2 passed.**
-
-All failures trace to **6 distinct unimplemented language features (Category B)**
-plus **1 missing stub declaration (Category A)**. No failure is caused by an
-entirely missing system header — every needed header has a stub in
-`test/include/`.
+**8 modules failed, 2 passed.**
 
 ---
 
-## Category A — Missing stub system headers
+## Category A — Missing / incomplete stub system headers
 
-### `putchar` — incomplete `stdio.h` stub
+These are not compiler bugs. The header exists in `test/include/`, but the
+particular library function being called has no declaration in the stub, so the
+C99 rule against calling an undeclared function (no implicit declarations)
+fires correctly. The fix is to extend the stub.
+
+### `stdlib.h` — missing `calloc`
 
 ```
-error: call to undefined function 'putchar'
+src/ast.c: error: call to undefined function 'calloc'
 ```
 
-`test/include/stdio.h` exists, but it does **not** declare `putchar`.
-`src/ast_pretty_printer.c` calls `putchar` at lines 30, 137 and 158, so the
-compiler treats it as an implicit/undefined function and rejects the call.
-
-This is the only Category A issue, and it is a *missing declaration in an
-existing stub* rather than a wholly missing header. Adding
-
-```c
-int putchar(int c);
-```
-
-to `test/include/stdio.h` resolves `ast_pretty_printer.c` entirely (it has no
-other root-cause errors).
+The current stub declares only `malloc`, `realloc`, and `free`
+(`test/include/stdlib.h:7-9`). `src/ast.c` uses `calloc`, which is undeclared.
 
 | File:line | Call |
 |---|---|
-| `src/ast_pretty_printer.c:30` | `putchar(' ')` |
-| `src/ast_pretty_printer.c:137` | `putchar(b)` |
-| `src/ast_pretty_printer.c:158` | `putchar(b)` |
+| `src/ast.c` (first use) | `calloc(...)` |
+
+### `stdio.h` — missing `putchar`
+
+```
+src/ast_pretty_printer.c: error: call to undefined function 'putchar'
+```
+
+The stub declares `printf`, `fprintf`, `snprintf`, the `v*printf` family, etc.,
+but not `putchar`. `src/ast_pretty_printer.c` calls `putchar`.
+
+| File:line | Call |
+|---|---|
+| `src/ast_pretty_printer.c` (first use) | `putchar(...)` |
+
+> Note: once the stubs are extended these two modules should be revisited — each
+> error above is the *first* undefined-function diagnostic and the compiler
+> stops the pass at it, so further gaps may be hidden behind it.
 
 ---
 
 ## Category B — Language features not yet implemented
 
-### B1 — Postfix/prefix `++` / `--` on non-identifier lvalues — C99 §6.5.2.4, §6.5.3.1
+Each gap below was reproduced in isolation against `build/ccompiler` to confirm
+it is a genuine front-end rejection of valid C and not a cascade artifact.
 
-```
-error: postfix ++ requires an identifier
-error: prefix -- requires an identifier
-```
-
-The increment/decrement operators only accept a bare identifier operand. Any
-member-access or subscript lvalue (`p->len++`, `arr[i]++`, `--x->n`) is
-rejected. Each rejection cascades into a string of `expected type specifier`
-errors on the following lines of the same function.
-
-The root cause in `ast.c`:
-
-```c
-parent->children[parent->child_count++] = child;   /* ast.c:21 */
-```
-
-and in `preprocessor.c`:
-
-```c
-g->data[g->len++] = c;                              /* preprocessor.c:40 */
-```
-
-| File:line | Construct |
-|---|---|
-| `src/ast.c:21` | `parent->child_count++` |
-| `src/preprocessor.c:40` | `g->len++` |
-| `src/preprocessor.c:158` | postfix `++` on member |
-| `src/preprocessor.c:172` | prefix `--` on member |
-| `src/preprocessor.c:355` | postfix `--` on member |
-| `src/preprocessor.c:486, 735, 823, 844, 882, 907, 932, 967, 992, 1012, 1032, 1052` | postfix `++`/`--` on member/subscript |
-
-(Counts are root causes only; each spawns a cascade of `expected type
-specifier` errors that are omitted.)
-
-### B2 — `const` type qualifier on struct member declarations — C99 §6.7.3
+### B1 — `const` (type qualifier) in a declaration
 
 ```
 include/lexer.h:7:5: error: expected integer type, got 'const'
 ```
 
-A `const`-qualified member inside a struct is not accepted:
+The struct member `const char *source;` is rejected; the type-qualifier keyword
+`const` is not accepted where a type specifier is expected. Because this breaks
+the `Lexer` typedef, every subsequent `Lexer` reference cascades into
+`unknown type name 'Lexer'`.
 
-```c
-typedef struct {
-    const char *source;   /* lexer.h:7 — rejected */
-    ...
-} Lexer;
-```
+Isolated repro: `struct S { const char *p; };` →
+`error: expected integer type, got 'const'`.
 
-Because the `Lexer` struct fails to parse, every later reference to `Lexer`
-reports `unknown type name 'Lexer'`, which in turn breaks `Parser` (it holds a
-`Lexer *`). This single gap blocks `lexer.c`, `parser.c` and `compiler.c`.
+C99 §6.7.3 (type qualifiers).
 
-| File:line | Member |
-|---|---|
-| `include/lexer.h:7` | `const char *source;` |
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `include/lexer.h:7` | `const char *source;` | `lexer.c`, `parser.c`, `compiler.c` |
 
-Affected (transitively): `src/lexer.c`, `src/parser.c`, `src/compiler.c`.
-
-### B3 — GNU `__attribute__` specifier — (GNU extension; not C99)
+### B2 — `__attribute__` specifier
 
 ```
 include/util.h:22:1: error: expected type specifier
+src/util.c:14:1:    error: expected type specifier
 ```
 
-`util.h` decorates its declarations with `__attribute__`, which the compiler
-does not recognize as a declaration prefix:
+`__attribute__((...))` decorators (e.g. `noreturn`, `format(printf, …)`) are not
+recognized; the parser sees an unexpected token where a type specifier is
+expected and the following declaration/definition fails.
 
-```c
-__attribute__((noreturn, format(printf, 1, 2)))
-void compile_error(const char *fmt, ...);          /* util.h:22 */
-```
+Isolated repro: `__attribute__((noreturn)) void f(void);` →
+`error: expected type specifier`.
 
-| File:line | Attribute |
-|---|---|
-| `include/util.h:22` | `__attribute__((noreturn, format(printf,1,2)))` |
-| `include/util.h:26` | `__attribute__((noreturn, format(printf,4,5)))` |
-| `include/util.h:31` | `__attribute__((format(printf,4,5)))` |
+GCC extension (used throughout the codebase; not strict C99).
 
-Affected (transitively): `src/util.c`, `src/parser.c`, `src/codegen.c`,
-`src/compiler.c`.
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `include/util.h:22,26,31` | function-decl attributes | `util.c`, `parser.c`, `compiler.c`, `codegen.c` |
+| `src/util.c:14,28,37` | function-def attributes | `util.c` |
 
-### B4 — Redundant `typedef` of the same name in the same scope — C99 §6.7 (permitted in C11 §6.7p3)
+### B3 — Idempotent (redundant) typedef redefinition
 
 ```
 include/codegen.h:94:1: error: duplicate typedef 'ASTNode' in this scope
 ```
 
-`ast.h` (pulled in by `codegen.h`) already defines
+`typedef struct ASTNode ASTNode;` is rejected because `ASTNode` was already
+typedef'd (via `ast.h`). Redefining a typedef to the *same* type is permitted in
+C11 §6.7/3 but is a constraint violation in C99; the codebase relies on the C11
+behavior. After this error the rest of `codegen.h` mis-parses (`SwitchCtx`,
+`CodeGen` cascades).
 
-```c
-typedef struct ASTNode { ... } ASTNode;            /* ast.h:64 */
-```
+Isolated repro: `typedef struct N N; typedef struct N N;` →
+`error: duplicate typedef 'N' in this scope`.
 
-and `codegen.h` repeats the forward form:
+C11 §6.7/3 (used as an extension over C99).
 
-```c
-typedef struct ASTNode ASTNode;                    /* codegen.h:94 */
-```
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `include/codegen.h:94` | `typedef struct ASTNode ASTNode;` | `codegen.c`, `compiler.c` |
 
-The compiler rejects the second, identical typedef. The failure aborts parsing
-of the rest of `codegen.h`, so the following `SwitchCtx`/`CodeGen` structs are
-never registered → the long cascade of `unknown type name 'CodeGen'` /
-`unknown type name 'SwitchCtx'` in `codegen.c` and `compiler.c`.
-
-| File:line | Construct |
-|---|---|
-| `include/codegen.h:94` | `typedef struct ASTNode ASTNode;` |
-
-Affected (transitively): `src/codegen.c`, `src/compiler.c`.
-
-### B5 — `\xNN` hex escape sequences — C99 §6.4.4.4
+### B4 — Multidimensional array declarator
 
 ```
-error: invalid escape sequence in character literal
-error: invalid escape sequence in string literal
+include/codegen.h:121:25: error: expected ';', got '[' ('[')
 ```
 
-The lexer rejects hexadecimal escape sequences in both character and string
-literals. The codebase uses `\x01` as an internal source-location marker:
+The member `char user_labels[MAX_USER_LABELS][256];` is rejected at the *second*
+`[`: the declarator parser handles one array dimension but not a second.
 
-```c
-if (c == '\x01') { ... }                            /* lexer.c:100 (char) */
-snprintf(buf, n, "\x01" "1:%s\n", include_path);    /* preprocessor.c:1382 (string) */
-```
+Isolated repro: `struct S { char m[4][8]; };` →
+`error: expected ';', got '[' ('[')`.
 
-| File:line | Literal |
-|---|---|
-| `src/lexer.c:67, 69, 100` | `'\x01'` (character) |
-| `src/preprocessor.c:1382, 1393` | `"\x01"` (string) |
+C99 §6.7.5.2 (array declarators).
 
-### B6 — Adjacent string-literal concatenation — C99 §6.4.5
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `include/codegen.h:121` | `char user_labels[...][256];` | `codegen.c`, `compiler.c` |
+
+### B5 — Adjacent string-literal concatenation
 
 ```
 src/preprocessor.c:604:33: error: expected ')', got string literal
 ```
 
-Two string-literal tokens written next to each other are not concatenated into
-one; after the first literal the parser expects `)` or `,` and instead finds a
-second string:
+Two adjacent string literals (here a multi-line `fprintf` format split across
+source lines) are not concatenated into one; after the first literal the parser
+expects the closing `)` and trips on the second literal.
 
-```c
-fprintf(stderr,
-        "error: argument count mismatch for macro '%.*s':"
-        " expected %s%d, got %d\n",                 /* preprocessor.c:603-604 */
-        ...);
-```
+Isolated repro: `char *p = "abc" "def";` →
+`error: expected ';', got string literal ('def')`.
 
-| File:line | Construct |
-|---|---|
-| `src/preprocessor.c:603-604` | adjacent `"..."` `"..."` |
+C99 §6.4.5 (string literal concatenation).
 
-(The `"\x01" "1:%s\n"` forms at `preprocessor.c:1382/1393` are also adjacent
-concatenations, but the `\x` escape — B5 — is reported first there.)
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `src/preprocessor.c:604` | split `fprintf` format string | `preprocessor.c` |
 
-### Note — compiler capacity limit (not a language gap)
+### B6 — `\x` hexadecimal escape sequence
 
 ```
-src/codegen.c:983:70: error: too many functions (max 64)
+src/lexer.c:        error: invalid escape sequence in character literal
+src/preprocessor.c: error: invalid escape sequence in string literal
+```
+
+The hex escape `\x01` (used for the preprocessor's enter/return file markers) is
+rejected in both character and string literals.
+
+Isolated repro: `char c = '\x01';` →
+`error: invalid escape sequence in character literal`.
+
+C99 §6.4.4.4 (character constants / hexadecimal-escape-sequence).
+
+| File:line | Construct | Affected modules |
+|---|---|---|
+| `src/lexer.c:100` | `c == '\x01'` | `lexer.c` |
+| `src/preprocessor.c:1382,1393` | `"\x01" "..."` | `preprocessor.c` |
+
+### B7 — Compiler capacity limit: `too many functions (max 64)`
+
+```
+src/codegen.c:983:70:      error: too many functions (max 64)
 src/preprocessor.c:1068:70: error: too many functions (max 64)
 ```
 
-`codegen.c` and `preprocessor.c` exceed a fixed internal table size of 64
-functions per translation unit. This is a compiler **capacity** limit, not an
-unimplemented C99 feature, but it would block these two modules even after the
-B-category gaps are closed. Raising the function-table bound is required for
-full self-compilation.
+Not a C99 feature gap but a fixed front-end table size: the compiler caps a
+translation unit at 64 functions. `codegen.c` and `preprocessor.c` exceed it.
+This limit must be raised (or made dynamic) for self-compilation of the larger
+modules even after B1–B6 are fixed.
+
+| File:line | Affected modules |
+|---|---|
+| `src/codegen.c:983, 1003, 3935, 3949, 3995, 4089` | `codegen.c` |
+| `src/preprocessor.c:1068` | `preprocessor.c` |
 
 ---
 
 ## Successful compilation
 
-| Module | Why it compiled |
+| Module | Why it succeeded |
 |---|---|
-| `src/type.c` | Includes only `type.h`/`ast.h` (no `lexer.h`, `util.h`, `codegen.h`), declares no `const` members, uses no `\x` escapes or string concatenation, and increments only plain identifiers. → `type.asm` |
-| `src/version.c` | Tiny module with no problematic constructs and no headers carrying B-category gaps. → `version.asm` |
-
-Both produced assembly output and exited 0.
+| `type.c` | Includes only `stddef.h`, `stdio.h`, `stdlib.h`, and `type.h`. None of those headers use `const` members, `__attribute__`, redundant typedefs, or multidimensional members, and the module itself stays within the 64-function cap and uses no `\x` escapes or adjacent-literal concatenation. |
+| `version.c` | Trivial module including only `version.h` and `stdio.h`; exercises none of the gap features. |
 
 ---
 
 ## Feature gap summary
 
-| Gap | C99 section | Affected modules |
+| Gap | C99/C11 section | Affected modules |
 |---|---|---|
-| Postfix/prefix `++`/`--` on member/subscript lvalues | §6.5.2.4, §6.5.3.1 | `ast.c`, `preprocessor.c` |
-| `const` qualifier on struct member declarations | §6.7.3 | `lexer.c`, `parser.c`, `compiler.c` |
-| GNU `__attribute__` specifier | (GNU ext.) | `util.c`, `parser.c`, `codegen.c`, `compiler.c` |
-| Redundant `typedef` of same name in same scope | §6.7 (C11 §6.7p3) | `codegen.c`, `compiler.c` |
-| `\xNN` hex escape sequences | §6.4.4.4 | `lexer.c`, `preprocessor.c` |
-| Adjacent string-literal concatenation | §6.4.5 | `preprocessor.c` |
-| *(capacity)* function table `max 64` | — | `codegen.c`, `preprocessor.c` |
-| *(stub)* `putchar` declaration | — (Category A) | `ast_pretty_printer.c` |
+| A: `calloc` missing from `stdlib.h` stub | — (stub) | `ast.c` |
+| A: `putchar` missing from `stdio.h` stub | — (stub) | `ast_pretty_printer.c` |
+| B1: `const` type qualifier in declarations | C99 §6.7.3 | `lexer.c`, `parser.c`, `compiler.c` |
+| B2: `__attribute__` specifier | GCC ext. | `util.c`, `parser.c`, `compiler.c`, `codegen.c` |
+| B3: idempotent typedef redefinition | C11 §6.7/3 | `codegen.c`, `compiler.c` |
+| B4: multidimensional array declarator | C99 §6.7.5.2 | `codegen.c`, `compiler.c` |
+| B5: adjacent string-literal concatenation | C99 §6.4.5 | `preprocessor.c` |
+| B6: `\x` hexadecimal escape sequence | C99 §6.4.4.4 | `lexer.c`, `preprocessor.c` |
+| B7: capacity limit — max 64 functions/TU | — (limit) | `codegen.c`, `preprocessor.c` |
