@@ -1586,6 +1586,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (node->child_count == 2 &&
             node->children[0]->type == AST_ARRAY_INDEX) {
             Type *element = emit_array_index_addr(cg, node->children[0]);
+            /* Stage 82-02: reject write through a const-qualified element type
+             * (e.g. s.p[i] = v where const char *p is a struct member). */
+            if (element->is_const) {
+                compile_error(
+                        "error: assignment through pointer to const-qualified type\n");
+            }
             int sz = type_size(element);
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
