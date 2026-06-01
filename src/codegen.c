@@ -489,6 +489,21 @@ static void emit_store_global(CodeGen *cg, const char *name, int size,
 
 static void codegen_expression(CodeGen *cg, ASTNode *node);
 
+/* Stage 86: record the source position of the node currently being compiled
+ * so a subsequent plain compile_error() can prefix file:line:col. Called at
+ * the entry of the codegen dispatchers and from anywhere with a more precise
+ * node in hand; the most recently marked position wins, which is the deepest
+ * node reached before an error fires. Nodes without position (src_line == 0,
+ * e.g. compiler-synthesised nodes) are ignored so the nearest known position
+ * is retained. */
+static void cg_mark(const ASTNode *node) {
+    if (node && node->src_line > 0) {
+        g_error_src_file = node->src_file;
+        g_error_src_line = node->src_line;
+        g_error_src_col  = node->src_col;
+    }
+}
+
 /* Stage 78: forward declarations needed because emit_array_index_addr calls
  * emit_member_addr / emit_arrow_addr which are defined later in the file. */
 static StructField *find_struct_field(Type *st, const char *name);
@@ -1487,6 +1502,7 @@ static void codegen_inc_dec_general(CodeGen *cg, ASTNode *node) {
 }
 
 static void codegen_expression(CodeGen *cg, ASTNode *node) {
+    cg_mark(node);
     if (node->type == AST_INT_LITERAL) {
         if (node->decl_type == TYPE_LONG ||
             node->decl_type == TYPE_LONG_LONG ||
@@ -3229,6 +3245,7 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
         int foffset = base_offset - f->offset;
         int fsize   = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
         ASTNode *elem = list->children[i];
+        cg_mark(elem);
 
         if (f->kind == TYPE_STRUCT && f->full_type &&
             elem->type == AST_INITIALIZER_LIST) {
@@ -3260,6 +3277,7 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
 }
 
 static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
+    cg_mark(node);
     if (node->type == AST_DECLARATION) {
         /* Duplicate check limited to the current scope only — shadowing is allowed. */
         for (int i = cg->scope_start; i < cg->local_count; i++) {
