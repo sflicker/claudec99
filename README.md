@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 83 (project source converted to strict ISO C99):
+Through stage 84 (standard C stream pointers):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -209,7 +209,7 @@ Through stage 83 (project source converted to strict ISO C99):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, and `putchar`), `stddef.h`,
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, and `putchar`), `stddef.h`,
     `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
@@ -477,7 +477,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 82-05 all tests pass (787 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1259 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 84 all tests pass (788 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1260 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

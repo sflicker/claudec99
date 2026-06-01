@@ -66,6 +66,8 @@ typedef struct {
      * initializer-list (array/pointer-array cases). Points into the AST,
      * which outlives codegen_translate_unit. */
     struct ASTNode *init_node;
+    /* Stage 84: set for extern-only object declarations (no storage here). */
+    int is_extern;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

@@ -4071,6 +4071,7 @@ static int tu_has_definition_for(ASTNode *tu, const char *name) {
  * of the same name collapse to a single `extern` line.
  */
 static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
+    /* Extern function declarations */
     for (int i = 0; i < tu->child_count; i++) {
         ASTNode *c = tu->children[i];
         if (c->type != AST_FUNCTION_DECL) continue;
@@ -4088,6 +4089,11 @@ static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
         }
         if (already_emitted) continue;
         fprintf(cg->output, "extern %s\n", c->value);
+    }
+    /* Stage 84: extern object declarations (e.g. stdin/stdout/stderr) */
+    for (int i = 0; i < cg->global_count; i++) {
+        if (cg->globals[i].is_extern)
+            fprintf(cg->output, "extern %s\n", cg->globals[i].name);
     }
 }
 
@@ -4138,6 +4144,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->is_const = decl->is_const;
     gv->is_unsigned = decl->is_unsigned;
     gv->init_node = NULL;
+    gv->is_extern = (decl->storage_class == SC_EXTERN);
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {
@@ -4271,13 +4278,13 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
 static void codegen_emit_data(CodeGen *cg) {
     int has_data = 0;
     for (int i = 0; i < cg->global_count; i++) {
-        if (cg->globals[i].is_initialized) { has_data = 1; break; }
+        if (cg->globals[i].is_initialized && !cg->globals[i].is_extern) { has_data = 1; break; }
     }
     if (!has_data) return;
     fprintf(cg->output, "section .data\n");
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
-        if (!gv->is_initialized) continue;
+        if (!gv->is_initialized || gv->is_extern) continue;
 
         if (gv->init_node && gv->kind == TYPE_ARRAY &&
             gv->init_node->type == AST_STRING_LITERAL) {
@@ -4393,14 +4400,14 @@ static void codegen_emit_data(CodeGen *cg) {
 static void codegen_emit_bss(CodeGen *cg) {
     int has_bss = 0;
     for (int i = 0; i < cg->global_count; i++) {
-        if (!cg->globals[i].is_initialized) { has_bss = 1; break; }
+        if (!cg->globals[i].is_initialized && !cg->globals[i].is_extern) { has_bss = 1; break; }
     }
     if (!has_bss) return;
 
     fprintf(cg->output, "section .bss\n");
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
-        if (gv->is_initialized) continue;
+        if (gv->is_initialized || gv->is_extern) continue;
         if (gv->kind == TYPE_ARRAY && gv->full_type) {
             fprintf(cg->output, "%s: %s %d\n",
                     gv->name,
@@ -4458,13 +4465,10 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
         for (int i = 0; i < node->child_count; i++) {
             ASTNode *child = node->children[i];
             if (child->type == AST_DECLARATION) {
-                if (child->storage_class != SC_EXTERN)
-                    codegen_add_global(cg, child);
+                codegen_add_global(cg, child);
             } else if (child->type == AST_DECL_LIST) {
                 for (int j = 0; j < child->child_count; j++) {
-                    ASTNode *d = child->children[j];
-                    if (d->storage_class != SC_EXTERN)
-                        codegen_add_global(cg, d);
+                    codegen_add_global(cg, child->children[j]);
                 }
             }
         }

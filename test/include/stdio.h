@@ -7,6 +7,10 @@
 
 typedef struct FILE FILE;
 
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
+
 #define EOF (-1)
 
 int puts(const char *);
