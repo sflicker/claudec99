@@ -42,6 +42,9 @@ ASTNode *ast_clone(ASTNode *node) {
     copy->is_const = node->is_const;
     copy->is_unsigned = node->is_unsigned;
     copy->is_variadic = node->is_variadic;
+    copy->src_file = node->src_file;
+    copy->src_line = node->src_line;
+    copy->src_col = node->src_col;
     for (int i = 0; i < node->child_count; i++) {
         ast_add_child(copy, ast_clone(node->children[i]));
     }

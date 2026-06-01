@@ -10,6 +10,11 @@ jmp_buf g_error_jmp;
 int     g_error_jmp_valid = 0;
 int     g_warnings_are_errors = 0;
 
+/* Stage 86: position of the construct currently being compiled (see util.h). */
+const char *g_error_src_file = NULL;
+int         g_error_src_line = 0;
+int         g_error_src_col  = 0;
+
 /* Core error-reporting logic shared by compile_error and compile_error_at. */
 CC_NORETURN
 static void do_compile_error(const char *fmt, va_list ap) {
@@ -24,9 +29,15 @@ static void do_compile_error(const char *fmt, va_list ap) {
     exit(1);
 }
 
-/* Report a compilation error without source position. */
+/* Report a compilation error. When codegen has stamped a position via the
+ * g_error_src_* globals (set from the AST node currently being compiled),
+ * the message is prefixed with file:line:col so semantic errors carry the
+ * same position info parser errors do. */
 CC_NORETURN
 void compile_error(const char *fmt, ...) {
+    if (g_error_src_file && g_error_src_line > 0)
+        fprintf(stderr, "%s:%d:%d: ", g_error_src_file,
+                g_error_src_line, g_error_src_col);
     va_list ap;
     va_start(ap, fmt);
     do_compile_error(fmt, ap);
