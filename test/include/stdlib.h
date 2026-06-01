@@ -8,4 +8,5 @@ void *malloc(size_t);
 void *realloc(void *, size_t);
 void *calloc(size_t nmemb, size_t size);
 void free(void *);
+void exit(int status);
 #endif
