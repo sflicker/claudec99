@@ -1,231 +1,303 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-05-31
-**Compiler:** `build/ccompiler` (version 00.01.00840000, stage-84)
+**Compiler:** `build/ccompiler`
 **Flags:** `--max-errors=0 -Iinclude -Itest/include`
+
+Each `src/*.c` file was compiled independently, in alphabetical order, with:
+
+```
+build/ccompiler --max-errors=0 -Iinclude -Itest/include src/<module>.c
+```
+
+No configurable limits (`MAX_FUNCTIONS`, etc.) were hit, so no `-D` overrides
+were needed.
 
 ## Summary
 
 | Module | Result | Root cause category |
 |---|---|---|
-| `ast.c` | FAIL | A — `exit` not declared in `stdlib.h` stub |
-| `ast_pretty_printer.c` | FAIL | B — array-typed struct member doesn't decay to pointer |
-| `codegen.c` | FAIL | B — 2D array declaration in `codegen.h` |
-| `compiler.c` | FAIL | B — 2D array declaration in `codegen.h` (transitive) |
-| `lexer.c` | FAIL | B — `\xNN` hex escape sequences not supported |
-| `parser.c` | FAIL | B — adjacent string literal concatenation not supported |
-| `preprocessor.c` | FAIL | B — adjacent string literal concatenation not supported |
-| `type.c` | **PASS** | — |
-| `util.c` | FAIL | A — `exit` not declared in `stdlib.h` stub |
-| `version.c` | **PASS** | — |
+| `ast.c` | FAIL | A — stub gap: `strncpy` not declared in `string.h` stub |
+| `ast_pretty_printer.c` | PASS | — |
+| `codegen.c` | FAIL | B — multidimensional array member in `codegen.h` |
+| `compiler.c` | FAIL | B — same `codegen.h` multidimensional array member |
+| `lexer.c` | FAIL | B — `\x` hex escape in a character literal |
+| `parser.c` | FAIL | B — adjacent string-literal concatenation |
+| `preprocessor.c` | FAIL | B — adjacent string-literal concatenation |
+| `type.c` | PASS | — |
+| `util.c` | FAIL¹ | B — **compiler crash (segfault)** on a file-scope array-typedef variable — **root cause fixed** (see B4) |
+| `version.c` | PASS | — |
 
-**2 passed, 8 failed**
+**3 passed, 7 failed.**
+
+¹ The `util.c` segfault was traced to its root cause and fixed during this
+investigation (see B4). After the fix, `util.c` no longer crashes the compiler;
+it now stops with an ordinary Category-A diagnostic (`fseek` not declared in the
+`stdio.h` stub). The result above reflects the pre-fix run that produced this
+report.
 
 ---
 
-## Category A — Missing stub system headers
+## Category A — Missing / incomplete stub system headers
 
-### A.1 — `exit()` not declared in `test/include/stdlib.h`
+### `string.h` stub is missing several declarations
 
-The stub `test/include/stdlib.h` exists but only declares `malloc`, `realloc`,
-`calloc`, and `free`. The `exit()` function (C99 §7.20.4.3) is absent.
-The compiler therefore reports `error: call to undefined function 'exit'`
-for any module that calls it.
+The bundled `test/include/string.h` declares only:
 
-**Directly blocked modules:**
+```
+strcmp, strlen, memcpy, memset, memcmp, strchr
+```
 
-| Module | Error |
+The project source uses additional standard `<string.h>` functions that have
+**no declaration** in the stub, so the compiler reports them as undefined:
+
+```
+src/ast.c:14:19: error: call to undefined function 'strncpy'
+```
+
+Functions used in `src/` but absent from the stub:
+
+| Function | Used in (examples) |
 |---|---|
-| `ast.c` | `error: call to undefined function 'exit'` |
-| `util.c` | `error: call to undefined function 'exit'` |
+| `strncpy` | `ast.c:14`, `parser.c:1107` |
+| `strncat` | `util.c:107` |
+| `strncmp` | several modules |
+| `strcpy`  | several modules |
+| `strrchr` | `util.c:103` |
 
-**Secondarily blocked (blocked by a B-category error first, but would also
-fail here once that is fixed):**
+This is **not a compiler bug** — the stub header simply hasn't been extended
+with these prototypes yet. Note this is a *missing declaration in an existing
+stub*, not an `include file not found` error (the header file itself resolves).
 
-| Module | Notes |
-|---|---|
-| `preprocessor.c` | Calls `exit(1)` in several error paths |
+`ast.c` is the only module whose *first / dominant* error is this stub gap; it
+parses fully and then fails the semantic "undefined function" check. In
+`parser.c` and `util.c` an earlier parse error or codegen crash (Category B)
+fires first, so their `strncpy`/`strncat` usages never reach the semantic
+stage.
 
-**Fix:** Add `void exit(int);` (and optionally `void abort(void);`) to
-`test/include/stdlib.h`.
+**Fix:** add the missing prototypes to `test/include/string.h`.
 
 ---
 
 ## Category B — Language features not yet implemented
 
-### B.1 — 2D array declarations (`T name[M][N]`)
+### B1 — Multidimensional (2-D) array declarators
 
-`include/codegen.h:113` declares:
+`include/codegen.h:113` declares a 2-D array struct member:
 
 ```c
 char user_labels[MAX_USER_LABELS][MAX_NAME_LEN];
 ```
 
-The compiler does not support multi-dimensional array declarations (arrays
-of arrays). Parsing fails at the second `[`, producing:
+After parsing the first `[…]` dimension the parser expects the member to end:
 
 ```
 include/codegen.h:113:25: error: expected ';', got '[' ('[')
 ```
 
-Because the `CodeGen` struct definition is incomplete, every subsequent
-declaration or use of `CodeGen` cascades into `error: unknown type name 'CodeGen'`.
-
-**Directly blocked modules:**
-
-| Module | Root error location |
-|---|---|
-| `codegen.c` | `include/codegen.h:113` — includes codegen.h directly |
-| `compiler.c` | `include/codegen.h:113` — includes codegen.h transitively |
-
-The cascade produces 43 `unknown type name 'CodeGen'` errors in `codegen.c`
-and 9 errors in `compiler.c` after the single root failure.
-
----
-
-### B.2 — Adjacent string literal concatenation (`"str1" "str2"`)
-
-C99 §6.4.5 requires that adjacent string literal tokens be concatenated into
-a single token before parsing. The compiler does not implement this; each
-literal is treated as a separate expression.
-
-The pattern appears in `PARSER_ERROR`/`compile_error` macro call sites where
-long error strings are split across lines for readability, e.g.:
+Both `MAX_USER_LABELS` (64) and `MAX_NAME_LEN` (256) are defined in
+`include/constants.h`, so this is genuinely a missing language feature, not an
+undefined macro. Minimal reproducer:
 
 ```c
-// parser.c lines 1136-1138
+struct S { char m[4][8]; };   // error: expected ';', got '['
+```
+
+Because the failure is in the shared header `codegen.h`, every translation
+unit that includes it is blocked. The single root-cause error cascades into a
+long run of `expected type specifier` / `unknown type name 'CodeGen'` errors
+(the parser loses the `CodeGen` typedef once the struct body fails).
+
+| File | First error |
+|---|---|
+| `codegen.h:113` | `expected ';', got '['` (root cause) |
+| `codegen.c` | inherits via `#include "codegen.h"` (cascade from line 154 on) |
+| `compiler.c` | inherits via `#include "codegen.h"` (cascade from line 154 on) |
+
+C99 §6.7.5.2 (array declarators), §6.5.2.1 (subscripting).
+
+### B2 — Adjacent string-literal concatenation
+
+C99 concatenates adjacent string literals into one. The compiler does not, so
+a split format string inside a call is read as two arguments and the call's
+`)` is never matched:
+
+```c
 PARSER_ERROR(parser,
         "error: too many parameters in function pointer"
         " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
 ```
 
-After macro expansion, the compiler encounters two string literal tokens where
-it expects one argument, producing:
-
 ```
-src/parser.c:1094:37: error: expected ')', got string literal (' type (max %d)\n')
+src/parser.c:1108:37: error: expected ')', got string literal (' type (max %d)\n')
+src/preprocessor.c:603:33: error: expected ')', got string literal (' expected %s%d, got %d\n')
 ```
 
-Similarly in `preprocessor.c`:
+Minimal reproducer:
+
 ```c
-// preprocessor.c lines 601-603
-fprintf(stderr,
-        "error: argument count mismatch for macro '%.*s':"
-        " expected %s%d, got %d\n", ...);
+fprintf(stderr, "abc" "def\n");   // error: expected ')', got string literal
 ```
 
-```
-src/preprocessor.c:603:33: error: expected ')', got string literal (...)
-```
+This single parse failure produces the large cascade of `expected type
+specifier` errors that follows in both files.
 
-**Note:** `codegen.c` also uses adjacent string literals (line 3134), but is
-blocked earlier by the 2D-array failure (B.1).
-
-**Directly blocked modules (first error):**
-
-| Module | First error location |
+| File | First error line |
 |---|---|
-| `parser.c` | `parser.c:1094` (macro-expanded from lines 1136–1138) |
-| `preprocessor.c` | `preprocessor.c:603` |
+| `parser.c` | `1108` (cascades through 1170+, again at 2830+) |
+| `preprocessor.c` | `603` (cascades through 689+) |
 
----
+C99 §6.4.5 (string literals — translation phase 6).
 
-### B.3 — Hex escape sequences (`\xNN`) not supported
+### B3 — Hex escape sequences in character literals
 
-C99 §6.4.4.4 requires hexadecimal escape sequences of the form `\xNN` in
-character and string literals. The compiler only handles the named simple
-escapes (`\n`, `\t`, `\r`, `\\`, `\"`, `\'`, `\a`, `\b`, `\f`, `\v`, `\?`, `\0`)
-and rejects `\x` with:
+`lexer.c` uses `'\x01'` (the in-band include-boundary marker). The compiler's
+own character-literal lexer has a `switch` on the escape char that handles
+`\a \b \f \n \r \t \v \\ \' \" \? \0` but has no `\x` (hex) case, so it falls
+through to its `default` and aborts:
 
 ```
 error: invalid escape sequence in character literal
 ```
 
-`lexer.c` uses `'\x01'` as a sentinel byte (the location marker injected by
-the preprocessor at `#include` boundaries). E.g.:
+(No file:line is attached because this is emitted by the lexer's own
+`fprintf(stderr, …); exit(1)` path rather than a positioned diagnostic.)
+
+Affected: `src/lexer.c` (e.g. lines 68, 101 — `'\x01'`).
+
+C99 §6.4.4.4 (character constants — hexadecimal-escape-sequence).
+
+### B4 — Compiler crash (segfault) on a file-scope array-typedef variable
+
+`util.c` does **not** produce a diagnostic — `build/ccompiler` terminates with
+SIGSEGV (exit 139) and no output. This is a codegen crash, not a clean
+rejection, and reproduces deterministically.
+
+Bisection pinned it to the error-recovery globals plus `do_compile_error`,
+and minimisation reduced it to **a reference to a file-scope (global) variable
+whose type is an array typedef**. In `util.c` that is:
 
 ```c
-// lexer.c:101
-if (c == '\x01') { ...
+jmp_buf g_error_jmp;          // util.h: typedef long jmp_buf[32];
+...
+longjmp(g_error_jmp, 1);      // any use of g_error_jmp triggers the crash
 ```
 
-`preprocessor.c` also uses `"\x01"` (in a string literal) as the prefix of
-that same marker. `preprocessor.c` is blocked by B.2 first, but would also
-fail here once B.2 is fixed.
-
-**Directly blocked modules (first error):**
-
-| Module | Error | Location |
-|---|---|---|
-| `lexer.c` | `invalid escape sequence in character literal` | `lexer.c:101` |
-
-**Secondarily blocked (blocked by B.2 first):**
-
-| Module | Notes |
-|---|---|
-| `preprocessor.c` | Uses `"\x01"` string literal at lines 1381, 1392 |
-
----
-
-### B.4 — Array-typed struct member does not decay to pointer
-
-C99 §6.3.2.1 requires that an array lvalue decays to a pointer to its first
-element in most expression contexts, including function-call arguments. The
-compiler does not apply this decay when the array is accessed as a struct
-member via `.` or `->`.
-
-When `node->value` (where `value` is `char value[MAX_NAME_LEN]` in `ASTNode`)
-is passed to a function expecting `const char *`, the compiler reports:
-
-```
-error: function 'operator_name' parameter 'op' expected pointer argument, got integer
-```
-
-The compiler resolves the member type as `char` (the element type) instead of
-`char *` (the decayed pointer), classifying it as an integer argument.
-
-The same failure reproduces with dot access (`n.value`):
+Minimal reproducers (3 lines each):
 
 ```c
-// ast_pretty_printer.c:168
-printf("Binary: %s\n", operator_name(node->value));
+typedef long buf_t[32];
+buf_t jb;
+void f(void) { jb[0] = 1; }   // SIGSEGV
 ```
 
-**Directly blocked modules:**
+```c
+typedef long buf_t[32];
+buf_t jb;
+long *f(void) { return jb; }  // SIGSEGV (array-to-pointer decay of the global)
+```
 
-| Module | Error location |
+Boundary analysis — what does **not** crash:
+
+| Variant | Result |
 |---|---|
-| `ast_pretty_printer.c` | Call sites at lines 168, 171, 231, 234 |
+| `typedef long buf_t[32]; buf_t jb;` declared but **never referenced** | OK |
+| Same typedef as a **local** variable, then used (`buf_t jb; g(jb);`) | OK |
+| Plain (non-typedef) **global** array `long arr[32];` used as an argument | OK |
+| **Global** array-typedef variable **referenced** in any function body | **SIGSEGV** |
 
-**Other modules blocked once prior issues are fixed:** `parser.c` and
-`preprocessor.c` (and others) use `name.value` / `token->value` patterns
-extensively; the same array-member-decay gap would surface after B.1–B.3 are
-resolved.
+So the crash needs all three of: (1) file-scope storage, (2) the array type
+introduced through a *typedef*, and (3) at least one *use* of the variable in a
+function body. Codegen appears to dereference a null symbol/type record when
+resolving a global whose declared type is an array typedef (plain global arrays
+and local array-typedef vars take a different, working path).
+
+This is the most serious finding: it is a **compiler crash**, not an
+unimplemented-feature diagnostic, and `setjmp`/`longjmp`-based error recovery
+in `util.c` cannot self-compile until it is fixed.
+
+Affected: `src/util.c` (`g_error_jmp`, used in `src/util.c:30` via `longjmp`).
+
+#### Root cause (traced) and fix
+
+A `gdb` backtrace put the fault at `src/codegen.c:719`, in
+`emit_array_index_addr`:
+
+```c
+if (gv->kind == TYPE_ARRAY) {
+    element = gv->full_type->base;   /* gv->full_type == NULL  → SIGSEGV */
+```
+
+The global's `kind` was `TYPE_ARRAY` but its `full_type` was `NULL`.
+`codegen_add_global` copies that field straight from the AST
+(`gv->full_type = decl->full_type;`), so the real defect is upstream in the
+**parser**.
+
+`parse_external_declaration` (file-scope) had branches for `TYPE_POINTER`,
+`TYPE_STRUCT`, and `TYPE_UNION` but **no `TYPE_ARRAY` branch** — whereas the
+block-scope (local) declaration parser does (`src/parser.c:2548`). That
+asymmetry is exactly why a `buf_t jb;` *local* compiled while the *global*
+crashed.
+
+For a variable declared through an array typedef the declarator carries no
+`[...]`, so `d.is_array` is false and the `d.is_array` block (which builds and
+attaches the array `full_type`) is skipped. The array-ness comes only from
+`base_kind == TYPE_ARRAY`, which fell through to the scalar `else`:
+
+```c
+} else {
+    decl->decl_type = base_kind;                /* = TYPE_ARRAY            */
+    decl->is_unsigned = !base_type->is_signed;  /* arrays aren't signed →  */
+}                                               /* spurious "unsigned";    */
+                                                /* full_type NEVER set     */
+```
+
+This is visible in the pre-fix AST as `VariableDeclaration: unsigned array jb`
+(no `[32]`, plus a bogus `unsigned` flag) versus the local form
+`VariableDeclaration: long jb[32]`.
+
+**Fix** — add the missing array branch in `parse_external_declaration`,
+mirroring the block-scope path (`full_type` is already the array `Type*`
+returned by `parse_type_specifier`):
+
+```c
+} else if (base_kind == TYPE_ARRAY) {
+    decl->decl_type = TYPE_ARRAY;
+    decl->full_type = full_type;
+}
+```
+
+**Verification:**
+
+- AST now resolves correctly: `VariableDeclaration: long jb[32]`.
+- All three minimal reproducers above exit 0.
+- `util.c` no longer segfaults; it now stops with an ordinary diagnostic
+  (`error: call to undefined function 'fseek'` — a Category-A stub gap).
+- Full test suite: **1263 passed, 0 failed** (no regression; plain non-typedef
+  array globals were never affected, since their `full_type` is built in the
+  `d.is_array` block).
 
 ---
 
 ## Successful compilation
 
-### `type.c` — PASS
+| Module | Why it compiled |
+|---|---|
+| `ast_pretty_printer.c` | Uses only already-supported syntax; its `string.h` needs (`strchr`, `strlen`) are present in the stub, and it has no 2-D arrays, literal concatenation, hex char escapes, or array-typedef globals. |
+| `type.c` | Same — stays within the supported C subset and the available stub declarations. |
+| `version.c` | Tiny generated/static module with no problematic constructs. |
 
-`type.c` uses only basic scalar variables, pointer operations, struct member
-access, and simple control flow. It has no calls to `exit`, no multi-dimensional
-arrays, no hex escape sequences, and no adjacent string literals. All
-dependencies (`type.h`, `stddef.h`) are available via the project include paths.
-
-### `version.c` — PASS
-
-`version.c` uses only `snprintf` (declared in `stdio.h` stub) and a simple
-`if`/`else` branch. It has no dependency on any unsupported feature.
+These three confirm the toolchain end-to-end (lex → parse → codegen → `.asm`
+emission) works for the subset of C99 they use.
 
 ---
 
 ## Feature gap summary
 
-| Gap | C99 section | Affected modules (direct) |
+| Gap | C99 section | Affected modules |
 |---|---|---|
-| `exit()` missing from `stdlib.h` stub | §7.20.4.3 | `ast.c`, `util.c` |
-| 2D array declarations (`T a[M][N]`) | §6.7.5.2 | `codegen.c`, `compiler.c` |
-| Adjacent string literal concatenation | §6.4.5 | `parser.c`, `preprocessor.c` |
-| Hex escape sequences (`\xNN`) | §6.4.4.4 | `lexer.c` |
-| Array member access decay to pointer | §6.3.2.1 | `ast_pretty_printer.c` |
+| Incomplete `string.h` stub (`strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`) | library, §7.24 | `ast.c` (dominant); used latently in `parser.c`, `util.c` |
+| Multidimensional array declarators (`m[A][B]`) | §6.7.5.2, §6.5.2.1 | `codegen.h` → `codegen.c`, `compiler.c` |
+| Adjacent string-literal concatenation (`"a" "b"`) | §6.4.5 | `parser.c`, `preprocessor.c` |
+| Hex escape in character literal (`'\x01'`) | §6.4.4.4 | `lexer.c` |
+| **Codegen crash** (now **fixed**): reference to a file-scope array-typedef variable — missing `TYPE_ARRAY` branch in `parse_external_declaration` | §6.7.7 / §6.3.2.1 | `util.c` |

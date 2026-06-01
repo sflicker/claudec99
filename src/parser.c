@@ -3142,6 +3142,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         if (d.pointer_count > 0 || base_kind == TYPE_POINTER) {
             decl->decl_type = TYPE_POINTER;
             decl->full_type = full_type;
+        } else if (base_kind == TYPE_ARRAY) {
+            /* Stage 28-04: file-scope variable declared with a typedef'd array
+             * type (e.g. `typedef long jmp_buf[32]; jmp_buf g;`). The declarator
+             * carries no `[]`, so d.is_array is false and the array-ness comes
+             * from the typedef; full_type is already the array Type* returned by
+             * parse_type_specifier. Mirror the block-scope path so codegen finds
+             * the element type instead of dereferencing a NULL full_type. */
+            decl->decl_type = TYPE_ARRAY;
+            decl->full_type = full_type;
         } else if (base_kind == TYPE_STRUCT) {
             decl->decl_type = TYPE_STRUCT;
             decl->full_type = full_type;
