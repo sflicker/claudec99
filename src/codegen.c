@@ -1332,9 +1332,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                 lv->full_type) {
                 StructField *f = find_struct_field(lv->full_type, node->value);
                 if (f) {
-                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
-                        : promote_kind(f->kind);
-                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    /* Stage 85: array member decays to pointer-to-element. */
+                    if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+                        t = TYPE_POINTER;
+                        node->full_type = type_pointer(f->full_type->base);
+                    } else {
+                        t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+                        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    }
                 }
             }
         }
@@ -1348,9 +1354,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                  plv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(plv->full_type->base, node->value);
                 if (f) {
-                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
-                        : promote_kind(f->kind);
-                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    /* Stage 85: array member decays to pointer-to-element. */
+                    if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+                        t = TYPE_POINTER;
+                        node->full_type = type_pointer(f->full_type->base);
+                    } else {
+                        t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+                        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    }
                 }
             }
         }
@@ -1366,9 +1378,15 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                  lv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(lv->full_type->base, node->value);
                 if (f) {
-                    t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
-                        : promote_kind(f->kind);
-                    if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    /* Stage 85: array member decays to pointer-to-element. */
+                    if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+                        t = TYPE_POINTER;
+                        node->full_type = type_pointer(f->full_type->base);
+                    } else {
+                        t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+                        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    }
                 }
             }
         }
@@ -2036,6 +2054,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_MEMBER_ACCESS) {
         StructField *f = emit_member_addr(cg, node);
+        /* Stage 85: an array-typed member decays to a pointer to its first
+         * element in a value context. emit_member_addr already left the
+         * field's address in rax — that address is the decayed pointer, so
+         * skip the load and report a pointer result type. */
+        if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(f->full_type->base);
+            return;
+        }
         int sz = type_size(f->full_type ? f->full_type : NULL);
         if (sz == 0) {
             /* scalar field — derive size from kind */
@@ -2063,6 +2090,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_ARROW_ACCESS) {
         StructField *f = emit_arrow_addr(cg, node);
+        /* Stage 85: array-typed member decays to a pointer to its first
+         * element. emit_arrow_addr left the field's address in rax. */
+        if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(f->full_type->base);
+            return;
+        }
         int sz = f->full_type ? type_size(f->full_type) : 0;
         if (sz == 0) {
             switch (f->kind) {
@@ -3251,6 +3285,17 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
             elem->type == AST_INITIALIZER_LIST) {
             /* Nested struct field — recurse. */
             emit_local_struct_init(cg, f->full_type, foffset, elem);
+        } else if (f->kind == TYPE_ARRAY && f->full_type &&
+                   elem->type == AST_STRING_LITERAL) {
+            /* Stage 85: char-array member initialized from a string literal.
+             * The struct slot is already zero-filled, so copy the literal's
+             * payload bytes into the field; the NUL and trailing zero fill
+             * are already present. The literal is not added to the .rodata
+             * pool — per-byte stores mirror the local char-array init path. */
+            for (int b = 0; b < fsize && b < elem->byte_length; b++) {
+                fprintf(cg->output, "    mov byte [rbp - %d], %d\n",
+                        foffset - b, (unsigned char)elem->value[b]);
+            }
         } else if (f->kind == TYPE_POINTER) {
             /* Pointer field: initializer must produce a pointer value. */
             codegen_expression(cg, elem);

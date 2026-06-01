@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 84-02 (stdlib.h exit()):
+Through stage 85 (member-array to pointer decay):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -333,7 +333,9 @@ Through stage 84-02 (stdlib.h exit()):
   (explicit dereference) forms—with full argument-count and argument-type validation.
   Function pointer parameters work correctly, and function pointers can be passed as arguments
   to other functions.
-- **Arrays**: array declarations, indexing, array-to-pointer decay,
+- **Arrays**: array declarations, indexing, array-to-pointer decay
+  (including array-typed struct/union members, which decay to a pointer to
+  their first element in a value context — e.g. when passed to a pointer parameter),
   pointer arithmetic (p + n, p - n, p++, p--, p += n, p -= n, p1 - p2 with element-size scaling),
   subscript-as-pointer-arithmetic, nested subscripting of arrays of pointers (e.g., `names[0][1]`),
   initialization of local `char` arrays from a string literal (with explicit or
@@ -352,7 +354,9 @@ Through stage 84-02 (stdlib.h exit()):
   chained arrow access (e.g., `n.next->value`),
   array-typed struct/union fields with subscript chaining (e.g., `p->tokens[i].kind`),
   brace-enclosed initializer lists for local struct/union variables with automatic zero-fill
-  (e.g., `struct Point p = {3, 4};`), whole-struct/union copy assignment and copy initialization
+  (e.g., `struct Point p = {3, 4};`), including char-array members initialized from a string
+  literal in a brace initializer (e.g., `struct S s = {"Hello"};` where `s.name` is `char[32]`),
+  whole-struct/union copy assignment and copy initialization
   from another variable of the same type. Pointer-to-struct/union function parameters
   (`struct T *p`) with `->` field access and mutation; `&local_struct` and `&global_struct`
   pass correctly as arguments; `(*p).field` deref-dot syntax works. Struct/union types as members
@@ -477,7 +481,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 84-02 all tests pass (789 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1261 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 85 all tests pass (791 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1263 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
