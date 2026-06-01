@@ -12,6 +12,20 @@
         (parser)->current.col, \
         __VA_ARGS__)
 
+/* Stage 86: create an AST node stamped with the current token's source
+ * position so codegen and semantic errors can report file:line:col. Every
+ * node-creating call in the parser goes through this rather than ast_new
+ * directly. parser->current is the token at the point of construction
+ * (restored correctly across lookahead/peek), so its position locates the
+ * construct closely enough for diagnostics. */
+static ASTNode *parser_node(Parser *parser, ASTNodeType type, const char *value) {
+    ASTNode *node = ast_new(type, value);
+    node->src_file = parser->current.file ? parser->current.file->path : NULL;
+    node->src_line = parser->current.line;
+    node->src_col  = parser->current.col;
+    return node;
+}
+
 /*
  * Internal helper filled by parse_declarator. Carries the identifier
  * name, pointer depth, and optional array-size or function-suffix
@@ -1230,7 +1244,7 @@ static ASTNode *parse_initializer(Parser *parser);
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
         Token token = parser_expect(parser, TOKEN_INT_LITERAL);
-        ASTNode *node = ast_new(AST_INT_LITERAL, token.value);
+        ASTNode *node = parser_node(parser, AST_INT_LITERAL, token.value);
         node->decl_type = token.literal_type;
         node->is_unsigned = token.is_unsigned;
         return node;
@@ -1251,7 +1265,7 @@ static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_STRING_LITERAL) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *node = ast_new(AST_STRING_LITERAL, NULL);
+        ASTNode *node = parser_node(parser, AST_STRING_LITERAL, NULL);
         memcpy(node->value, token.value, token.length);
         node->value[token.length] = '\0';
         node->byte_length = token.length;
@@ -1268,7 +1282,7 @@ static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_CHAR_LITERAL) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *node = ast_new(AST_CHAR_LITERAL, NULL);
+        ASTNode *node = parser_node(parser, AST_CHAR_LITERAL, NULL);
         node->value[0] = token.value[0];
         node->value[1] = '\0';
         node->byte_length = 1;
@@ -1286,7 +1300,7 @@ static ASTNode *parse_primary(Parser *parser) {
                 PARSER_ERROR(parser,
                         "error: __builtin_va_start used outside a variadic function\n");
             }
-            ASTNode *node = ast_new(AST_BUILTIN_VA_START, "__builtin_va_start");
+            ASTNode *node = parser_node(parser, AST_BUILTIN_VA_START, "__builtin_va_start");
             ast_add_child(node, parse_assignment_expression(parser));
             if (parser->current.type != TOKEN_COMMA) {
                 PARSER_ERROR(parser,
@@ -1300,7 +1314,7 @@ static ASTNode *parse_primary(Parser *parser) {
         if (strcmp(parser->current.value, "__builtin_va_end") == 0) {
             parser->current = lexer_next_token(parser->lexer);
             parser_expect(parser, TOKEN_LPAREN);
-            ASTNode *node = ast_new(AST_BUILTIN_VA_END, "__builtin_va_end");
+            ASTNode *node = parser_node(parser, AST_BUILTIN_VA_END, "__builtin_va_end");
             ast_add_child(node, parse_assignment_expression(parser));
             parser_expect(parser, TOKEN_RPAREN);
             return node;
@@ -1308,7 +1322,7 @@ static ASTNode *parse_primary(Parser *parser) {
         if (strcmp(parser->current.value, "__builtin_va_copy") == 0) {
             parser->current = lexer_next_token(parser->lexer);
             parser_expect(parser, TOKEN_LPAREN);
-            ASTNode *node = ast_new(AST_BUILTIN_VA_COPY, "__builtin_va_copy");
+            ASTNode *node = parser_node(parser, AST_BUILTIN_VA_COPY, "__builtin_va_copy");
             ast_add_child(node, parse_assignment_expression(parser));
             parser_expect(parser, TOKEN_COMMA);
             ast_add_child(node, parse_assignment_expression(parser));
@@ -1318,7 +1332,7 @@ static ASTNode *parse_primary(Parser *parser) {
         if (strcmp(parser->current.value, "__builtin_va_arg") == 0) {
             parser->current = lexer_next_token(parser->lexer);
             parser_expect(parser, TOKEN_LPAREN);
-            ASTNode *node = ast_new(AST_BUILTIN_VA_ARG, NULL);
+            ASTNode *node = parser_node(parser, AST_BUILTIN_VA_ARG, NULL);
             ast_add_child(node, parse_assignment_expression(parser));
             parser_expect(parser, TOKEN_COMMA);
             Type *arg_type = parse_type_name(parser);
@@ -1336,7 +1350,7 @@ static ASTNode *parse_primary(Parser *parser) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "%ld", parser->enum_consts[i].value);
                 parser->current = lexer_next_token(parser->lexer);
-                ASTNode *node = ast_new(AST_INT_LITERAL, buf);
+                ASTNode *node = parser_node(parser, AST_INT_LITERAL, buf);
                 node->decl_type = TYPE_INT;
                 return node;
             }
@@ -1347,7 +1361,7 @@ static ASTNode *parse_primary(Parser *parser) {
             FuncSig *sig = parser_find_function(parser, token.value);
             if (sig) {
                 /* Direct named function call */
-                ASTNode *call = ast_new(AST_FUNCTION_CALL, token.value);
+                ASTNode *call = parser_node(parser, AST_FUNCTION_CALL, token.value);
                 if (parser->current.type != TOKEN_RPAREN) {
                     ast_add_child(call, parse_assignment_expression(parser));
                     while (parser->current.type == TOKEN_COMMA) {
@@ -1378,8 +1392,8 @@ static ASTNode *parse_primary(Parser *parser) {
                  * call through a function-pointer variable.  Semantic
                  * validation (callee type, argument count/types) is deferred
                  * to codegen. */
-                ASTNode *callee = ast_new(AST_VAR_REF, token.value);
-                ASTNode *call = ast_new(AST_INDIRECT_CALL, NULL);
+                ASTNode *callee = parser_node(parser, AST_VAR_REF, token.value);
+                ASTNode *call = parser_node(parser, AST_INDIRECT_CALL, NULL);
                 ast_add_child(call, callee);
                 if (parser->current.type != TOKEN_RPAREN) {
                     ast_add_child(call, parse_assignment_expression(parser));
@@ -1392,7 +1406,7 @@ static ASTNode *parse_primary(Parser *parser) {
                 return call;
             }
         }
-        return ast_new(AST_VAR_REF, token.value);
+        return parser_node(parser, AST_VAR_REF, token.value);
     }
     if (parser->current.type == TOKEN_LPAREN) {
         parser_expect(parser, TOKEN_LPAREN);
@@ -1427,7 +1441,7 @@ static ASTNode *parse_postfix(Parser *parser) {
          * expression is already parsed (e.g. as a grouped dereference). */
         if (parser->current.type == TOKEN_LPAREN) {
             parser->current = lexer_next_token(parser->lexer); /* consume "(" */
-            ASTNode *call = ast_new(AST_INDIRECT_CALL, NULL);
+            ASTNode *call = parser_node(parser, AST_INDIRECT_CALL, NULL);
             ast_add_child(call, expr);
             if (parser->current.type != TOKEN_RPAREN) {
                 ast_add_child(call, parse_assignment_expression(parser));
@@ -1456,7 +1470,7 @@ static ASTNode *parse_postfix(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *index = parse_expression(parser);
             parser_expect(parser, TOKEN_RBRACKET);
-            ASTNode *node = ast_new(AST_ARRAY_INDEX, NULL);
+            ASTNode *node = parser_node(parser, AST_ARRAY_INDEX, NULL);
             ast_add_child(node, expr);
             ast_add_child(node, index);
             expr = node;
@@ -1465,7 +1479,7 @@ static ASTNode *parse_postfix(Parser *parser) {
         if (parser->current.type == TOKEN_DOT) {
             parser->current = lexer_next_token(parser->lexer);
             Token field = parser_expect(parser, TOKEN_IDENTIFIER);
-            ASTNode *node = ast_new(AST_MEMBER_ACCESS, field.value);
+            ASTNode *node = parser_node(parser, AST_MEMBER_ACCESS, field.value);
             ast_add_child(node, expr);
             expr = node;
             continue;
@@ -1473,7 +1487,7 @@ static ASTNode *parse_postfix(Parser *parser) {
         if (parser->current.type == TOKEN_ARROW) {
             parser->current = lexer_next_token(parser->lexer);
             Token field = parser_expect(parser, TOKEN_IDENTIFIER);
-            ASTNode *node = ast_new(AST_ARROW_ACCESS, field.value);
+            ASTNode *node = parser_node(parser, AST_ARROW_ACCESS, field.value);
             ast_add_child(node, expr);
             expr = node;
             continue;
@@ -1484,7 +1498,7 @@ static ASTNode *parse_postfix(Parser *parser) {
          * enforced later during code generation. */
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *node = ast_new(AST_POSTFIX_INC_DEC, op.value);
+        ASTNode *node = parser_node(parser, AST_POSTFIX_INC_DEC, op.value);
         ast_add_child(node, expr);
         expr = node;
     }
@@ -1511,7 +1525,7 @@ static ASTNode *parse_unary(Parser *parser) {
         if (parser->current.type != TOKEN_LPAREN) {
             /* <sizeof_expression> ::= "sizeof" <unary_expression> */
             ASTNode *operand = parse_unary(parser);
-            ASTNode *node = ast_new(AST_SIZEOF_EXPR, NULL);
+            ASTNode *node = parser_node(parser, AST_SIZEOF_EXPR, NULL);
             ast_add_child(node, operand);
             return node;
         }
@@ -1536,7 +1550,7 @@ static ASTNode *parse_unary(Parser *parser) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
             Type *t = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
-            ASTNode *node = ast_new(AST_SIZEOF_TYPE, NULL);
+            ASTNode *node = parser_node(parser, AST_SIZEOF_TYPE, NULL);
             node->decl_type = t->kind;
             if (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION)
                 node->full_type = t;
@@ -1548,7 +1562,7 @@ static ASTNode *parse_unary(Parser *parser) {
         /* sizeof(<expression>) */
         ASTNode *operand = parse_expression(parser);
         parser_expect(parser, TOKEN_RPAREN);
-        ASTNode *node = ast_new(AST_SIZEOF_EXPR, NULL);
+        ASTNode *node = parser_node(parser, AST_SIZEOF_EXPR, NULL);
         ast_add_child(node, operand);
         return node;
     }
@@ -1559,7 +1573,7 @@ static ASTNode *parse_unary(Parser *parser) {
         ASTNode *operand = parse_unary(parser);
         /* Stage 80: prefix ++/-- accepts any unary expression as operand;
          * lvalue validity is enforced later during code generation. */
-        ASTNode *node = ast_new(AST_PREFIX_INC_DEC, op.value);
+        ASTNode *node = parser_node(parser, AST_PREFIX_INC_DEC, op.value);
         ast_add_child(node, operand);
         return node;
     }
@@ -1572,14 +1586,14 @@ static ASTNode *parse_unary(Parser *parser) {
             operand->type != AST_ARRAY_INDEX) {
             PARSER_ERROR(parser, "error: address-of requires an lvalue\n");
         }
-        ASTNode *node = ast_new(AST_ADDR_OF, NULL);
+        ASTNode *node = parser_node(parser, AST_ADDR_OF, NULL);
         ast_add_child(node, operand);
         return node;
     }
     if (parser->current.type == TOKEN_STAR) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
-        ASTNode *node = ast_new(AST_DEREF, NULL);
+        ASTNode *node = parser_node(parser, AST_DEREF, NULL);
         ast_add_child(node, operand);
         return node;
     }
@@ -1590,7 +1604,7 @@ static ASTNode *parse_unary(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
-        ASTNode *unary = ast_new(AST_UNARY_OP, op.value);
+        ASTNode *unary = parser_node(parser, AST_UNARY_OP, op.value);
         ast_add_child(unary, operand);
         return unary;
     }
@@ -1628,7 +1642,7 @@ static ASTNode *parse_cast(Parser *parser) {
             Type *cast_type = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *operand = parse_cast(parser);
-            ASTNode *cast = ast_new(AST_CAST, NULL);
+            ASTNode *cast = parser_node(parser, AST_CAST, NULL);
             cast->decl_type = cast_type->kind;
             if (cast_type->kind == TYPE_POINTER) {
                 cast->full_type = cast_type;
@@ -1654,7 +1668,7 @@ static ASTNode *parse_term(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_cast(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1672,7 +1686,7 @@ static ASTNode *parse_additive(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_term(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1694,7 +1708,7 @@ static ASTNode *parse_shift(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_additive(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1714,7 +1728,7 @@ static ASTNode *parse_relational(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_shift(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1732,7 +1746,7 @@ static ASTNode *parse_equality(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_relational(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1754,7 +1768,7 @@ static ASTNode *parse_bitwise_and(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_equality(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1771,7 +1785,7 @@ static ASTNode *parse_bitwise_xor(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_bitwise_and(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1788,7 +1802,7 @@ static ASTNode *parse_bitwise_or(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_bitwise_xor(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1805,7 +1819,7 @@ static ASTNode *parse_logical_and(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_bitwise_or(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1822,7 +1836,7 @@ static ASTNode *parse_logical_or(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_logical_and(parser);
-        ASTNode *binop = ast_new(AST_BINARY_OP, op.value);
+        ASTNode *binop = parser_node(parser, AST_BINARY_OP, op.value);
         ast_add_child(binop, left);
         ast_add_child(binop, right);
         left = binop;
@@ -1853,7 +1867,7 @@ static ASTNode *parse_conditional(Parser *parser) {
     }
     parser->current = lexer_next_token(parser->lexer); /* consume ':' */
     ASTNode *false_expr = parse_conditional(parser);
-    ASTNode *node = ast_new(AST_CONDITIONAL_EXPR, NULL);
+    ASTNode *node = parser_node(parser, AST_CONDITIONAL_EXPR, NULL);
     ast_add_child(node, cond);
     ast_add_child(node, true_expr);
     ast_add_child(node, false_expr);
@@ -1874,7 +1888,7 @@ static ASTNode *parse_initializer(Parser *parser) {
     /* Consume "{". */
     parser->current = lexer_next_token(parser->lexer);
 
-    ASTNode *list = ast_new(AST_INITIALIZER_LIST, NULL);
+    ASTNode *list = parser_node(parser, AST_INITIALIZER_LIST, NULL);
 
     /* Empty brace-initializer "{}" — zero-fill everything. */
     if (parser->current.type == TOKEN_RBRACE) {
@@ -1926,10 +1940,10 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
             Token op = parser->current;
             parser->current = lexer_next_token(parser->lexer);
             ASTNode *rhs = parse_assignment_expression(parser);
-            ASTNode *assign = ast_new(AST_ASSIGNMENT, saved_token.value);
+            ASTNode *assign = parser_node(parser, AST_ASSIGNMENT, saved_token.value);
             if (op.type != TOKEN_ASSIGN) {
                 /* a op= b  =>  a = a op b */
-                ASTNode *var_ref = ast_new(AST_VAR_REF, saved_token.value);
+                ASTNode *var_ref = parser_node(parser, AST_VAR_REF, saved_token.value);
                 const char *bin_op;
                 switch (op.type) {
                 case TOKEN_PLUS_ASSIGN:         bin_op = "+";  break;
@@ -1943,7 +1957,7 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
                 case TOKEN_CARET_ASSIGN:        bin_op = "^";  break;
                 default:                        bin_op = "|";  break;
                 }
-                ASTNode *binop = ast_new(AST_BINARY_OP, bin_op);
+                ASTNode *binop = parser_node(parser, AST_BINARY_OP, bin_op);
                 ast_add_child(binop, var_ref);
                 ast_add_child(binop, rhs);
                 ast_add_child(assign, binop);
@@ -1977,7 +1991,7 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
         Token op = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *rhs = parse_assignment_expression(parser);
-        ASTNode *assign = ast_new(AST_ASSIGNMENT, NULL);
+        ASTNode *assign = parser_node(parser, AST_ASSIGNMENT, NULL);
         ast_add_child(assign, lhs);
         if (op.type != TOKEN_ASSIGN) {
             /* Stage 79: general-lvalue compound assignment.
@@ -1996,7 +2010,7 @@ static ASTNode *parse_assignment_expression(Parser *parser) {
             case TOKEN_CARET_ASSIGN:        bin_op = "^";  break;
             default:                        bin_op = "|";  break;
             }
-            ASTNode *binop = ast_new(AST_BINARY_OP, bin_op);
+            ASTNode *binop = parser_node(parser, AST_BINARY_OP, bin_op);
             ast_add_child(binop, ast_clone(lhs));
             ast_add_child(binop, rhs);
             ast_add_child(assign, binop);
@@ -2023,7 +2037,7 @@ static ASTNode *parse_expression(Parser *parser) {
     while (parser->current.type == TOKEN_COMMA) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *right = parse_assignment_expression(parser);
-        ASTNode *comma = ast_new(AST_COMMA_EXPR, ",");
+        ASTNode *comma = parser_node(parser, AST_COMMA_EXPR, ",");
         ast_add_child(comma, left);
         ast_add_child(comma, right);
         left = comma;
@@ -2038,7 +2052,7 @@ static ASTNode *parse_statement(Parser *parser);
 
 static ASTNode *parse_block(Parser *parser) {
     parser_expect(parser, TOKEN_LBRACE);
-    ASTNode *block = ast_new(AST_BLOCK, NULL);
+    ASTNode *block = parser_node(parser, AST_BLOCK, NULL);
     parser->scope_depth++;
     while (parser->current.type != TOKEN_RBRACE) {
         ast_add_child(block, parse_statement(parser));
@@ -2058,7 +2072,7 @@ static ASTNode *parse_if_statement(Parser *parser) {
     parser_expect(parser, TOKEN_RPAREN);
     ASTNode *then_stmt = parse_statement(parser);
 
-    ASTNode *if_node = ast_new(AST_IF_STATEMENT, NULL);
+    ASTNode *if_node = parser_node(parser, AST_IF_STATEMENT, NULL);
     ast_add_child(if_node, condition);
     ast_add_child(if_node, then_stmt);
 
@@ -2083,7 +2097,7 @@ static ASTNode *parse_while_statement(Parser *parser) {
     ASTNode *body = parse_statement(parser);
     parser->loop_depth--;
 
-    ASTNode *while_node = ast_new(AST_WHILE_STATEMENT, NULL);
+    ASTNode *while_node = parser_node(parser, AST_WHILE_STATEMENT, NULL);
     ast_add_child(while_node, condition);
     ast_add_child(while_node, body);
 
@@ -2104,7 +2118,7 @@ static ASTNode *parse_do_while_statement(Parser *parser) {
     parser_expect(parser, TOKEN_RPAREN);
     parser_expect(parser, TOKEN_SEMICOLON);
 
-    ASTNode *do_while_node = ast_new(AST_DO_WHILE_STATEMENT, NULL);
+    ASTNode *do_while_node = parser_node(parser, AST_DO_WHILE_STATEMENT, NULL);
     ast_add_child(do_while_node, body);
     ast_add_child(do_while_node, condition);
 
@@ -2125,7 +2139,7 @@ static ASTNode *parse_for_statement(Parser *parser) {
     parser_expect(parser, TOKEN_FOR);
     parser_expect(parser, TOKEN_LPAREN);
 
-    ASTNode *for_node = ast_new(AST_FOR_STATEMENT, NULL);
+    ASTNode *for_node = parser_node(parser, AST_FOR_STATEMENT, NULL);
 
     /* Open a new scope so any declaration in the init lives exactly as long
      * as the for statement (init + condition + update + body). */
@@ -2269,7 +2283,7 @@ static ASTNode *parse_switch_statement(Parser *parser) {
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_RPAREN);
 
-    ASTNode *switch_node = ast_new(AST_SWITCH_STATEMENT, NULL);
+    ASTNode *switch_node = parser_node(parser, AST_SWITCH_STATEMENT, NULL);
     ast_add_child(switch_node, expr);
 
     parser->switch_depth++;
@@ -2333,7 +2347,7 @@ static ASTNode *parse_statement(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             Type *array_type = type_array(base_type, d.array_length);
             parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
-            return ast_new(AST_TYPEDEF_DECL, d.name);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             PARSER_ERROR(parser, 
@@ -2343,7 +2357,7 @@ static ASTNode *parse_statement(Parser *parser) {
         if (d.is_func_pointer) {
             Type *fp_type = build_fp_type(base_type, &d);
             parser_register_typedef(parser, d.name, TYPE_POINTER, fp_type);
-            return ast_new(AST_TYPEDEF_DECL, d.name);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
@@ -2358,7 +2372,7 @@ static ASTNode *parse_statement(Parser *parser) {
                               ? full_type
                               : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
-        return ast_new(AST_TYPEDEF_DECL, d.name);
+        return parser_node(parser, AST_TYPEDEF_DECL, d.name);
     }
     /* labeled_statement: <identifier> ":" <statement> */
     if (parser->current.type == TOKEN_IDENTIFIER) {
@@ -2367,7 +2381,7 @@ static ASTNode *parse_statement(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_COLON) {
             parser->current = lexer_next_token(parser->lexer);
-            ASTNode *node = ast_new(AST_LABEL_STATEMENT, saved_token.value);
+            ASTNode *node = parser_node(parser, AST_LABEL_STATEMENT, saved_token.value);
             ast_add_child(node, parse_statement(parser));
             return node;
         }
@@ -2416,7 +2430,7 @@ static ASTNode *parse_statement(Parser *parser) {
         /* Standalone type declaration with no variable (e.g. "struct S{};"). */
         if (parser->current.type == TOKEN_SEMICOLON) {
             parser_expect(parser, TOKEN_SEMICOLON);
-            return ast_new(AST_TYPEDEF_DECL, "");
+            return parser_node(parser, AST_TYPEDEF_DECL, "");
         }
 
         ParsedDeclarator d = parse_declarator(parser);
@@ -2429,7 +2443,7 @@ static ASTNode *parse_statement(Parser *parser) {
         }
 
         if (d.is_func_pointer) {
-            ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+            ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
             decl->decl_type = TYPE_POINTER;
             decl->full_type = build_fp_type(base_type, &d);
             /* Stage 25-03: optional initializer — accepts any assignment
@@ -2458,7 +2472,7 @@ static ASTNode *parse_statement(Parser *parser) {
             full_type = type_pointer(full_type);
         }
 
-        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
         /* Stage 39: const applies to the variable when no pointer depth.
          * Stage 66: also applies when the pointer itself is const (T * const p). */
         decl->is_const = ((local_is_const && d.pointer_count == 0 && !d.is_array) ||
@@ -2489,7 +2503,7 @@ static ASTNode *parse_statement(Parser *parser) {
                     }
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
-                    ASTNode *str_init = ast_new(AST_STRING_LITERAL, NULL);
+                    ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
                     memcpy(str_init->value, str_tok.value, str_tok.length);
                     str_init->value[str_tok.length] = '\0';
                     str_init->byte_length = str_tok.length;
@@ -2564,7 +2578,7 @@ static ASTNode *parse_statement(Parser *parser) {
             return decl;
         }
         /* <init_declarator_list>: one or more declarators sharing the same base type. */
-        ASTNode *list = ast_new(AST_DECL_LIST, NULL);
+        ASTNode *list = parser_node(parser, AST_DECL_LIST, NULL);
         ast_add_child(list, decl);
         while (parser->current.type == TOKEN_COMMA) {
             parser->current = lexer_next_token(parser->lexer);
@@ -2579,7 +2593,7 @@ static ASTNode *parse_statement(Parser *parser) {
             for (int i = 0; i < d2.pointer_count; i++) {
                 full_type2 = type_pointer(full_type2);
             }
-            ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            ASTNode *next_decl = parser_node(parser, AST_DECLARATION, d2.name);
             next_decl->is_const = ((local_is_const && d2.pointer_count == 0) ||
                                    d2.pointer_is_const) ? 1 : 0;
             if (d2.pointer_count > 0 || base_kind == TYPE_POINTER) {
@@ -2612,7 +2626,7 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (parser->current.type == TOKEN_RETURN) {
         parser->current = lexer_next_token(parser->lexer);
-        ASTNode *stmt = ast_new(AST_RETURN_STATEMENT, NULL);
+        ASTNode *stmt = parser_node(parser, AST_RETURN_STATEMENT, NULL);
         if (parser->current.type == TOKEN_SEMICOLON) {
             /* bare return; — no expression child */
             parser->current = lexer_next_token(parser->lexer);
@@ -2647,8 +2661,8 @@ static ASTNode *parse_statement(Parser *parser) {
         parser_expect(parser, TOKEN_COLON);
         char case_buf[32];
         snprintf(case_buf, sizeof(case_buf), "%ld", case_val);
-        ASTNode *node = ast_new(AST_CASE_SECTION, NULL);
-        ast_add_child(node, ast_new(AST_INT_LITERAL, case_buf));
+        ASTNode *node = parser_node(parser, AST_CASE_SECTION, NULL);
+        ast_add_child(node, parser_node(parser, AST_INT_LITERAL, case_buf));
         ast_add_child(node, parse_statement(parser));
         return node;
     }
@@ -2658,7 +2672,7 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_COLON);
-        ASTNode *node = ast_new(AST_DEFAULT_SECTION, NULL);
+        ASTNode *node = parser_node(parser, AST_DEFAULT_SECTION, NULL);
         ast_add_child(node, parse_statement(parser));
         return node;
     }
@@ -2671,7 +2685,7 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_SEMICOLON);
-        return ast_new(AST_BREAK_STATEMENT, NULL);
+        return parser_node(parser, AST_BREAK_STATEMENT, NULL);
     }
     if (parser->current.type == TOKEN_CONTINUE) {
         if (parser->loop_depth == 0) {
@@ -2679,18 +2693,18 @@ static ASTNode *parse_statement(Parser *parser) {
         }
         parser->current = lexer_next_token(parser->lexer);
         parser_expect(parser, TOKEN_SEMICOLON);
-        return ast_new(AST_CONTINUE_STATEMENT, NULL);
+        return parser_node(parser, AST_CONTINUE_STATEMENT, NULL);
     }
     if (parser->current.type == TOKEN_GOTO) {
         parser->current = lexer_next_token(parser->lexer);
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         parser_expect(parser, TOKEN_SEMICOLON);
-        return ast_new(AST_GOTO_STATEMENT, name.value);
+        return parser_node(parser, AST_GOTO_STATEMENT, name.value);
     }
     /* expression_stmt (includes assignments, since assignment is now an expression) */
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_SEMICOLON);
-    ASTNode *stmt = ast_new(AST_EXPRESSION_STMT, NULL);
+    ASTNode *stmt = parser_node(parser, AST_EXPRESSION_STMT, NULL);
     ast_add_child(stmt, expr);
     return stmt;
 }
@@ -2719,7 +2733,7 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     /* Optional declarator: absent when next token is "," or ")". */
     if (parser->current.type == TOKEN_COMMA ||
         parser->current.type == TOKEN_RPAREN) {
-        ASTNode *param = ast_new(AST_PARAM, "");
+        ASTNode *param = parser_node(parser, AST_PARAM, "");
         if (base_kind == TYPE_ARRAY) {
             /* C99 6.7.5.3p7: unnamed array param is adjusted to pointer-to-element. */
             param->decl_type = TYPE_POINTER;
@@ -2742,7 +2756,7 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     if (leading_stars > 0 &&
         (parser->current.type == TOKEN_COMMA ||
          parser->current.type == TOKEN_RPAREN)) {
-        ASTNode *param = ast_new(AST_PARAM, "");
+        ASTNode *param = parser_node(parser, AST_PARAM, "");
         Type *full_type = base_type;
         for (int i = 0; i < leading_stars; i++)
             full_type = type_pointer(full_type);
@@ -2755,7 +2769,7 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     /* Any stars we pre-consumed contribute to the declarator's pointer
      * count. parse_declarator saw zero leading stars for this declarator. */
     d.pointer_count += leading_stars;
-    ASTNode *param = ast_new(AST_PARAM, d.name);
+    ASTNode *param = parser_node(parser, AST_PARAM, d.name);
     if (d.is_func_pointer) {
         param->decl_type = TYPE_POINTER;
         param->full_type = build_fp_type(base_type, &d);
@@ -2922,7 +2936,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     /* Stage 29: standalone type declaration with no declarator (e.g. "enum E{};"). */
     if (parser->current.type == TOKEN_SEMICOLON) {
         parser_expect(parser, TOKEN_SEMICOLON);
-        return ast_new(AST_TYPEDEF_DECL, "");
+        return parser_node(parser, AST_TYPEDEF_DECL, "");
     }
 
     ParsedDeclarator d = parse_declarator(parser);
@@ -2941,7 +2955,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             Type *array_type = type_array(base_type, d.array_length);
             parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
-            return ast_new(AST_TYPEDEF_DECL, d.name);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
             PARSER_ERROR(parser, 
@@ -2951,7 +2965,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         if (d.is_func_pointer) {
             Type *fp_type = build_fp_type(base_type, &d);
             parser_register_typedef(parser, d.name, TYPE_POINTER, fp_type);
-            return ast_new(AST_TYPEDEF_DECL, d.name);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         Type *full_type = base_type;
         for (int i = 0; i < d.pointer_count; i++)
@@ -2966,7 +2980,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                               ? full_type
                               : (!base_type->is_signed ? base_type : NULL);
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
-        return ast_new(AST_TYPEDEF_DECL, d.name);
+        return parser_node(parser, AST_TYPEDEF_DECL, d.name);
     }
 
     /* Stage 25-01/25-02: function-pointer file-scope declaration. */
@@ -2982,7 +2996,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     "error: '%s' redeclared as a different kind of symbol\n", d.name);
         }
         parser_register_global(parser, d.name, TYPE_POINTER, sc, fp_type);
-        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
         decl->storage_class = sc;
         decl->decl_type = TYPE_POINTER;
         decl->full_type = fp_type;
@@ -3016,7 +3030,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                             d.name);
                 }
             }
-            ASTNode *init_node = ast_new(AST_VAR_REF, init_tok.value);
+            ASTNode *init_node = parser_node(parser, AST_VAR_REF, init_tok.value);
             ast_add_child(decl, init_node);
         }
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -3062,7 +3076,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                                obj_kind == TYPE_UNION)  ? full_type : NULL;
         parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
 
-        ASTNode *decl = ast_new(AST_DECLARATION, d.name);
+        ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
         decl->storage_class = sc;
         /* Stage 39/66: const applies to the scalar variable when no pointer depth,
          * or to the pointer variable itself when T * const p form is used. */
@@ -3094,7 +3108,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     }
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
-                    ASTNode *str_init = ast_new(AST_STRING_LITERAL, NULL);
+                    ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
                     memcpy(str_init->value, str_tok.value, str_tok.length);
                     str_init->value[str_tok.length] = '\0';
                     str_init->byte_length = str_tok.length;
@@ -3174,7 +3188,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             return decl;
         }
         /* Stage 22-02: comma-separated declarator list at file scope. */
-        ASTNode *list = ast_new(AST_DECL_LIST, NULL);
+        ASTNode *list = parser_node(parser, AST_DECL_LIST, NULL);
         ast_add_child(list, decl);
         while (parser->current.type == TOKEN_COMMA) {
             parser->current = lexer_next_token(parser->lexer);
@@ -3201,7 +3215,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 ft2 = type_pointer(ft2);
             Type *reg_ft2 = (k2 == TYPE_POINTER) ? ft2 : NULL;
             parser_register_global(parser, d2.name, k2, sc, reg_ft2);
-            ASTNode *next_decl = ast_new(AST_DECLARATION, d2.name);
+            ASTNode *next_decl = parser_node(parser, AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
             next_decl->is_const = ((ds.is_const && d2.pointer_count == 0) ||
                                    d2.pointer_is_const) ? 1 : 0;
@@ -3231,7 +3245,7 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     for (int i = 0; i < d.pointer_count; i++)
         full_type = type_pointer(full_type);
     TypeKind return_kind = (d.pointer_count > 0) ? TYPE_POINTER : base_kind;
-    ASTNode *func = ast_new(AST_FUNCTION_DECL, d.name);
+    ASTNode *func = parser_node(parser, AST_FUNCTION_DECL, d.name);
     func->decl_type = return_kind;
     func->storage_class = sc;
     if (d.pointer_count > 0)
@@ -3341,7 +3355,7 @@ static void parser_sync(Parser *parser) {
 }
 
 ASTNode *parse_translation_unit(Parser *parser) {
-    ASTNode *unit = ast_new(AST_TRANSLATION_UNIT, NULL);
+    ASTNode *unit = parser_node(parser, AST_TRANSLATION_UNIT, NULL);
     g_error_jmp_valid = 1;
     while (parser->current.type != TOKEN_EOF) {
         if (setjmp(g_error_jmp)) {

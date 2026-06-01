@@ -34,6 +34,17 @@ extern int    g_error_jmp_valid;
 /* Stage 70-03: global flag set by -Werror; used by compile_warning_at. */
 extern int g_warnings_are_errors;
 
+/* Stage 86: source position for the construct currently being compiled,
+ * stamped onto AST nodes at parse time and tracked by codegen as it
+ * descends. Plain compile_error() prefixes its message with
+ * file:line:col when g_error_src_file is non-NULL and g_error_src_line > 0,
+ * giving codegen/semantic errors the same position info parser errors
+ * already carry. Left NULL/0 during parsing, where PARSER_ERROR supplies
+ * its own position. */
+extern const char *g_error_src_file;
+extern int         g_error_src_line;
+extern int         g_error_src_col;
+
 CC_NORETURN CC_PRINTF(1, 2)
 void compile_error(const char *fmt, ...);
 
