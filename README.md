@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 85-01 (string.h additional declarations):
+Through stage 86 (multidimensional array support):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -337,8 +337,13 @@ Through stage 85-01 (string.h additional declarations):
   (including array-typed struct/union members, which decay to a pointer to
   their first element in a value context — e.g. when passed to a pointer parameter),
   pointer arithmetic (p + n, p - n, p++, p--, p += n, p -= n, p1 - p2 with element-size scaling),
-  subscript-as-pointer-arithmetic, nested subscripting of arrays of pointers (e.g., `names[0][1]`),
-  initialization of local `char` arrays from a string literal (with explicit or
+  subscript-as-pointer-arithmetic, nested subscripting of arrays of pointers (e.g., `names[0][1]`).
+  Multidimensional array declarations and indexing (`int A[M][N]`, `A[i][j]`), multidimensional
+  array members in structs and unions, correct type nesting (right-to-left, e.g., `int A[4][8]`
+  is array[4] of array[8] of int), array-to-pointer decay at each subscript level, and `sizeof`
+  support for multidimensional arrays in both type-name form (`sizeof(int[4][8])`) and expression
+  form (`sizeof(s.table[0])` where s.table is multidimensional). Maximum 8 array dimensions supported.
+  Initialization of local `char` arrays from a string literal (with explicit or
   inferred size), brace-enclosed initializer lists for local arrays with
   partial initialization and automatic zero-fill (e.g., `int a[3] = {1, 2, 3};`),
   file-scope (global) uninitialized array declarations. File-scope array initialization from
@@ -481,7 +486,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 85-01 all tests pass (791 valid, 235 invalid, 78 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1268 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 86 all tests pass (802 valid, 236 invalid, 80 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1282 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

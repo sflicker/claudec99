@@ -511,6 +511,85 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node);
 static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node);
 
 /*
+ * Stage 86: return the element Type* of a subscript expression without
+ * emitting any code. Used by sizeof(expr[i]) to compute the element size.
+ * Returns NULL if the element type cannot be statically determined.
+ *
+ * For a 2-D array A[M][N]: sizeof(A[i]) == N*sizeof(element) == element_array->size.
+ * For a 1-D array A[N]:    sizeof(A[i]) == sizeof(element).
+ */
+static Type *get_subscript_element_type(CodeGen *cg, ASTNode *index_node) {
+    ASTNode *base = index_node->children[0];
+
+    if (base->type == AST_VAR_REF) {
+        LocalVar *lv = codegen_find_var(cg, base->value);
+        if (lv && (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER) &&
+            lv->full_type && lv->full_type->base)
+            return lv->full_type->base;
+        GlobalVar *gv = lv ? NULL : codegen_find_global(cg, base->value);
+        if (gv && (gv->kind == TYPE_ARRAY || gv->kind == TYPE_POINTER) &&
+            gv->full_type && gv->full_type->base)
+            return gv->full_type->base;
+        return NULL;
+    }
+
+    if (base->type == AST_MEMBER_ACCESS) {
+        /* base->value = field name, base->children[0] = struct variable */
+        ASTNode *obj = base->children[0];
+        Type *st_type = NULL;
+        if (obj->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, obj->value);
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) && lv->full_type)
+                st_type = lv->full_type;
+            if (!lv) {
+                GlobalVar *gv = codegen_find_global(cg, obj->value);
+                if (gv && (gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) && gv->full_type)
+                    st_type = gv->full_type;
+            }
+        }
+        if (st_type) {
+            StructField *f = find_struct_field(st_type, base->value);
+            if (f && f->kind == TYPE_ARRAY && f->full_type && f->full_type->base)
+                return f->full_type->base;
+        }
+        return NULL;
+    }
+
+    if (base->type == AST_ARROW_ACCESS) {
+        /* base->value = field name, base->children[0] = pointer variable */
+        ASTNode *obj = base->children[0];
+        Type *pt = NULL;
+        if (obj->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, obj->value);
+            if (lv && lv->kind == TYPE_POINTER && lv->full_type && lv->full_type->base)
+                pt = lv->full_type->base;
+            if (!lv) {
+                GlobalVar *gv = codegen_find_global(cg, obj->value);
+                if (gv && gv->kind == TYPE_POINTER && gv->full_type && gv->full_type->base)
+                    pt = gv->full_type->base;
+            }
+        }
+        if (pt && (pt->kind == TYPE_STRUCT || pt->kind == TYPE_UNION)) {
+            StructField *f = find_struct_field(pt, base->value);
+            if (f && f->kind == TYPE_ARRAY && f->full_type && f->full_type->base)
+                return f->full_type->base;
+        }
+        return NULL;
+    }
+
+    if (base->type == AST_ARRAY_INDEX) {
+        /* Nested subscript: element type of the inner subscript is an array; its
+         * element is the type at this level. */
+        Type *inner = get_subscript_element_type(cg, base);
+        if (inner && inner->kind == TYPE_ARRAY && inner->base)
+            return inner->base;
+        return inner; /* scalar — pass through for simple cases */
+    }
+
+    return NULL;
+}
+
+/*
  * Stage 82-05: walk a chain of AST_MEMBER_ACCESS nodes to the root
  * AST_VAR_REF and return 1 if the variable is const-qualified.
  * Used to reject assignment to any member of a const struct/union object.
@@ -580,20 +659,28 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    add rax, rbx\n");
         return element;
     }
-    /* Stage 42: nested subscript — base is itself an array-index expression
-     * (e.g. names[0][1] where names is char *[]).  Evaluate the inner
-     * subscript address, load the pointer stored there, then use it as the
-     * pointer base for the outer index. */
+    /* Stage 42: nested subscript — base is itself an array-index expression.
+     * Two sub-cases:
+     *   - inner element is TYPE_POINTER (e.g. names[0][1] where names is char*[]):
+     *     load the pointer stored at rax, then index into it.
+     *   - Stage 86: inner element is TYPE_ARRAY (e.g. A[i][j] where A is int[M][N]):
+     *     rax already holds the address of the sub-array row; index directly. */
     if (base_node->type == AST_ARRAY_INDEX) {
         Type *inner_element = emit_array_index_addr(cg, base_node);
-        if (inner_element->kind != TYPE_POINTER) {
+        Type *element;
+        if (inner_element->kind == TYPE_POINTER) {
+            element = inner_element->base;
+            if (element->kind == TYPE_VOID) {
+                compile_error( "error: cannot subscript void pointer\n");
+            }
+            fprintf(cg->output, "    mov rax, [rax]\n");
+        } else if (inner_element->kind == TYPE_ARRAY) {
+            /* rax is the address of the inner array; use it as the base directly. */
+            element = inner_element->base;
+        } else {
             compile_error( "error: subscript base is not a pointer or array\n");
+            return NULL;
         }
-        Type *element = inner_element->base;
-        if (element->kind == TYPE_VOID) {
-            compile_error( "error: cannot subscript void pointer\n");
-        }
-        fprintf(cg->output, "    mov rax, [rax]\n");
         int elem_size = type_size(element);
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
@@ -2036,8 +2123,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Stage 13-02: array subscript read. Compute the element's
          * address and load through it using the element type's width.
          * The result is the element value, sign-extended into eax/rax
-         * for char/short and loaded directly for int/long/pointer. */
+         * for char/short and loaded directly for int/long/pointer.
+         * Stage 86: when the element type is itself TYPE_ARRAY (e.g. A[i]
+         * where A is int[M][N]), decay to a pointer to the first element
+         * of the inner array — rax already holds the sub-array's address. */
         Type *element = emit_array_index_addr(cg, node);
+        if (element->kind == TYPE_ARRAY) {
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(element->base);
+            return;
+        }
         int sz = type_size(element);
         switch (sz) {
         case 1: fprintf(cg->output, "    movsx eax, byte [rax]\n"); break;
@@ -2123,9 +2218,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_SIZEOF_TYPE) {
         int sz;
-        if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
-            node->full_type) {
-            if (node->full_type->size == 0) {
+        /* Stage 86: TYPE_ARRAY uses full_type->size (total byte count).
+         * Also handles struct/union and the scalar cases. */
+        if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION ||
+             node->decl_type == TYPE_ARRAY) && node->full_type) {
+            if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
+                node->full_type->size == 0) {
                 compile_error( "error: sizeof applied to incomplete %s type\n",
                         type_kind_name(node->decl_type));
             }
@@ -2174,6 +2272,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     node->result_type = TYPE_LONG;
                     return;
                 }
+            }
+        }
+        /* Stage 86: sizeof(expr[i]) where the element type is itself an array
+         * (e.g. sizeof(s.table[0]) where table is int[4][8] → 32). */
+        if (child->type == AST_ARRAY_INDEX) {
+            Type *elem_type = get_subscript_element_type(cg, child);
+            if (elem_type) {
+                fprintf(cg->output, "    mov rax, %d\n", elem_type->size);
+                node->result_type = TYPE_LONG;
+                return;
             }
         }
         TypeKind kind = sizeof_type_of_expr(cg, child);

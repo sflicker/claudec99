@@ -78,8 +78,11 @@
 <type_name> ::= <specifier_qualifier_list> [ <abstract_declarator> ]
 
 <abstract_declarator> ::= <abstract_pointer_declarator>
+                         | <abstract_array_declarator>
 
 <abstract_pointer_declarator> ::= "*" { <type_qualifier> } { "*" { <type_qualifier> } }
+
+<abstract_array_declarator> ::= "[" <integer_literal> "]" { "[" <integer_literal> "]" }
 
 <integer_type_specifier> ::= "char"
                            | "short" [ "int" ]

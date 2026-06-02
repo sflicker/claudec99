@@ -47,12 +47,18 @@ static ASTNode *parser_node(Parser *parser, ASTNodeType type, const char *value)
  * ")" is consumed immediately inside parse_declarator. fp_param_types and
  * fp_param_count carry the result; callers build the full Type* inline.
  */
+/* Stage 86: maximum number of array dimensions in a single declarator. */
+#define MAX_ARRAY_DIMS 8
+
 typedef struct {
     char name[256];
     int  pointer_count;
     int  is_array;
     int  has_size;
-    int  array_length;
+    int  array_length;      /* first dimension — kept for backward compatibility */
+    /* Stage 86: all dimensions for multi-dimensional array declarators. */
+    int  array_dims[MAX_ARRAY_DIMS];
+    int  array_dim_count;
     int  is_function;
     int  is_func_pointer;
     int  fp_outer_stars;
@@ -336,6 +342,21 @@ static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
 }
 
 /*
+ * Stage 86: build a (possibly multi-dimensional) array Type from a list of
+ * dimensions. dims[0] is the outermost (leftmost) dimension. The type is
+ * constructed inside-out: start with elem_type, wrap each dimension from
+ * right (innermost) to left (outermost).
+ *
+ * Example: int table[4][8] → dims=[4,8], produces array[4] of array[8] of int.
+ */
+static Type *build_array_type_from_dims(Type *elem_type, int *dims, int dim_count) {
+    Type *t = elem_type;
+    for (int i = dim_count - 1; i >= 0; i--)
+        t = type_array(t, dims[i]);
+    return t;
+}
+
+/*
  * <struct_specifier> ::= "struct" [ <identifier> ] "{" <struct_declaration_list> "}"
  *                      | "struct" <identifier>
  *
@@ -408,14 +429,16 @@ static Type *parse_struct_specifier(Parser *parser) {
                 Type *field_type = effective_base;
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
-                /* Stage 78: handle array member fields (e.g. int values[3]). */
+                /* Stage 78: handle array member fields (e.g. int values[3]).
+                 * Stage 86: multi-dimensional array members. */
                 if (d.is_array) {
                     if (!d.has_size) {
                         PARSER_ERROR(parser,
                                 "error: struct array member '%s' requires explicit size\n",
                                 d.name);
                     }
-                    field_type = type_array(field_type, d.array_length);
+                    field_type = build_array_type_from_dims(field_type,
+                                                            d.array_dims, d.array_dim_count);
                 }
 
                 /* Stage 37/72: a non-pointer field of an incomplete struct or
@@ -603,7 +626,9 @@ static Type *parse_union_specifier(Parser *parser) {
                                 "error: union array member '%s' requires explicit size\n",
                                 d.name);
                     }
-                    field_type = type_array(field_type, d.array_length);
+                    /* Stage 86: multi-dimensional array members. */
+                    field_type = build_array_type_from_dims(field_type,
+                                                            d.array_dims, d.array_dim_count);
                 }
 
                 /* Reject non-pointer field of an incomplete struct or union type. */
@@ -1043,6 +1068,30 @@ static Type *parse_type_name(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
         t = type_pointer(t);
     }
+    /* Stage 86: optional array-suffix for sizeof(int[N]) and sizeof(int[N][M]).
+     * Build the array type from right (innermost) to left (outermost). */
+    if (parser->current.type == TOKEN_LBRACKET) {
+        int dims[MAX_ARRAY_DIMS];
+        int dim_count = 0;
+        while (parser->current.type == TOKEN_LBRACKET) {
+            if (dim_count >= MAX_ARRAY_DIMS) {
+                PARSER_ERROR(parser,
+                        "error: too many array dimensions (max %d)\n", MAX_ARRAY_DIMS);
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type != TOKEN_INT_LITERAL) {
+                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
+            }
+            int length = (int)parser->current.long_value;
+            parser->current = lexer_next_token(parser->lexer);
+            if (length <= 0) {
+                PARSER_ERROR(parser, "error: array size must be greater than zero\n");
+            }
+            dims[dim_count++] = length;
+            parser_expect(parser, TOKEN_RBRACKET);
+        }
+        t = build_array_type_from_dims(t, dims, dim_count);
+    }
     return t;
 }
 
@@ -1194,6 +1243,7 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
     d.name[sizeof(d.name) - 1] = '\0';
     if (parser->current.type == TOKEN_LBRACKET) {
         d.is_array = 1;
+        /* Stage 86: parse first dimension (may be empty for initializer inference). */
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_INT_LITERAL) {
             Token size_tok = parser->current;
@@ -1202,12 +1252,32 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
             if (length <= 0) {
                 PARSER_ERROR(parser, "error: array size must be greater than zero\n");
             }
+            d.array_dims[d.array_dim_count++] = length;
             d.array_length = length;
             d.has_size = 1;
         } else if (parser->current.type != TOKEN_RBRACKET) {
             PARSER_ERROR(parser, "error: array size must be an integer literal\n");
         }
         parser_expect(parser, TOKEN_RBRACKET);
+        /* Stage 86: parse additional dimensions [N2][N3]... — all must be explicit. */
+        while (parser->current.type == TOKEN_LBRACKET) {
+            if (d.array_dim_count >= MAX_ARRAY_DIMS) {
+                PARSER_ERROR(parser,
+                        "error: too many array dimensions (max %d)\n", MAX_ARRAY_DIMS);
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type != TOKEN_INT_LITERAL) {
+                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
+            }
+            Token size_tok = parser->current;
+            parser->current = lexer_next_token(parser->lexer);
+            int length = (int)size_tok.long_value;
+            if (length <= 0) {
+                PARSER_ERROR(parser, "error: array size must be greater than zero\n");
+            }
+            d.array_dims[d.array_dim_count++] = length;
+            parser_expect(parser, TOKEN_RBRACKET);
+        }
     } else if (parser->current.type == TOKEN_LPAREN) {
         d.is_function = 1;
     }
@@ -1552,7 +1622,10 @@ static ASTNode *parse_unary(Parser *parser) {
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *node = parser_node(parser, AST_SIZEOF_TYPE, NULL);
             node->decl_type = t->kind;
-            if (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION)
+            /* Stage 86: also store full_type for TYPE_ARRAY so codegen
+             * can look up the total size of multi-dimensional array types. */
+            if (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION ||
+                t->kind == TYPE_ARRAY)
                 node->full_type = t;
             return node;
         }
@@ -2339,18 +2412,20 @@ static ASTNode *parse_statement(Parser *parser) {
             PARSER_ERROR(parser, 
                     "error: only scalar, pointer, and array typedefs are supported\n");
         }
-        /* Stage 28-04: array typedef — register with the full array Type*. */
+        /* Stage 28-04: array typedef — register with the full array Type*.
+         * Stage 86: multi-dimensional array typedefs. */
         if (d.is_array) {
             if (!d.has_size) {
                 PARSER_ERROR(parser, "error: array typedef requires explicit size\n");
             }
             parser_expect(parser, TOKEN_SEMICOLON);
-            Type *array_type = type_array(base_type, d.array_length);
+            Type *array_type = build_array_type_from_dims(base_type,
+                                                          d.array_dims, d.array_dim_count);
             parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
             return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
-            PARSER_ERROR(parser, 
+            PARSER_ERROR(parser,
                     "error: typedef declaration cannot have an initializer\n");
         }
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -2533,7 +2608,12 @@ static ASTNode *parse_statement(Parser *parser) {
                         "error: array size required unless initialized from string literal\n");
             }
 
-            Type *array_type = type_array(full_type, length);
+            /* Stage 86: build multi-dim type. For single-dim (or inferred size),
+             * update array_dims[0] so build_array_type_from_dims gets the right length. */
+            d.array_dims[0] = length;
+            if (d.array_dim_count == 0) d.array_dim_count = 1;
+            Type *array_type = build_array_type_from_dims(full_type,
+                                                          d.array_dims, d.array_dim_count);
             decl->decl_type = TYPE_ARRAY;
             decl->full_type = array_type;
             if (init_node) {
@@ -2947,18 +3027,20 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             PARSER_ERROR(parser, 
                     "error: only scalar, pointer, and array typedefs are supported\n");
         }
-        /* Stage 28-04: array typedef — register with the full array Type*. */
+        /* Stage 28-04: array typedef — register with the full array Type*.
+         * Stage 86: multi-dimensional array typedefs. */
         if (d.is_array) {
             if (!d.has_size) {
                 PARSER_ERROR(parser, "error: array typedef requires explicit size\n");
             }
             parser_expect(parser, TOKEN_SEMICOLON);
-            Type *array_type = type_array(base_type, d.array_length);
+            Type *array_type = build_array_type_from_dims(base_type,
+                                                          d.array_dims, d.array_dim_count);
             parser_register_typedef(parser, d.name, TYPE_ARRAY, array_type);
             return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         if (parser->current.type == TOKEN_ASSIGN) {
-            PARSER_ERROR(parser, 
+            PARSER_ERROR(parser,
                     "error: typedef declaration cannot have an initializer\n");
         }
         parser_expect(parser, TOKEN_SEMICOLON);
@@ -3132,8 +3214,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                         d.name);
             }
 
+            /* Stage 86: build multi-dim type; update array_dims[0] with inferred length. */
+            d.array_dims[0] = length;
+            if (d.array_dim_count == 0) d.array_dim_count = 1;
             decl->decl_type = TYPE_ARRAY;
-            decl->full_type = type_array(full_type, length);
+            decl->full_type = build_array_type_from_dims(full_type,
+                                                         d.array_dims, d.array_dim_count);
             if (init_node)
                 ast_add_child(decl, init_node);
             parser_expect(parser, TOKEN_SEMICOLON);
