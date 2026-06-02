@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 85 (member-array to pointer decay):
+Through stage 85-01 (string.h additional declarations):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -210,7 +210,7 @@ Through stage 85 (member-array to pointer decay):
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
   - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, and `putchar`), `stddef.h`,
-    `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
+    `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`, `strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
     `time()`, `clock()`), `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`), and `stdarg.h` (`va_list` typedef and va_* macro stubs),
@@ -481,7 +481,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 85 all tests pass (791 valid, 235 invalid, 73 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1263 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 85-01 all tests pass (791 valid, 235 invalid, 78 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1268 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
