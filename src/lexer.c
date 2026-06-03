@@ -250,20 +250,51 @@ Token lexer_next_token(Lexer *lexer) {
             if (ch == '\\') {
                 char next = lexer->source[lexer->pos + 1];
                 char decoded;
-                switch (next) {
-                case 'n':  decoded = 10;   break;
-                case 't':  decoded = 9;    break;
-                case 'r':  decoded = 13;   break;
-                case '\\': decoded = '\\'; break;
-                case '"':  decoded = '"';  break;
-                case '0':  decoded = 0;    break;
-                default:
-                    fprintf(stderr,
-                            "error: invalid escape sequence in string literal\n");
-                    exit(1);
+                if (next == 'x') {
+                    lexer_advance(lexer); /* skip \ */
+                    lexer_advance(lexer); /* skip x */
+                    if (!isxdigit((unsigned char)lexer->source[lexer->pos])) {
+                        fprintf(stderr,
+                                "error: invalid hex escape in string literal\n");
+                        exit(1);
+                    }
+                    unsigned int val = 0;
+                    while (isxdigit((unsigned char)lexer->source[lexer->pos])) {
+                        char hc = lexer->source[lexer->pos];
+                        unsigned int digit;
+                        if (hc >= '0' && hc <= '9') digit = (unsigned int)(hc - '0');
+                        else if (hc >= 'a' && hc <= 'f') digit = (unsigned int)(hc - 'a') + 10u;
+                        else digit = (unsigned int)(hc - 'A') + 10u;
+                        val = val * 16u + digit;
+                        lexer_advance(lexer);
+                    }
+                    decoded = (char)(val & 0xFFu);
+                } else if (next >= '0' && next <= '7') {
+                    lexer_advance(lexer); /* skip \ */
+                    unsigned int val = 0;
+                    int count = 0;
+                    while (count < 3 && lexer->source[lexer->pos] >= '0' &&
+                           lexer->source[lexer->pos] <= '7') {
+                        val = val * 8u + (unsigned int)(lexer->source[lexer->pos] - '0');
+                        lexer_advance(lexer);
+                        count++;
+                    }
+                    decoded = (char)(val & 0xFFu);
+                } else {
+                    switch (next) {
+                    case 'n':  decoded = '\n'; break;
+                    case 't':  decoded = '\t'; break;
+                    case 'r':  decoded = '\r'; break;
+                    case '\\': decoded = '\\'; break;
+                    case '"':  decoded = '"';  break;
+                    default:
+                        fprintf(stderr,
+                                "error: invalid escape sequence in string literal\n");
+                        exit(1);
+                    }
+                    lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
                 }
                 token.value[i++] = decoded;
-                lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
                 continue;
             }
             token.value[i++] = ch;
@@ -286,8 +317,7 @@ Token lexer_next_token(Lexer *lexer) {
      *   - raw newline before the closing quote
      *   - more than one byte before the closing quote (multi-char
      *     constant, e.g. 'ab')
-     *   - any unsupported backslash escape (octal `\1`-`\7`, hex
-     *     `\x...`, or any byte outside the supported set). */
+     *   - any unsupported backslash escape */
     if (c == '\'') {
         lexer_advance(lexer); /* skip opening '\'' */
         char ch = lexer->source[lexer->pos];
@@ -309,25 +339,56 @@ Token lexer_next_token(Lexer *lexer) {
         char decoded;
         if (ch == '\\') {
             char next = lexer->source[lexer->pos + 1];
-            switch (next) {
-            case 'a':  decoded = 7;    break;
-            case 'b':  decoded = 8;    break;
-            case 'f':  decoded = 12;   break;
-            case 'n':  decoded = 10;   break;
-            case 'r':  decoded = 13;   break;
-            case 't':  decoded = 9;    break;
-            case 'v':  decoded = 11;   break;
-            case '\\': decoded = '\\'; break;
-            case '\'': decoded = '\''; break;
-            case '"':  decoded = '"';  break;
-            case '?':  decoded = '?';  break;
-            case '0':  decoded = 0;    break;
-            default:
-                fprintf(stderr,
-                        "error: invalid escape sequence in character literal\n");
-                exit(1);
+            if (next == 'x') {
+                lexer_advance(lexer); /* skip \ */
+                lexer_advance(lexer); /* skip x */
+                if (!isxdigit((unsigned char)lexer->source[lexer->pos])) {
+                    fprintf(stderr,
+                            "error: invalid hex escape in character literal\n");
+                    exit(1);
+                }
+                unsigned int val = 0;
+                while (isxdigit((unsigned char)lexer->source[lexer->pos])) {
+                    char hc = lexer->source[lexer->pos];
+                    unsigned int digit;
+                    if (hc >= '0' && hc <= '9') digit = (unsigned int)(hc - '0');
+                    else if (hc >= 'a' && hc <= 'f') digit = (unsigned int)(hc - 'a') + 10u;
+                    else digit = (unsigned int)(hc - 'A') + 10u;
+                    val = val * 16u + digit;
+                    lexer_advance(lexer);
+                }
+                decoded = (char)(val & 0xFFu);
+            } else if (next >= '0' && next <= '7') {
+                lexer_advance(lexer); /* skip \ */
+                unsigned int val = 0;
+                int count = 0;
+                while (count < 3 && lexer->source[lexer->pos] >= '0' &&
+                       lexer->source[lexer->pos] <= '7') {
+                    val = val * 8u + (unsigned int)(lexer->source[lexer->pos] - '0');
+                    lexer_advance(lexer);
+                    count++;
+                }
+                decoded = (char)(val & 0xFFu);
+            } else {
+                switch (next) {
+                case 'a':  decoded = 7;    break;
+                case 'b':  decoded = 8;    break;
+                case 'f':  decoded = 12;   break;
+                case 'n':  decoded = 10;   break;
+                case 'r':  decoded = 13;   break;
+                case 't':  decoded = 9;    break;
+                case 'v':  decoded = 11;   break;
+                case '\\': decoded = '\\'; break;
+                case '\'': decoded = '\''; break;
+                case '"':  decoded = '"';  break;
+                case '?':  decoded = '?';  break;
+                default:
+                    fprintf(stderr,
+                            "error: invalid escape sequence in character literal\n");
+                    exit(1);
+                }
+                lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
             }
-            lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
         } else {
             decoded = ch;
             lexer_advance(lexer);

@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 87 (file position/read stubs):
+Through stage 88 (hex and octal character escapes):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -394,18 +394,21 @@ Through stage 87 (file position/read stubs):
   without allocating storage; `static` declares with internal linkage.
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
-  `\t`, `\r`, `\\`, `\"`, `\0`).
+  `\t`, `\r`, `\\`, `\"`, `\0`), hex escapes (`\xNN`), and octal
+  escapes (`\NNN`, 1–3 octal digits, e.g. `\0`, `\101`).
 - **Character literals**: tokenization, AST node, and codegen for
-  `'A'`, `'0'`, and the full simple-escape set (`\a`, `\b`, `\f`,
-  `\n`, `\r`, `\t`, `\v`, `\\`, `\'`, `\"`, `\?`, `\0`). A character
-  constant evaluates as an `int` (`'A'` = 65, `'\n'` = 10, etc.) and
-  is a valid primary expression in any integer context: returns,
-  initializers (`char`/`int`/`long`), assignment, arithmetic,
-  comparison, `if` conditions, and as the right-hand side of an
-  array element assignment. Malformed character literals
-  (empty `''`, multi-character `'ab'`, unknown escapes such as
-  `'\q'`, unterminated literals, and raw newline inside a literal)
-  are rejected with diagnostic messages.
+  `'A'`, `'0'`, the full simple-escape set (`\a`, `\b`, `\f`,
+  `\n`, `\r`, `\t`, `\v`, `\\`, `\'`, `\"`, `\?`, `\0`), hex escapes
+  (`\xNN`, e.g. `'\x41'` = 65), and octal escapes (`\NNN`, 1–3 octal
+  digits, e.g. `'\101'` = 65). A character constant evaluates as an
+  `int` (`'A'` = 65, `'\n'` = 10, etc.) and is a valid primary
+  expression in any integer context: returns, initializers
+  (`char`/`int`/`long`), assignment, arithmetic, comparison, `if`
+  conditions, and as the right-hand side of an array element
+  assignment. Malformed character literals (empty `''`,
+  multi-character `'ab'`, unknown escapes such as `'\q'`, unterminated
+  literals, and raw newline inside a literal) are rejected with
+  diagnostic messages.
 - **Compound assignment operators**: `+=`, `-=`, `*=`, `/=`, `%=`,
   `<<=`, `>>=`, `&=`, `^=`, `|=` on any modifiable lvalue (struct/union member
   access via `.` or `->`, array subscripts, pointer dereferences, and chains thereof).
@@ -486,7 +489,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 87 all tests pass (802 valid, 236 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1284 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 88 all tests pass (807 valid, 234 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1287 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

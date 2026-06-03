@@ -234,10 +234,17 @@
 <string_char> ::= <ordinary_char>
                 | <escape_sequence>
 
-<escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\"" | "\0"
+<escape_sequence> ::= "\n" | "\t" | "\r" | "\\" | "\""
+                    | "\x" <hex_digit>+
+                    | "\" <octal_digit> <octal_digit>? <octal_digit>?
 
 <character_escape_sequence> ::= "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v"
-                              | "\\" | "\'" | "\"" | "\?" | "\0"
+                              | "\\" | "\'" | "\"" | "\?"
+                              | "\x" <hex_digit>+
+                              | "\" <octal_digit> <octal_digit>? <octal_digit>?
+
+<hex_digit>   ::= "0"-"9" | "a"-"f" | "A"-"F"
+<octal_digit> ::= "0"-"7"
 
 # Preprocessor Directives (preprocessing phase, before parsing):
 
