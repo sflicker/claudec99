@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 86 (multidimensional array support):
+Through stage 87 (file position/read stubs):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -209,7 +209,7 @@ Through stage 86 (multidimensional array support):
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
-  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, and `putchar`), `stddef.h`,
+  - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, `putchar`, `fseek`, `ftell`, and `fread`; and file-position/read macros `SEEK_SET`, `SEEK_CUR`, `SEEK_END`), `stddef.h`,
     `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`, `strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
@@ -486,7 +486,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 86 all tests pass (802 valid, 236 invalid, 80 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1282 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 87 all tests pass (802 valid, 236 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1284 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

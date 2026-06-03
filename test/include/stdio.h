@@ -13,6 +13,14 @@ extern FILE *stderr;
 
 #define EOF (-1)
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+int fseek(FILE *, long, int);
+long ftell(FILE *);
+size_t fread(void *, size_t, size_t, FILE *);
+
 int puts(const char *);
 int printf(const char *, ...);
 
