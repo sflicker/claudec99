@@ -1,6 +1,6 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-06-02
+**Date:** 2026-06-03
 **Compiler:** `build/ccompiler`
 **Flags:** `--max-errors=0 -Iinclude -Itest/include`
 
@@ -10,131 +10,146 @@
 |---|---|---|
 | `ast.c` | PASS | — |
 | `ast_pretty_printer.c` | PASS | — |
-| `codegen.c` | FAIL | B — adjacent string literal concatenation |
+| `codegen.c` | PASS | — |
 | `compiler.c` | PASS | — |
-| `lexer.c` | FAIL | B — escape sequences in character literals |
-| `parser.c` | FAIL | B — adjacent string literal concatenation |
-| `preprocessor.c` | FAIL | B — adjacent string literal concatenation |
+| `lexer.c` | FAIL | B — hexadecimal integer literals |
+| `parser.c` | FAIL | B — address-of a struct member (`&s.m`) |
+| `preprocessor.c` | PASS | — |
 | `type.c` | PASS | — |
-| `util.c` | FAIL | A — incomplete `stdio.h` stub |
+| `util.c` | PASS | — |
 | `version.c` | PASS | — |
 
-**5 modules passed, 5 failed.**
+**8 of 10 modules compiled cleanly; 2 failed.** Both failures are
+Category B (unimplemented language features). There were **no** Category A
+failures — every system header the sources need already has a stub in
+`test/include/`, and no resource limits (`MAX_*`) were hit.
 
 ---
 
-## Category A — Missing / incomplete stub system headers
+## Category A — Missing stub system headers
 
-### `stdio.h` — missing file-positioning and binary-I/O declarations
-
-`src/util.c` reads a whole file into memory using the standard
-`fseek`/`ftell`/`fread` idiom:
-
-```c
-fseek(f, 0, SEEK_END);
-long len = ftell(f);
-fseek(f, 0, SEEK_SET);
-...
-fread(buf, 1, len, f);
-```
-
-First error:
-
-```
-src/util.c:78:13: error: call to undefined function 'fseek'
-```
-
-The existing `test/include/stdio.h` stub declares `fopen`, `fclose`, `fgetc`,
-`fgets`, `fprintf`, and `vfprintf`, but **not** `fseek`, `ftell`, or `fread`,
-and it does not define the `SEEK_SET` / `SEEK_END` macros. The header exists —
-it is simply incomplete. The compiler aborts code generation at the first
-undefined function (`fseek`), so the later `ftell`/`fread` uses are not yet
-reported, but they have the same cause.
-
-Symbols `util.c` needs that are absent from the stub:
-
-| Symbol | Line in `util.c` | Kind |
-|---|---|---|
-| `fseek` | 78, 80 | function |
-| `SEEK_END` | 78 | macro |
-| `ftell` | 79 | function |
-| `SEEK_SET` | 80 | macro |
-| `fread` | 88 | function |
-
-**Fix:** add these declarations/macros to `test/include/stdio.h`. This is not a
-compiler bug.
+None. All `#include <…>` directives in `src/` resolved against the stubs in
+`test/include/` (`ctype.h`, `errno.h`, `limits.h`, `setjmp.h`, `stdarg.h`,
+`stdbool.h`, `stddef.h`, `stdint.h`, `stdio.h`, `stdlib.h`, `string.h`,
+`time.h`).
 
 ---
 
 ## Category B — Language features not yet implemented
 
-### B1 — Adjacent string literal concatenation (C99 §6.4.5)
+### B1 — Hexadecimal integer literals (`0x…`)
 
-The compiler does not concatenate adjacent string-literal tokens. When it sees a
-second string literal where it expects a `,` or `)` (or `;`), it errors.
+**Affected module:** `lexer.c`
+
+The lexer does not recognize the `0x`/`0X` hexadecimal integer-literal
+prefix. When it encounters `0xFFu` it lexes the leading `0` as a decimal
+integer and then treats the remaining `xFFu` as an *identifier*, producing
+the root error:
+
+```
+src/lexer.c:271:52: error: expected ')', got identifier ('xFFu')
+```
+
 Minimal reproduction:
 
 ```c
-const char *s = "ab" "cd";
-/* error: expected ';', got string literal ('cd') */
+int main(void){ unsigned int v = 0xFF; return (int)v; }
+// error: expected ';', got identifier ('xFF')
 ```
 
-This single gap accounts for the first (root) error in three modules; every
-subsequent diagnostic in those files (`expected type specifier`,
-`non-constant initializer for global ...`, `address-of requires an lvalue`,
-etc.) is **cascade** from the parser losing sync at the split string.
+Decimal literals and the `u`/`U` suffix on decimal literals both work
+(`255u` compiles cleanly), so the gap is specifically the hex *prefix*, not
+the suffix. Note that the recently added hex/octal *character escapes*
+(`\xFF`, `\012`) are unrelated and unaffected — this gap is hex *integer
+constants*.
 
-Affected root-cause locations:
+This single root cause desynchronizes the parser and produces a cascade of
+23 follow-on `error: expected type specifier` messages on later lines.
 
-| File:line | Split-string call |
+| Location | Construct |
 |---|---|
-| `src/codegen.c:3293` | `compile_error("error: va_arg: type %s is not supported;" " use int or a larger type\n", ...)` |
-| `src/parser.c:1156` | `PARSER_ERROR(parser, "error: too many parameters in function pointer" " type (max %d)\n", ...)` |
-| `src/preprocessor.c:603` | `fprintf(stderr, "error: argument count mismatch for macro '%.*s':" " expected %s%d, got %d\n", ...)` |
+| `lexer.c:271` | `(char)(val & 0xFFu)` |
+| `lexer.c:282` | `(char)(val & 0xFFu)` |
+| `lexer.c:360` | `(char)(val & 0xFFu)` |
+| `lexer.c:371` | `(char)(val & 0xFFu)` |
+| `lexer.c:487` | `(parsed <= 0xFFFFFFFFUL) ? …` |
 
-(The reported column on the cascade differs slightly from the source line
-because the lexer counts the line of the *second* literal; the `codegen.c` first
-error is emitted as `3256:27` but the offending construct is the multi-line
-literal ending at line 3293.)
+C99 §6.4.4.1 (Integer constants — hexadecimal-constant).
 
-### B2 — Escape sequences in character literals (C99 §6.4.4.4)
+### B2 — Address-of a struct/union member (`&s.member`)
 
-`src/lexer.c` uses hex escapes in character constants, e.g.
-`if (c == '\x01')` (line 101; also referenced in the comment on line 68). The
-lexer rejects them:
+**Affected module:** `parser.c`
+
+The unary address-of operator rejects a `.` member-access operand, reporting
+that the operand is not an lvalue:
 
 ```
-error: invalid escape sequence in character literal
+src/parser.c:2921:72: error: address-of requires an lvalue
 ```
 
-Minimal reproductions:
+The reported position (line 2921, the closing brace of
+`parse_parameter_list`) is **misattributed** — the `&` AST node carries a
+stale source position. The construct that actually triggers the error is in
+the *next* function, `parse_declaration_specifiers`:
 
 ```c
-char c = '\x01';   /* error: invalid escape sequence in character literal */
-char c = '\001';   /* error: multi character constant                     */
+// src/parser.c:2989
+r.base_type = parse_type_specifier(parser, &r.base_kind);
 ```
 
-So neither **hex** (`\xhh`) nor **octal** (`\ooo`) numeric escape sequences are
-recognized inside character literals. (Simple escapes such as `'\n'`, `'\0'`,
-`'\t'` are accepted — these appear throughout `lexer.c` without error.) The lone
-unsupported hex escape on line 101 is enough to fail the whole module; the
-compiler stops at the first bad character literal.
+Here `r` is a local `DeclSpecResult` struct and `&r.base_kind` takes the
+address of one of its members. Minimal reproduction:
+
+```c
+typedef struct { int k; } R;
+void g(int *p);
+void f(void){ R r; g(&r.k); }   // error: address-of requires an lvalue
+```
+
+Related forms that **do** work, which localizes the gap to member access
+specifically:
+
+- `&x` (plain variable) — compiles.
+- `&a[1]` (array element / subscript) — compiles.
+
+So the lvalue check for `&` recognizes identifiers and subscript
+expressions, but not `.` (member-access) expressions. A member-access of an
+lvalue is itself an lvalue in C99, so `&s.m` is well-formed.
+
+`&r.base_kind` at `parser.c:2989` is the only occurrence of this pattern in
+`src/`, which is why `parser.c` is the only module affected.
+
+This single root cause desynchronizes the parser and produces a cascade of
+6 follow-on `error: expected type specifier` messages.
+
+| Location | Construct |
+|---|---|
+| `parser.c:2989` | `parse_type_specifier(parser, &r.base_kind)` |
+
+C99 §6.5.3.2 (Address and indirection operators) with §6.3.2.1 (a member of
+an lvalue structure is an lvalue).
 
 ---
 
 ## Successful compilation
 
-| Module | Why it compiled |
-|---|---|
-| `ast.c` | Uses only already-stubbed headers and no unimplemented syntax. |
-| `ast_pretty_printer.c` | Same — no split string literals or numeric char escapes. |
-| `compiler.c` | Driver glue; stays within the supported language subset. |
-| `type.c` | Plain type tables/helpers; supported constructs only. |
-| `version.c` | Trivial; version strings only. |
+The following 8 modules compiled cleanly to `.asm`:
 
-These modules happen to avoid both feature gaps (no adjacent string-literal
-concatenation, no hex/octal character escapes) and require no stub symbols that
-are missing.
+| Module | Why it succeeded |
+|---|---|
+| `ast.c` | Uses only already-supported constructs; no hex literals, no `&member`. |
+| `ast_pretty_printer.c` | Same — straightforward node-walking code. |
+| `codegen.c` | Large, but stays within the supported subset. |
+| `compiler.c` | Driver glue; no triggering constructs. |
+| `preprocessor.c` | No hex literals or address-of-member usage. |
+| `type.c` | Plain struct/enum manipulation. |
+| `util.c` | Utility helpers only. |
+| `version.c` | Trivial. |
+
+The common thread: the two unimplemented features (hex integer literals and
+`&s.member`) simply do not appear in these modules. The passing set confirms
+the bulk of the language surface the compiler uses on itself is already
+self-hosting.
 
 ---
 
@@ -142,9 +157,8 @@ are missing.
 
 | Gap | C99 section | Affected modules |
 |---|---|---|
-| Adjacent string literal concatenation | §6.4.5 | `codegen.c`, `parser.c`, `preprocessor.c` |
-| Hex / octal escape sequences in character literals | §6.4.4.4 | `lexer.c` |
-| Incomplete `stdio.h` stub (`fseek`/`ftell`/`fread`, `SEEK_SET`/`SEEK_END`) | — (stub, not language) | `util.c` |
+| Hexadecimal integer literals (`0x…`) | §6.4.4.1 | `lexer.c` |
+| Address-of a struct/union member (`&s.member`) | §6.5.3.2 / §6.3.2.1 | `parser.c` |
 
-No `constants.h` limits (e.g. `MAX_FUNCTIONS`) were hit; no `-D` overrides were
-needed for any module.
+Closing these two gaps would bring every module in `src/` to a clean
+self-compile.
