@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 88 (hex and octal character escapes):
+Through stage 89 (adjacent string literal concatenation):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -395,7 +395,9 @@ Through stage 88 (hex and octal character escapes):
 - **String literals**: tokenization, AST node, static-data emission,
   decay to `char *` in expressions, decoded escape sequences (`\n`,
   `\t`, `\r`, `\\`, `\"`, `\0`), hex escapes (`\xNN`), and octal
-  escapes (`\NNN`, 1–3 octal digits, e.g. `\0`, `\101`).
+  escapes (`\NNN`, 1–3 octal digits, e.g. `\0`, `\101`). Adjacent
+  string literal tokens are automatically concatenated into a single
+  literal (e.g., `"hello " "world"` becomes `"hello world"`).
 - **Character literals**: tokenization, AST node, and codegen for
   `'A'`, `'0'`, the full simple-escape set (`\a`, `\b`, `\f`,
   `\n`, `\r`, `\t`, `\v`, `\\`, `\'`, `\"`, `\?`, `\0`), hex escapes
@@ -489,7 +491,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 88 all tests pass (807 valid, 234 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1287 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 89 all tests pass (812 valid, 235 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1293 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

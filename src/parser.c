@@ -1337,10 +1337,24 @@ static ASTNode *parse_primary(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *node = parser_node(parser, AST_STRING_LITERAL, NULL);
         memcpy(node->value, token.value, token.length);
-        node->value[token.length] = '\0';
-        node->byte_length = token.length;
+        int total_len = token.length;
+        /* Stage 89: consume any adjacent string literal tokens and
+         * concatenate their decoded bytes into the same node. */
+        while (parser->current.type == TOKEN_STRING_LITERAL) {
+            Token next = parser->current;
+            if (total_len + next.length >= MAX_NAME_LEN) {
+                PARSER_ERROR(parser, "error: concatenated string literal too long (max %d bytes)\n",
+                             MAX_NAME_LEN - 1);
+                break;
+            }
+            parser->current = lexer_next_token(parser->lexer);
+            memcpy(node->value + total_len, next.value, next.length);
+            total_len += next.length;
+        }
+        node->value[total_len] = '\0';
+        node->byte_length = total_len;
         node->decl_type = TYPE_ARRAY;
-        node->full_type = type_array(type_char(), token.length + 1);
+        node->full_type = type_array(type_char(), total_len + 1);
         return node;
     }
     /* Stage 15-02: a character literal is a primary expression of type

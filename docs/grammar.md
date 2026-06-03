@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 82-04)
+# Claude C99 Grammar (Current through Stage 89)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -223,7 +223,7 @@
 
 <integer_literal> ::= [0-9]+ [ <integer_suffix> ]
 
-<string_literal> ::= TOKEN_STRING_LITERAL
+<string_literal> ::= TOKEN_STRING_LITERAL { TOKEN_STRING_LITERAL }
 
 <character_literal> ::= TOKEN_CHAR_LITERAL
 
