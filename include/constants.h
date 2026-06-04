@@ -73,13 +73,17 @@
 #define MAX_SWITCH_DEPTH    16
 #endif
 #ifndef MAX_SWITCH_LABELS
-#define MAX_SWITCH_LABELS   64
+/* Stage 92: raised from 64 so the compiler can self-compile. token_type_name()
+ * in compiler.c switches over ~83 token kinds in a single switch. */
+#define MAX_SWITCH_LABELS   256
 #endif
 #ifndef MAX_USER_LABELS
 #define MAX_USER_LABELS     64
 #endif
 #ifndef MAX_STRING_LITERALS
-#define MAX_STRING_LITERALS 256
+/* Stage 92: raised from 256 so the compiler can self-compile. codegen.c alone
+ * uses ~750 string-literal occurrences (the pool does not deduplicate). */
+#define MAX_STRING_LITERALS 2048
 #endif
 #ifndef MAX_LOCAL_STATICS
 #define MAX_LOCAL_STATICS   128

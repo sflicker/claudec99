@@ -2285,12 +2285,14 @@ static ASTNode *parse_for_statement(Parser *parser) {
     /* Close the for-scope: typedefs declared in the init are now invisible. */
     parser_leave_scope(parser);
 
-    /* Store as children — NULLs are stored directly */
-    for_node->children[0] = init;
-    for_node->children[1] = condition;
-    for_node->children[2] = update;
-    for_node->children[3] = body;
-    for_node->child_count = 4;
+    /* Store as children — NULLs are stored directly. Stage 92: children is
+     * now a dynamically grown array, so append via ast_add_child rather than
+     * writing fixed slots. The fixed four-slot layout (init, condition,
+     * update, body) is preserved by the append order. */
+    ast_add_child(for_node, init);
+    ast_add_child(for_node, condition);
+    ast_add_child(for_node, update);
+    ast_add_child(for_node, body);
 
     return for_node;
 }

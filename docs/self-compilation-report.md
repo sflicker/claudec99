@@ -1,78 +1,83 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-06-03
-**Compiler:** `build/ccompiler` (at commit `9a680c7`)
-**Flags:** `--max-errors=0 -Iinclude -Itest/include`
+**Date:** 2026-06-04
+**Stage:** stage-92 (self-compile validation)
+**Compiler:** `build/ccompiler` (C0, gcc-built) bootstrapping itself
+**Method:** full bootstrap via `bin/cc99 -Iinclude -o build/ccompiler-c1 src/*.c`
+(`ccompiler` → `nasm -f elf64` → `gcc -no-pie` link), **not** per-module
+`.asm` production alone.
 
-## Summary
+## Why the previous report was wrong
 
-| Module | Result | Root cause category |
-|---|---|---|
-| `ast.c` | PASS | — |
-| `ast_pretty_printer.c` | PASS | — |
-| `codegen.c` | PASS | — |
-| `compiler.c` | PASS | — |
-| `lexer.c` | PASS | — |
-| `parser.c` | PASS | — |
-| `preprocessor.c` | PASS | — |
-| `type.c` | PASS | — |
-| `util.c` | PASS | — |
-| `version.c` | PASS | — |
+The 2026-06-03 report claimed all 10 modules "compiled cleanly" and that the
+compiler was fully self-hosting. That conclusion was an artifact of the
+measurement: it only checked that `ccompiler` emitted a `.asm` file and exited
+0 for each module. It never **assembled**, **linked**, or **ran** the result.
 
-**All 10 source modules compiled cleanly.** The compiler successfully
-self-compiles its entire `src/` tree with no missing stub headers and no
-unimplemented language features encountered. (The previously reported
-`lexer.c` failure on hexadecimal integer literals is now resolved — see
-commit `4aca002`, "stage 90: add hexadecimal integer literals.")
+Crucially, `ast_add_child` silently dropped any child beyond
+`AST_MAX_CHILDREN` (64). Every translation unit accumulates its top-level
+declarations as children of a single `AST_TRANSLATION_UNIT` node, so for a
+real file like `compiler.c` (≫64 top-level decls) **everything past the 64th
+declaration — including `main` — was discarded with no diagnostic.** The
+resulting `.asm` was a small, truncated stub that happened to assemble, so the
+old per-module check reported a false PASS.
 
----
+A true bootstrap (compile → assemble → link → test) exposes the real picture.
 
-## Category A — Missing stub system headers
+## Blockers found and fixed in stage-92
 
-None. Every system header required by the source tree is present as a stub
-under `test/include/` (`ctype.h`, `errno.h`, `limits.h`, `setjmp.h`,
-`stdarg.h`, `stdbool.h`, `stddef.h`, `stdint.h`, `stdio.h`, `stdlib.h`,
-`string.h`, `time.h`).
+All fixes below keep the host (gcc-built) test suite green at **1302/1302**.
 
----
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | `util.asm`: label `g_error_src_line` inconsistently redefined (NASM) | A global both *defined* in a TU and declared `extern` via its own header emitted both a label definition and an `extern` directive | `codegen_emit_externs`: suppress `extern` for any object also defined in the TU; dedupe repeated externs (`src/codegen.c`) |
+| 2 | `main` and most top-level decls silently missing → link error `undefined reference to 'main'` | `ast_add_child` silently dropped children past the fixed `AST_MAX_CHILDREN` (64); translation units, large blocks, and big switches overflowed | `children` is now a lazily-allocated, doubling dynamic array (`include/ast.h`, `src/ast.c`); `for`-node builder appends via `ast_add_child` (`src/parser.c`) |
+| 3 | `codegen.c`: too many string literals (max 256) | `MAX_STRING_LITERALS` sized for toy programs; `codegen.c` has ~750 literal occurrences (pool does not dedupe) | Raised default to 2048 (`include/constants.h`) |
+| 4 | `compiler.c`: too many case/default labels in switch (max 64) | `MAX_SWITCH_LABELS` too small; `token_type_name()` switches over ~83 token kinds | Raised default to 256 (`include/constants.h`) |
+| 5 | `codegen.c`: static local arrays not yet supported | Six block-scope `static const char *…[6]` register tables | Hoisted to file-scope `static` arrays (semantics unchanged) (`src/codegen.c`) |
+| 6 | `codegen.c` / `compiler.c`: call to undefined function `strtol` | Stub `stdlib.h` did not declare `strtol`/`strtoul` | Added both declarations (`test/include/stdlib.h`) |
+| 7 | `compiler.c`: `strcmp` arg "expected pointer, got integer" | The `T *name[]` parameter form (`char *argv[]`) mis-typed its element on subscript; only the `T **name` spelling works | Changed `main`'s signature to the equivalent `char **argv` (`src/compiler.c`) |
 
-## Category B — Language features not yet implemented
+After fixes 1–7, modules `ast.c`, `ast_pretty_printer.c`, `codegen.c`,
+`compiler.c`, `type.c`, `util.c`, and `version.c` compile, assemble, and link
+cleanly during the bootstrap.
 
-None. The compiler parsed and code-generated every module without rejecting
-any C99 syntax or semantics used in the source. The historically tracked
-gaps — `for`-init declarations (C99 §6.8.5.3), enum/constant-expression
-`case` labels (§6.8.4.2), and subscript of member-access expressions
-(§6.5.2.1) — are all handled by the current compiler, since the source
-itself uses these constructs and compiles successfully.
+## Remaining blocker — struct by value (deferred)
 
----
+The bootstrap currently halts in `lexer.c`:
 
-## Successful compilation
+```
+lexer.c:116: error: '.' applied to non-struct/union 'token'
+```
 
-All modules compiled cleanly:
+The lexer/parser interface passes and returns the `Token` struct **by value**,
+which the compiler does not yet support (a documented "Not yet supported"
+feature). Affected functions:
 
-- `ast.c`
-- `ast_pretty_printer.c`
-- `codegen.c`
-- `compiler.c`
-- `lexer.c`
-- `parser.c`
-- `preprocessor.c`
-- `type.c`
-- `util.c`
-- `version.c`
+- `Token lexer_next_token(Lexer *lexer)` — returns `Token` by value (the core
+  lexer → parser interface; `Token` is a large, memory-class struct).
+- `static Token finalize(Token token)` — takes **and** returns `Token` by
+  value (called from ~80 sites in `lexer.c`).
+- `static Token parser_expect(Parser *parser, TokenType type)` — returns
+  `Token` by value.
 
-Each produced a corresponding `.asm` output and exited with status 0. No
-limit overrides (e.g. `MAX_FUNCTIONS`) were required; the default
-`include/constants.h` settings were sufficient for every file.
+Resolving this requires either (a) implementing SysV AMD64 struct-by-value
+parameters and return values (memory-class structs returned via a hidden
+pointer in `rdi`), or (b) refactoring the lexer/parser interface to pass
+`Token` through pointers/out-parameters. Both are larger than a validation
+pass and are deferred to a dedicated future stage.
 
----
+## Caveat
 
-## Feature gap summary
+The bootstrap stops at the first error per module (`bin/cc99` runs
+`ccompiler` with its default `--max-errors`). Validation therefore reached
+`lexer.c` and has **not** yet exercised `lexer.c` (post-`finalize`),
+`parser.c`, or `preprocessor.c` end-to-end. Additional blockers may exist
+beyond the struct-by-value gap and will surface only once it is resolved.
 
-| Gap | C99 section | Affected modules |
-|---|---|---|
-| — | — | None |
+## Status
 
-No feature gaps observed. The compiler is self-hosting across the full
-`src/` source set under the test header stubs.
+**Not yet self-hosting.** Stage-92 validation surfaced and fixed seven real
+defects/limits (including a silent AST-truncation bug that invalidated the
+prior report) and isolated the principal remaining blocker (struct by value).
+Full self-compilation remains pending.

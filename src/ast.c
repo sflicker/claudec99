@@ -17,9 +17,18 @@ ASTNode *ast_new(ASTNodeType type, const char *value) {
 }
 
 void ast_add_child(ASTNode *parent, ASTNode *child) {
-    if (parent->child_count < AST_MAX_CHILDREN) {
-        parent->children[parent->child_count++] = child;
+    if (parent->child_count >= parent->child_cap) {
+        int new_cap = parent->child_cap ? parent->child_cap * 2 : AST_MAX_CHILDREN;
+        ASTNode **grown = realloc(parent->children,
+                                  (size_t)new_cap * sizeof(ASTNode *));
+        if (!grown) {
+            fprintf(stderr, "error: out of memory\n");
+            exit(1);
+        }
+        parent->children = grown;
+        parent->child_cap = new_cap;
     }
+    parent->children[parent->child_count++] = child;
 }
 
 /*
@@ -56,5 +65,6 @@ void ast_free(ASTNode *node) {
     for (int i = 0; i < node->child_count; i++) {
         ast_free(node->children[i]);
     }
+    free(node->children);
     free(node);
 }

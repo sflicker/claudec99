@@ -5,6 +5,16 @@
 #include "type.h"
 #include "util.h"
 
+/* SysV AMD64 integer argument/parameter registers, by operand width.
+ * Stage 92: hoisted to file scope (from block-scope `static` locals) so the
+ * compiler can self-compile — it does not yet support block-scope static
+ * arrays. Semantics are unchanged: these are immutable internal lookup tables. */
+static const char *arg_regs[6]      = { "rdi", "rsi", "rdx", "rcx", "r8",  "r9"  };
+static const char *param_regs_8[6]  = { "dil", "sil", "dl",  "cl",  "r8b", "r9b" };
+static const char *param_regs_16[6] = { "di",  "si",  "dx",  "cx",  "r8w", "r9w" };
+static const char *param_regs_32[6] = { "edi", "esi", "edx", "ecx", "r8d", "r9d" };
+static const char *param_regs_64[6] = { "rdi", "rsi", "rdx", "rcx", "r8",  "r9"  };
+
 static int type_kind_bytes(TypeKind kind) {
     switch (kind) {
     case TYPE_VOID:     return 0; /* never directly allocated */
@@ -2533,9 +2543,6 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_FUNCTION_CALL) {
-        static const char *arg_regs[6] = {
-            "rdi", "rsi", "rdx", "rcx", "r8", "r9"
-        };
         int nargs = node->child_count;
         ASTNode *callee = codegen_find_function_decl(cg, node->value);
 
@@ -2640,9 +2647,6 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         /* Stage 25-03: indirect call through a function pointer.
          * children[0] = callee expression (VAR_REF or DEREF of a fp);
          * children[1..n] = arguments. */
-        static const char *arg_regs[6] = {
-            "rdi", "rsi", "rdx", "rcx", "r8", "r9"
-        };
         int nargs = node->child_count - 1;
         /* Pre-validate VAR_REF callee: if the name is not a known variable
          * (local or global), it was not declared as a function pointer before
@@ -4122,18 +4126,6 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * SysV AMD64 argument register so the full declared width is
          * preserved and nothing above it is touched.
          */
-        static const char *param_regs_8[6]  = {
-            "dil", "sil", "dl",  "cl",  "r8b", "r9b"
-        };
-        static const char *param_regs_16[6] = {
-            "di",  "si",  "dx",  "cx",  "r8w", "r9w"
-        };
-        static const char *param_regs_32[6] = {
-            "edi", "esi", "edx", "ecx", "r8d", "r9d"
-        };
-        static const char *param_regs_64[6] = {
-            "rdi", "rsi", "rdx", "rcx", "r8",  "r9"
-        };
         int reg_params = num_params < 6 ? num_params : 6;
         for (int i = 0; i < reg_params; i++) {
             /* Stage 75-01: unnamed params in variadic definitions are ignored. */
@@ -4292,10 +4284,26 @@ static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
         if (already_emitted) continue;
         fprintf(cg->output, "extern %s\n", c->value);
     }
-    /* Stage 84: extern object declarations (e.g. stdin/stdout/stderr) */
+    /* Stage 84: extern object declarations (e.g. stdin/stdout/stderr).
+     * Stage 92: suppress the `extern` directive when the same object is
+     * also defined in this translation unit (e.g. a header declares
+     * `extern int g`, the .c defines `int g = 0;`). Emitting both an
+     * `extern` and a label definition makes NASM reject the symbol as
+     * "inconsistently redefined". Collapse repeated externs to one line. */
     for (int i = 0; i < cg->global_count; i++) {
-        if (cg->globals[i].is_extern)
-            fprintf(cg->output, "extern %s\n", cg->globals[i].name);
+        if (!cg->globals[i].is_extern) continue;
+        int suppress = 0;
+        for (int k = 0; k < cg->global_count; k++) {
+            if (k == i) continue;
+            if (strcmp(cg->globals[k].name, cg->globals[i].name) != 0) continue;
+            /* a definition elsewhere, or an already-emitted earlier extern */
+            if (!cg->globals[k].is_extern || k < i) {
+                suppress = 1;
+                break;
+            }
+        }
+        if (suppress) continue;
+        fprintf(cg->output, "extern %s\n", cg->globals[i].name);
     }
 }
 

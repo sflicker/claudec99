@@ -252,7 +252,7 @@ static void print_tokens_mode(const char *source, const char *source_file) {
     lexer_free(&lexer);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     int print_ast = 0;
     int print_tokens = 0;
     int warnings_are_errors = 0;

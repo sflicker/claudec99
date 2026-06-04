@@ -58,7 +58,7 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `AST_MAX_CHILDREN` | 64 | Maximum number of direct child nodes an `ASTNode` can hold. Limits the number of parameters in a call expression, fields in an initializer list, and statements in a block, among other constructs. |
+| `AST_MAX_CHILDREN` | 64 | Initial capacity of an `ASTNode`'s child array. The array is allocated lazily and grows by doubling, so this is a starting size rather than a hard cap (parameters in a call expression, fields in an initializer list, statements in a block, and top-level declarations in a translation unit all grow as needed). |
 
 ### Type system
 
@@ -88,9 +88,9 @@ raise a limit.
 | `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
 | `MAX_BREAK_DEPTH` | 32 | Maximum nesting depth of breakable constructs (loops and switches). |
 | `MAX_SWITCH_DEPTH` | 16 | Maximum nesting depth of `switch` statements. |
-| `MAX_SWITCH_LABELS` | 64 | Maximum number of `case`/`default` labels in a single `switch`. |
+| `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
 | `MAX_USER_LABELS` | 64 | Maximum number of user-defined `goto` labels per function. |
-| `MAX_STRING_LITERALS` | 256 | Maximum number of distinct string literal values in a translation unit. |
+| `MAX_STRING_LITERALS` | 2048 | Maximum number of string literal occurrences in a translation unit. |
 | `MAX_LOCAL_STATICS` | 128 | Maximum number of block-scope `static` variables across all functions in a translation unit. |
 
 ### Preprocessor
@@ -201,6 +201,16 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 92 (self-compilation validation — in progress):
+
+> Stage 92 began validating self-compilation (using the compiler to build
+> itself). It fixed a silent AST-child-truncation bug (the `ASTNode` child
+> array is now dynamically grown) and raised several capacity limits, plus a
+> few stub/source adjustments. Full self-hosting is **not yet achieved** — it
+> is currently blocked on struct-by-value parameters/returns (used by the
+> lexer/parser `Token` interface), which remains under "Not yet supported".
+> See [`docs/self-compilation-report.md`](docs/self-compilation-report.md).
+
 Through stage 91 (address-of member lvalues):
 
 - **Preprocessor**:
@@ -210,7 +220,7 @@ Through stage 91 (address-of member lvalues):
     to the including file's directory; nested includes supported; recursive
     includes detected via a depth limit.
   - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, `putchar`, `fseek`, `ftell`, and `fread`; and file-position/read macros `SEEK_SET`, `SEEK_CUR`, `SEEK_END`), `stddef.h`,
-    `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`, `strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
+    `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`, `strtol`, `strtoul`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`, `strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
     `errno.h` (error constants and `errno` macro), `time.h` (`time_t`, `clock_t`,
     `time()`, `clock()`), `setjmp.h` (`jmp_buf`, `setjmp`, `longjmp`), and `stdarg.h` (`va_list` typedef and va_* macro stubs),
@@ -495,7 +505,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 91 all tests pass (819 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1302 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 92 all tests pass (819 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1302 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
