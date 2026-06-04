@@ -1668,9 +1668,12 @@ static ASTNode *parse_unary(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *operand = parse_unary(parser);
         /* Stage 13-04: address-of also accepts an array subscript so
-         * `&a[i]` produces a pointer to the i-th element. */
+         * `&a[i]` produces a pointer to the i-th element.
+         * Stage 91: member access (. and ->) are also addressable lvalues. */
         if (operand->type != AST_VAR_REF &&
-            operand->type != AST_ARRAY_INDEX) {
+            operand->type != AST_ARRAY_INDEX &&
+            operand->type != AST_MEMBER_ACCESS &&
+            operand->type != AST_ARROW_ACCESS) {
             PARSER_ERROR(parser, "error: address-of requires an lvalue\n");
         }
         ASTNode *node = parser_node(parser, AST_ADDR_OF, NULL);

@@ -446,6 +446,21 @@ static Type *global_var_type(GlobalVar *gv) {
     return t;
 }
 
+/* Stage 91: recover a Type * for a struct/union field, mirroring
+ * local_var_type / global_var_type for the StructField descriptor. */
+static Type *struct_field_type(StructField *f) {
+    if (f->full_type) return f->full_type;
+    switch (f->kind) {
+    case TYPE_CHAR:               return type_char();
+    case TYPE_SHORT:              return type_short();
+    case TYPE_LONG:               return type_long();
+    case TYPE_LONG_LONG:          return type_long_long();
+    case TYPE_UNSIGNED_LONG_LONG: return type_unsigned_long_long();
+    case TYPE_INT:
+    default:                      return type_int();
+    }
+}
+
 static void emit_load_global(CodeGen *cg, const char *name, int size, int is_unsigned) {
     switch (size) {
     case 1:
@@ -2050,17 +2065,33 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         return;
     }
     if (node->type == AST_ADDR_OF) {
-        /* Operand is AST_VAR_REF or AST_ARRAY_INDEX (parser-enforced).
+        /* Operand is AST_VAR_REF, AST_ARRAY_INDEX, AST_MEMBER_ACCESS,
+         * or AST_ARROW_ACCESS (parser-enforced).
          * For a var-ref, take the variable's address with `lea`. For
          * an array subscript, reuse the array-index address helper:
          * `&a[i]` evaluates `a + i * sizeof(*a)` without loading
-         * through it. The result type is pointer-to-element in both
-         * cases. */
+         * through it. For member/arrow access, delegate to the existing
+         * emit_member_addr / emit_arrow_addr helpers which leave the
+         * field address in rax. */
         ASTNode *operand = node->children[0];
         if (operand->type == AST_ARRAY_INDEX) {
             Type *element = emit_array_index_addr(cg, operand);
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(element);
+            return;
+        }
+        /* Stage 91: &s.member — member access via dot. */
+        if (operand->type == AST_MEMBER_ACCESS) {
+            StructField *f = emit_member_addr(cg, operand);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(struct_field_type(f));
+            return;
+        }
+        /* Stage 91: &p->member — member access via arrow. */
+        if (operand->type == AST_ARROW_ACCESS) {
+            StructField *f = emit_arrow_addr(cg, operand);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(struct_field_type(f));
             return;
         }
         LocalVar *lv = codegen_find_var(cg, operand->value);

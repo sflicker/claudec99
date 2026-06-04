@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 90 (hexadecimal integer literals):
+Through stage 91 (address-of member lvalues):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -310,7 +310,9 @@ Through stage 90 (hexadecimal integer literals):
   Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP register class types (int, unsigned int, long, unsigned long, long long, unsigned long long, and pointer types) including register-save area and overflow stack paths; `va_copy` remains a stub. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
-  `NULL` as a null pointer constant.
+  `NULL` as a null pointer constant. The address-of operator `&` accepts
+  any addressable lvalue: identifiers, array subscripts, struct/union
+  member access via `.` (e.g. `&s.x`) and `->` (e.g. `&p->x`).
 - **void type**: `void` return type for functions; void functions may use bare `return;`
   or fall off the end without an explicit return. `void *` generic object pointer with
   implicit conversion to/from any non-function pointer type. `f(void)` parameter list
@@ -493,7 +495,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 90 all tests pass (817 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1300 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 91 all tests pass (819 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1302 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
