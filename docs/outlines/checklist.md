@@ -1043,6 +1043,140 @@
 - [ ] `va_arg` for floating-point and struct-by-value types (deferred)
 - [ ] `va_copy` codegen (still a no-op stub)
 
+## Stage 76 - For-Loop Initializer Declarations
+
+- [x] Grammar: `<for_statement>` uses a `<for_init>` clause
+- [x] `parse_for_statement` opens a scope before parsing init
+	- [x] Type-specifier lookahead → declaration (parse_statement)
+	- [x] Otherwise → expression (parse_expression_statement)
+- [x] Declared variables in scope for condition, update, and body
+- [x] Codegen saves/restores `scope_start` and `local_count` across the loop
+- [x] Scope-leak and void-type declarations rejected
+
+## Stage 77 - Enum and Constant Expressions in Case Labels
+
+- [x] `eval_case_const_primary` / `eval_case_const_unary` / `eval_case_const_expr`
+- [x] Case labels accept integer literals, character literals, enum constants
+- [x] Unary and binary `+` / `-` over constant operands
+- [x] Non-constant case label expressions rejected with a clear diagnostic
+- [x] Folded value stored as AST_INT_LITERAL (no codegen change)
+
+## Stage 78 - General Postfix Expression Chaining
+
+- [x] Postfix operators chain on any postfix base (not just identifiers)
+- [x] Subscript base accepts AST_MEMBER_ACCESS and AST_ARROW_ACCESS
+- [x] Array-typed struct/union members wrapped in `type_array()` (TYPE_ARRAY)
+- [x] codegen: `emit_array_index_addr` handles member/arrow bases
+	- [x] array-typed fields: result register is the base address
+	- [x] pointer-typed fields: dereference load before indexing
+- [x] Enables chains like `p->tokens[i].kind`
+
+## Stage 79 - General Lvalue Compound Assignment
+
+- [x] Compound operators (`+= -= *= /= %= <<= >>= &= ^= |=`) on any modifiable lvalue
+- [x] Desugar `lhs op= rhs` → `lhs = lhs op rhs` (AST_ASSIGNMENT + AST_BINARY_OP)
+- [x] `ast_clone()` deep-copies the lvalue subtree to avoid node aliasing
+- [x] Lvalue-validity check applies to compound forms
+- [x] No codegen change (reuses two-child AST_ASSIGNMENT path)
+
+## Stage 80 - Prefix/Postfix ++/-- on General Lvalues
+
+- [x] Removed AST_VAR_REF-only restriction in `parse_postfix` and `parse_unary`
+- [x] `codegen_inc_dec_general()` handles AST_ARRAY_INDEX, AST_MEMBER_ACCESS, AST_ARROW_ACCESS, AST_DEREF
+	- [x] reuses stage-79 address helpers
+	- [x] pointers scale by pointee size; old value (postfix) / new value (prefix)
+- [x] Non-lvalue and const-qualified operands rejected at codegen
+- [x] Unblocks idioms like `g->data[g->len++] = c`
+
+## Stage 81 - Header Updates and Compiler Limits
+
+- [x] `stdio.h`: `putchar`; `stdlib.h`: `calloc`
+- [x] Removed restriction blocking `!` on pointer operands (C99 scalar semantics)
+- [x] Raised PARSER_MAX_FUNCTIONS, PARSER_MAX_GLOBALS, MAX_GLOBALS, MAX_LOCALS from 64 to 256
+
+## Stage 82 - const/volatile Qualifier Hardening
+
+- [x] Stage 82-01: `const` in struct/union member declarations
+	- [x] pointer-to-const members (`const char *name`) via `type_const_copy`
+	- [x] const-scalar members via `is_const` on StructField; direct assignment rejected
+- [x] Stage 82-02: const-qualified member lvalue rules
+	- [x] subscript write through a pointer-to-const member rejected
+- [x] Stage 82-03: `const` in type-name contexts (sizeof, cast, va_arg)
+	- [x] `parse_type_name` consumes leading const and post-pointer qualifiers
+- [x] Stage 82-04: minimal `volatile` handling
+	- [x] TOKEN_VOLATILE; `type_qualifier` extended; accepted at all const positions
+	- [x] `is_volatile` on Type/StructField; `type_volatile_copy()`; no codegen effect
+- [x] Stage 82-05: const member / pointer-to-const-struct diagnostics
+	- [x] `member_base_is_const()` rejects assignment to members of const objects
+
+## Stage 83 - Project Source Converted to Strict ISO C99
+
+- [x] Compiler source passes `gcc/clang -std=c99 -pedantic-errors`
+- [x] `util_strdup()` replaces non-standard `strdup`
+- [x] Portable CC_NORETURN / CC_PRINTF macros replace GNU `__attribute__`
+- [x] CMake locked to `CMAKE_C_STANDARD 99`, `CMAKE_C_EXTENSIONS OFF`, `-Wall -Wextra -pedantic`
+- [x] Behavior-preserving (no language or codegen change)
+
+## Stage 84 - Standard Streams and extern Objects
+
+- [x] `stdin` / `stdout` / `stderr` as `extern FILE *` in `stdio.h`
+- [x] Codegen: `is_extern` flag on globals; extern objects registered but skipped in BSS/data
+- [x] `codegen_emit_externs` emits NASM `extern` directives for extern objects
+- [x] Stage 84-02: `exit()` declaration in `stdlib.h`
+
+## Stage 85 - Member-Array to Pointer Decay
+
+- [x] Array-typed struct/union members decay to pointer-to-element in value contexts
+- [x] `codegen_expression` / `expr_result_type` report TYPE_POINTER for array members
+- [x] char-array struct members initialized from string literals (per-byte stores)
+- [x] Stage 85-01: `string.h` additions (`strncat`, `strncmp`, `strncpy`, `strrchr`, …)
+
+## Stage 86 - Multidimensional Array Support
+
+- [x] Declarators parse multiple `[N]` suffixes (MAX_ARRAY_DIMS = 8)
+	- [x] first dimension may be inferred; inner dimensions required
+- [x] `build_array_type_from_dims()` nests array types right-to-left
+- [x] All declaration sites use the multi-dimensional builder (members, locals, globals, typedefs)
+- [x] `parse_type_name` abstract array declarators (e.g. `sizeof(int[4][8])`)
+- [x] codegen: `get_subscript_element_type()`; `emit_array_index_addr` scales by inner array byte size
+- [x] Array-to-pointer decay at each level
+
+## Stage 87 - File Position and Read Stubs
+
+- [x] `stdio.h`: `fseek`, `ftell`, `fread` with `SEEK_SET` / `SEEK_CUR` / `SEEK_END`
+- [x] Declarative stub additions only (no compiler change)
+
+## Stage 88 - Hex and Octal Character Escapes
+
+- [x] Lexer: hex `\xNN` and octal `\NNN` (1-3 digits) escapes in char and string literals
+- [x] `\0` folded into the octal branch
+- [x] Decoded to byte values, truncated to 8 bits
+- [x] Grammar `<escape_sequence>` / `<character_escape_sequence>` updated
+
+## Stage 89 - Adjacent String Literal Concatenation
+
+- [x] `parse_primary` loops over consecutive TOKEN_STRING_LITERAL tokens
+- [x] Decoded bytes appended into one node->value buffer
+- [x] Total length checked against MAX_NAME_LEN before each concatenation
+- [x] `byte_length`, null terminator, and `full_type` set from accumulated length
+
+## Stage 90 - Hexadecimal Integer Literals
+
+- [x] Lexer: `0x` / `0X` prefix detection in the integer-literal branch
+- [x] Hex digits read via `isxdigit()`; parsed with `strtoul(..., 16)`
+- [x] Missing hex digits after prefix rejected
+- [x] Shares suffix and type-determination logic with the decimal path
+- [x] Grammar `<integer_literal>` split into `<decimal_literal>` / `<hex_literal>`
+
+## Stage 91 - Address-of Member Lvalues
+
+- [x] Unary `&` accepts AST_MEMBER_ACCESS and AST_ARROW_ACCESS (plus AST_VAR_REF, AST_ARRAY_INDEX)
+- [x] `struct_field_type()` helper converts StructField to Type*
+- [x] AST_ADDR_OF dispatches to `emit_member_addr()` / `emit_arrow_addr()`
+- [x] Result type set to pointer-to-field
+- [x] Enables `&s.member`, `&p->member`, `&arr[i].member`
+- [x] Full `src/` tree now self-compiles (last self-compilation parser gap closed)
+
 ---
 
 ## TODO
@@ -1059,12 +1193,14 @@
 - [ ] Floating-point conversions (int ↔ float ↔ double)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [x] Union types (Stage 72; anonymous unions Stage 73-01)
+- [x] Multidimensional arrays (Stage 86; up to 8 dimensions)
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
 - [ ] Compound literals: (Type){ ... }
-- [ ] volatile qualifier
+- [x] volatile qualifier (Stage 82-04; parsed and tracked, no codegen effect yet)
 - [ ] restrict qualifier on pointers
 - [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)
+- [x] const in struct/union members and type-name contexts (Stage 82-01/02/03/05)
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
@@ -1072,7 +1208,7 @@
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables
-- [ ] For-loop initializer declarations: for (int i = 0; ...)
+- [x] For-loop initializer declarations: for (int i = 0; ...) (Stage 76)
 - [ ] Multiple pointer levels in multi-declarator lists
 - [ ] Function declarations at block scope
 - [ ] Incomplete array types in extern declarations
@@ -1086,7 +1222,13 @@
 - [ ] sizeof with unsigned result type (size_t)
 - [ ] Pointer comparison operators (< <= > >= on pointers)
 - [ ] Pointer equality with non-null constants
-- [ ] Integer constant expressions (evaluated at compile time)
+- [x] Integer constant expressions in case labels (Stage 77; enum constants and +/- folding)
+- [x] Hexadecimal integer literals: 0x/0X prefix (Stage 90)
+- [x] Adjacent string literal concatenation (Stage 89)
+- [x] Hex (\xNN) and octal (\NNN) character/string escapes (Stage 88)
+- [x] Address-of on member/subscript lvalues: &s.m, &p->m, &a[i].m (Stage 91)
+- [x] Compound assignment and ++/-- on general lvalues (Stages 79, 80)
+- [ ] General integer constant expressions (evaluated at compile time)
 - [ ] Floating-point constant expressions
 - [ ] Lvalue conversion rules for all expression contexts
 - [ ] Unary + on floating-point
@@ -1094,9 +1236,10 @@
 - [ ] Integer and floating-point promotions in function arguments (default argument promotions)
 
 ### Statements
-- [ ] For-loop initializer declarations
+- [x] For-loop initializer declarations (Stage 76)
 - [ ] switch with long / char / short discriminant (after promotion)
 - [ ] Case labels with unsigned and long constant values
+- [x] Case labels with enum constants and +/- constant expressions (Stage 77)
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions
@@ -1116,13 +1259,15 @@
 - [x] <stdint.h>: full exact-width, least-width, fast, and pointer-size integer typedefs (stub complete)
 - [x] <limits.h>: full set including `LLONG_MIN`, `LLONG_MAX`, `ULLONG_MAX` (stub complete)
 - [x] <stdbool.h>: `bool`, `true`, `false` (stub complete)
-- [x] <stdio.h>: expanded with opaque `FILE`, `EOF`, `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf` (Stage 67, 75-04); `fread`/`fwrite`/`stderr` still pending
+- [x] <stdio.h>: expanded with opaque `FILE`, `EOF`, `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf` (Stage 67, 75-04); `putchar` (Stage 81); `stdin`/`stdout`/`stderr` streams (Stage 84); `fseek`/`ftell`/`fread` + `SEEK_*` (Stage 87); `fwrite` still pending
+- [x] <stdlib.h>: `calloc` (Stage 81); `exit` (Stage 84-02)
+- [x] <string.h>: `strncat`, `strncmp`, `strncpy`, `strrchr`, … (Stage 85-01)
 - [x] <ctype.h>: classification functions (`isalpha`, `isdigit`, `isspace`, …) (Stage 74)
 - [x] <errno.h>: `errno`, `ERANGE`, `EINVAL`, etc. (Stage 74)
 - [x] <time.h>: `time_t`, time functions (Stage 74)
 - [x] <setjmp.h>: non-local jump support (Stage 74)
 - [x] <stdarg.h>: `va_list`, `va_start`, `va_end`, `va_arg`, `va_copy` macros (Stage 75-02)
-- [ ] <stdio.h>: remaining stubs `fread`, `fwrite`, `stderr` (needed for self-hosting)
+- [ ] <stdio.h>: remaining stub `fwrite`
 - [ ] <math.h>: basic floating-point math functions
 - [ ] <assert.h>: assert macro
 
