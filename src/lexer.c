@@ -433,21 +433,41 @@ Token lexer_next_token(Lexer *lexer) {
         exit(1);
     }
 
-    /* Integer literals: digits, optional 'L' or 'l' suffix forces long.
-     * Without a suffix, the type is int when the value fits in a signed
-     * 32-bit int and long otherwise. Values that exceed the long range
-     * are rejected as "too large for supported integer types". */
+    /* Integer literals: decimal or hexadecimal (0x/0X prefix).
+     * Optional U/u and L/l suffixes set unsigned and size.
+     * Without a suffix, type is int when value fits signed 32-bit, else long. */
     if (isdigit(c)) {
         int i = 0;
-        while (isdigit(lexer->source[lexer->pos]) && i < 255) {
-            token.value[i++] = lexer->source[lexer->pos];
+        int is_hex = 0;
+
+        /* Detect hex prefix 0x / 0X */
+        if (c == '0' && (lexer->source[lexer->pos + 1] == 'x' ||
+                         lexer->source[lexer->pos + 1] == 'X')) {
+            is_hex = 1;
+            token.value[i++] = '0';
             lexer_advance(lexer);
+            token.value[i++] = lexer->source[lexer->pos]; /* 'x' or 'X' */
+            lexer_advance(lexer);
+            if (!isxdigit((unsigned char)lexer->source[lexer->pos])) {
+                fprintf(stderr, "error: invalid hexadecimal integer literal\n");
+                exit(1);
+            }
+            while (isxdigit((unsigned char)lexer->source[lexer->pos]) && i < 255) {
+                token.value[i++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+            }
+        } else {
+            while (isdigit(lexer->source[lexer->pos]) && i < 255) {
+                token.value[i++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+            }
         }
         token.value[i] = '\0';
+
         int l_count = 0;
         int has_unsigned_suffix = 0;
-        /* Stage 00-98: consume U/u and L/l suffixes in any order.
-         * Stage 64: count L/l chars to detect LL suffix (long long). */
+        /* Consume U/u and L/l suffixes in any order.
+         * Count L/l chars to detect LL suffix (long long). */
         while (lexer->source[lexer->pos] == 'U' || lexer->source[lexer->pos] == 'u' ||
                lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
             char sc = lexer->source[lexer->pos];
@@ -463,7 +483,7 @@ Token lexer_next_token(Lexer *lexer) {
         int has_long_suffix = (l_count == 1);
         errno = 0;
         char *end = NULL;
-        unsigned long parsed = strtoul(token.value, &end, 10);
+        unsigned long parsed = strtoul(token.value, &end, is_hex ? 16 : 10);
         /* Unsigned literals (U suffix) may hold values up to ULONG_MAX
          * without overflow.  Plain or L-only literals are capped at
          * LONG_MAX since they live in the signed long domain. */

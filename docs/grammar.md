@@ -221,7 +221,11 @@
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
-<integer_literal> ::= [0-9]+ [ <integer_suffix> ]
+<integer_literal> ::= <decimal_literal> | <hex_literal>
+
+<decimal_literal> ::= [0-9]+ [ <integer_suffix> ]
+
+<hex_literal> ::= ( "0x" | "0X" ) [0-9a-fA-F]+ [ <integer_suffix> ]
 
 <string_literal> ::= TOKEN_STRING_LITERAL { TOKEN_STRING_LITERAL }
 

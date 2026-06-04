@@ -201,7 +201,7 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 89 (adjacent string literal concatenation):
+Through stage 90 (hexadecimal integer literals):
 
 - **Preprocessor**:
   - _Comments and line splicing_: comment removal (`//` and `/* */`) with
@@ -293,6 +293,8 @@ Through stage 89 (adjacent string literal concatenation):
   uses `shr` (logical); unsigned comparisons use unsigned condition codes. Integer
   literals with suffixes: `L` (long), `U` (unsigned), `UL`/`LU` (unsigned long),
   `LL`/`ll` (long long), `ULL`/`LLU` (unsigned long long).
+  Hexadecimal integer literals (`0x`/`0X` prefix, e.g. `0x2A`, `0xffffffff`, `0x10ULL`)
+  with the same suffix forms.
   `long long` and `unsigned long long` types (8 bytes, alignment 8); codegen identical to `long`.
   Predefined macro `__SIZEOF_LONG_LONG__` (= `8`).
   _Bool type with value-normalization semantics (any nonzero value assigned to _Bool becomes 1; zero stays 0); integer promotion applies in expressions.
@@ -491,7 +493,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 89 all tests pass (812 valid, 235 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1293 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 90 all tests pass (817 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1300 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
