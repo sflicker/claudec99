@@ -68,6 +68,9 @@ typedef struct {
     struct ASTNode *init_node;
     /* Stage 84: set for extern-only object declarations (no storage here). */
     int is_extern;
+    /* Stage 92: set for file-scope `static` variables (internal linkage — no
+     * `global` NASM directive emitted). */
+    int is_static_linkage;
 } GlobalVar;
 
 /* One entry per breakable construct (loop or switch). Switches set

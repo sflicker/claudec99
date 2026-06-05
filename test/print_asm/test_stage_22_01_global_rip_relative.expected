@@ -1,4 +1,5 @@
 section .bss
+global g
 g: resd 1
 section .text
 global main

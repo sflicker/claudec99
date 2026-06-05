@@ -97,7 +97,7 @@ typedef struct {
     int sret;        /* hidden return pointer occupies rdi */
     int stack_bytes; /* total bytes of stack-passed arguments (each 8-aligned) */
     int count;
-    ArgSlot items[FUNC_MAX_PARAMS + 8];
+    ArgSlot items[MAX_CALL_LAYOUT_ITEMS];
 } CallLayout;
 
 /*
@@ -1071,6 +1071,24 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
         return f;
     }
 
+    /* Arrow-then-dot: base is an arrow access (e.g. parser->current.file). */
+    if (base->type == AST_ARROW_ACCESS) {
+        StructField *inner_f = emit_arrow_addr(cg, base);
+        if ((inner_f->kind != TYPE_STRUCT && inner_f->kind != TYPE_UNION) ||
+            !inner_f->full_type) {
+            compile_error( "error: '.' applied to non-struct/union member '%s'\n",
+                    base->value);
+        }
+        StructField *f = find_struct_field(inner_f->full_type, field_name);
+        if (!f) {
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(inner_f->kind), field_name);
+        }
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+
     if (base->type != AST_VAR_REF) {
         compile_error( "error: '.' base must be an identifier\n");
     }
@@ -1969,6 +1987,24 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: assignment through pointer to const-qualified type\n");
             }
             int sz = type_size(element);
+            /* Stage 92: struct/union array-element assignment — use sret address
+             * of the RHS and block-copy into the element slot. */
+            if (element->kind == TYPE_STRUCT || element->kind == TYPE_UNION) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                Type *st = emit_struct_addr(cg, node->children[1]);
+                if (!st) {
+                    compile_error(
+                            "error: cannot assign non-struct/union to struct/union array element\n");
+                }
+                fprintf(cg->output, "    mov rsi, rax\n");
+                fprintf(cg->output, "    pop rdi\n");
+                cg->push_depth--;
+                emit_struct_copy(cg, sz);
+                node->result_type = element->kind;
+                node->full_type = element;
+                return;
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
@@ -2030,6 +2066,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 default: sz = 4; break;
                 }
             }
+            /* Stage 92: struct/union member-dot assignment — block-copy. */
+            if (f->kind == TYPE_STRUCT || f->kind == TYPE_UNION) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                emit_struct_addr(cg, node->children[1]);
+                fprintf(cg->output, "    mov rsi, rax\n");
+                fprintf(cg->output, "    pop rdi\n");
+                cg->push_depth--;
+                emit_struct_copy(cg, sz);
+                node->result_type = f->kind;
+                node->full_type = f->full_type;
+                return;
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
@@ -2089,6 +2138,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 default: sz = 4; break;
                 }
             }
+            /* Stage 92: struct/union member-arrow assignment — block-copy. */
+            if (f->kind == TYPE_STRUCT || f->kind == TYPE_UNION) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                emit_struct_addr(cg, node->children[1]);
+                fprintf(cg->output, "    mov rsi, rax\n");
+                fprintf(cg->output, "    pop rdi\n");
+                cg->push_depth--;
+                emit_struct_copy(cg, sz);
+                node->result_type = f->kind;
+                node->full_type = f->full_type;
+                return;
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
@@ -2126,6 +2188,19 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         "error: assignment through pointer to const-qualified type\n");
             }
             int sz = type_size(base);
+            /* Stage 92: struct/union deref-assignment — block-copy. */
+            if (base->kind == TYPE_STRUCT || base->kind == TYPE_UNION) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                emit_struct_addr(cg, node->children[1]);
+                fprintf(cg->output, "    mov rsi, rax\n");
+                fprintf(cg->output, "    pop rdi\n");
+                cg->push_depth--;
+                emit_struct_copy(cg, sz);
+                node->result_type = base->kind;
+                node->full_type = base;
+                return;
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
@@ -2550,6 +2625,59 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 fprintf(cg->output, "    mov rax, %d\n", elem_type->size);
                 node->result_type = TYPE_LONG;
                 return;
+            }
+        }
+        /* Stage 92: sizeof(ptr->field) or sizeof(obj.field) where the field
+         * is an array, struct, or union — must use full_type->size. */
+        if (child->type == AST_ARROW_ACCESS && child->child_count > 0 &&
+            child->children[0]->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, child->children[0]->value);
+            if (lv && lv->kind == TYPE_POINTER && lv->full_type && lv->full_type->base) {
+                StructField *f = find_struct_field(lv->full_type->base, child->value);
+                if (f && f->full_type &&
+                    (f->kind == TYPE_ARRAY || f->kind == TYPE_STRUCT || f->kind == TYPE_UNION)) {
+                    fprintf(cg->output, "    mov rax, %d\n", f->full_type->size);
+                    node->result_type = TYPE_LONG;
+                    return;
+                }
+            }
+        }
+        if (child->type == AST_MEMBER_ACCESS && child->child_count > 0 &&
+            child->children[0]->type == AST_VAR_REF) {
+            LocalVar *lv = codegen_find_var(cg, child->children[0]->value);
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) && lv->full_type) {
+                StructField *f = find_struct_field(lv->full_type, child->value);
+                if (f && f->full_type &&
+                    (f->kind == TYPE_ARRAY || f->kind == TYPE_STRUCT || f->kind == TYPE_UNION)) {
+                    fprintf(cg->output, "    mov rax, %d\n", f->full_type->size);
+                    node->result_type = TYPE_LONG;
+                    return;
+                }
+            }
+        }
+        /* Stage 92: sizeof(arr[i].field) where the element is a struct/union
+         * and the field is an array, struct, or union. */
+        if (child->type == AST_MEMBER_ACCESS && child->child_count > 0 &&
+            child->children[0]->type == AST_ARRAY_INDEX &&
+            child->children[0]->child_count > 0 &&
+            child->children[0]->children[0]->type == AST_VAR_REF) {
+            const char *arr_name = child->children[0]->children[0]->value;
+            LocalVar *lv = codegen_find_var(cg, arr_name);
+            Type *elem_type = NULL;
+            if (lv && (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER) &&
+                lv->full_type && lv->full_type->base &&
+                (lv->full_type->base->kind == TYPE_STRUCT ||
+                 lv->full_type->base->kind == TYPE_UNION)) {
+                elem_type = lv->full_type->base;
+            }
+            if (elem_type) {
+                StructField *f = find_struct_field(elem_type, child->value);
+                if (f && f->full_type &&
+                    (f->kind == TYPE_ARRAY || f->kind == TYPE_STRUCT || f->kind == TYPE_UNION)) {
+                    fprintf(cg->output, "    mov rax, %d\n", f->full_type->size);
+                    node->result_type = TYPE_LONG;
+                    return;
+                }
             }
         }
         TypeKind kind = sizeof_type_of_expr(cg, child);
@@ -4867,6 +4995,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->is_unsigned = decl->is_unsigned;
     gv->init_node = NULL;
     gv->is_extern = (decl->storage_class == SC_EXTERN);
+    gv->is_static_linkage = (decl->storage_class == SC_STATIC);
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
         if (init->type == AST_INT_LITERAL) {
@@ -5007,6 +5136,8 @@ static void codegen_emit_data(CodeGen *cg) {
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
         if (!gv->is_initialized || gv->is_extern) continue;
+        if (!gv->is_static_linkage)
+            fprintf(cg->output, "global %s\n", gv->name);
 
         if (gv->init_node && gv->kind == TYPE_ARRAY &&
             gv->init_node->type == AST_STRING_LITERAL) {
@@ -5130,6 +5261,8 @@ static void codegen_emit_bss(CodeGen *cg) {
     for (int i = 0; i < cg->global_count; i++) {
         GlobalVar *gv = &cg->globals[i];
         if (gv->is_initialized || gv->is_extern) continue;
+        if (!gv->is_static_linkage)
+            fprintf(cg->output, "global %s\n", gv->name);
         if (gv->kind == TYPE_ARRAY && gv->full_type) {
             fprintf(cg->output, "%s: %s %d\n",
                     gv->name,

@@ -1,9 +1,15 @@
 section .bss
+global g
 g: resd 1
+global c
 c: resb 1
+global s
 s: resw 1
+global l
 l: resq 1
+global p
 p: resq 1
+global arr
 arr: resd 10
 section .text
 global main

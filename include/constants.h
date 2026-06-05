@@ -58,6 +58,13 @@
 #define FUNC_MAX_PARAMS 16
 #endif
 
+/* Maximum ArgSlot entries in a CallLayout (FUNC_MAX_PARAMS + 8 extra for
+ * hidden sret slot and variadic overhead). Must be a single integer literal
+ * so it can be used as an array dimension in our own compiler. */
+#ifndef MAX_CALL_LAYOUT_ITEMS
+#define MAX_CALL_LAYOUT_ITEMS 24
+#endif
+
 /* ---- Codegen limits ---- */
 
 #ifndef MAX_LOCALS

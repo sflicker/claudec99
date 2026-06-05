@@ -201,16 +201,15 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 92 (self-compilation validation — in progress):
+Through stage 92 (self-compilation validation):
 
-> Stage 92 began validating self-compilation (using the compiler to build
-> itself). It fixed a silent AST-child-truncation bug (the `ASTNode` child
-> array is now dynamically grown) and raised several capacity limits, plus a
-> few stub/source adjustments. Full self-hosting is **not yet achieved**, but
-> the principal remaining blocker — struct-by-value parameters/returns, used by
-> the lexer/parser `Token` interface — was resolved in stage 91-01, and the
-> previously-failing `src/lexer.c` now compiles cleanly with the compiler.
-> See [`docs/self-compilation-report.md`](docs/self-compilation-report.md).
+> Stage 92 validates self-compilation of the ClaudeC99 compiler. The compiler
+> (C0, built with gcc) successfully compiles itself to produce C1, which passes
+> all 1306 tests. C1 then compiles itself to produce C2, which also passes all
+> 1306 tests, confirming bootstrapping stability. Six silent code generation
+> bugs were discovered and fixed during self-compilation, all related to
+> struct-by-value assignments and sizeof calculations. The compiler is now
+> fully self-hosting.
 
 Through stage 91 (address-of member lvalues):
 
@@ -507,7 +506,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 91-01 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 92 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
