@@ -2617,6 +2617,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 }
             }
         }
+        /* sizeof("literal") = strlen + 1 for the null terminator. */
+        if (child->type == AST_STRING_LITERAL) {
+            fprintf(cg->output, "    mov rax, %d\n", (int)strlen(child->value) + 1);
+            node->result_type = TYPE_LONG;
+            return;
+        }
         /* Stage 86: sizeof(expr[i]) where the element type is itself an array
          * (e.g. sizeof(s.table[0]) where table is int[4][8] → 32). */
         if (child->type == AST_ARRAY_INDEX) {
