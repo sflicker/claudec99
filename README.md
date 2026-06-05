@@ -206,9 +206,10 @@ Through stage 92 (self-compilation validation — in progress):
 > Stage 92 began validating self-compilation (using the compiler to build
 > itself). It fixed a silent AST-child-truncation bug (the `ASTNode` child
 > array is now dynamically grown) and raised several capacity limits, plus a
-> few stub/source adjustments. Full self-hosting is **not yet achieved** — it
-> is currently blocked on struct-by-value parameters/returns (used by the
-> lexer/parser `Token` interface), which remains under "Not yet supported".
+> few stub/source adjustments. Full self-hosting is **not yet achieved**, but
+> the principal remaining blocker — struct-by-value parameters/returns, used by
+> the lexer/parser `Token` interface — was resolved in stage 91-01, and the
+> previously-failing `src/lexer.c` now compiles cleanly with the compiler.
 > See [`docs/self-compilation-report.md`](docs/self-compilation-report.md).
 
 Through stage 91 (address-of member lvalues):
@@ -311,6 +312,7 @@ Through stage 91 (address-of member lvalues):
 - **Functions**: multiple functions per translation unit, forward
   declarations with compatibility checking (return type and parameter type
   matching between declarations and definitions), SysV AMD64 calls with any number of integer, pointer, _Bool, enum, and struct-pointer arguments (args 1–6 in registers per ABI, args 7+ passed on the stack right-to-left with automatic 16-byte alignment), typed parameter and return-type conversions at the call boundary,
+  struct/union arguments and return values passed **by value** per the SysV AMD64 ABI (register-class objects ≤ 16 bytes use 1–2 INTEGER GP registers for arguments and rax:rdx for returns; memory-class objects > 16 bytes are passed on the stack and returned through a hidden pointer / sret in rdi; the callee receives a private copy and the caller's original is unchanged),
   calls into libc via `extern` emission for declared-but-not-defined functions
   with support for void* parameters/returns (e.g., `malloc`, `free`), const char*
   parameters (e.g., `puts`, `strcmp`, `strlen`), and typedef-based size_t.
@@ -477,7 +479,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields, struct by-value parameters/return values (pointer-to-struct parameters are now supported); floating-point; block-scope `extern`; block-scope `static` arrays and structs;
+Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`; block-scope `static` arrays and structs;
 floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
 `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
 
@@ -505,7 +507,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 92 all tests pass (819 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1302 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 91-01 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

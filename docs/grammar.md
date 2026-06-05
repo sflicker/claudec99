@@ -422,9 +422,11 @@
 #     structs via typedef aliases and opaque pointer fields.
 #   - Non-pointer incomplete struct fields are rejected; only pointer-to-incomplete-struct
 #     fields are allowed as struct members.
-#   - Struct-by-value function parameters are not yet supported.
-#     Pointer-to-struct parameters (struct T *p) are supported (stage 34).
-#   - Struct-by-value return types are not yet supported.
+#   - Struct-by-value function parameters and return types are supported
+#     (stage 91-01), passed/returned per the SysV AMD64 ABI: register-class
+#     objects (<= 16 bytes) use GP registers (and rax:rdx for returns),
+#     memory-class objects (> 16 bytes) use the stack and a hidden sret pointer.
+#     Pointer-to-struct parameters (struct T *p) are also supported (stage 34).
 #   - Anonymous struct/union types are supported (stage 73-01): the tag is optional
 #     when a body '{' is present (e.g., `struct { int x; int y; } p;`). Each anonymous
 #     definition creates a unique type; type identity is by pointer, so two separately

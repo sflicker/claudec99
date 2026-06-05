@@ -2888,6 +2888,10 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     } else {
         param->decl_type = base_kind;
         param->is_unsigned = !base_type->is_signed;
+        /* Stage 91-01: a struct/union passed by value needs its full type
+         * so codegen knows the object's size and field layout. */
+        if (base_kind == TYPE_STRUCT || base_kind == TYPE_UNION)
+            param->full_type = base_type;
     }
     return param;
 }
@@ -3364,6 +3368,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     func->storage_class = sc;
     if (d.pointer_count > 0)
         func->full_type = full_type;
+    /* Stage 91-01: a struct/union returned by value needs its full type so
+     * codegen knows the object's size (and whether it is register- or
+     * memory-class for the SysV AMD64 return convention). */
+    else if (return_kind == TYPE_STRUCT || return_kind == TYPE_UNION)
+        func->full_type = base_type;
 
     parser_expect(parser, TOKEN_LPAREN);
     /* `f(void)` — the sole `void` keyword means zero parameters. */

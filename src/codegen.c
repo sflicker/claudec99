@@ -34,6 +34,113 @@ static int type_kind_bytes(TypeKind kind) {
     return 4;
 }
 
+static int is_struct_or_union_kind(TypeKind k) {
+    return k == TYPE_STRUCT || k == TYPE_UNION;
+}
+
+/*
+ * Stage 91-01: SysV AMD64 classification for a struct/union passed or returned
+ * by value. This compiler has no floating-point types, so every eightbyte is
+ * INTEGER class. A struct of 1..8 bytes occupies one GP eightbyte; 9..16 bytes
+ * two GP eightbytes; anything larger is MEMORY class (passed on the stack and
+ * returned through a hidden pointer). Returns the GP eightbyte count for a
+ * register-class struct, or 0 for a memory-class (or unsized) one.
+ */
+static int struct_reg_eightbytes(Type *st) {
+    if (!st) return 0;
+    int sz = st->size;
+    if (sz <= 0 || sz > 16) return 0;
+    return (sz > 8) ? 2 : 1;
+}
+
+/* True when the function's return type is a memory-class (>16 byte) struct,
+ * which the SysV ABI returns via a hidden pointer passed in rdi. */
+static int return_is_memory_struct(ASTNode *fn_decl) {
+    return fn_decl && is_struct_or_union_kind(fn_decl->decl_type) &&
+           fn_decl->full_type && fn_decl->full_type->size > 16;
+}
+
+/*
+ * Stage 91-01: emit a byte-for-byte block copy of `nbytes` bytes from the
+ * address in rsi to the address in rdi. Uses `rep movsb`, which advances and
+ * thus clobbers rcx, rsi, and rdi (the SysV ABI keeps the direction flag
+ * clear, and this code never sets it, so a forward copy is correct).
+ */
+static void emit_struct_copy(CodeGen *cg, int nbytes) {
+    fprintf(cg->output, "    mov rcx, %d\n", nbytes);
+    fprintf(cg->output, "    rep movsb\n");
+}
+
+/* Count the leading AST_PARAM children of a function declaration node. */
+static int count_params(ASTNode *fn_decl) {
+    int n = 0;
+    if (!fn_decl) return 0;
+    while (n < fn_decl->child_count && fn_decl->children[n]->type == AST_PARAM)
+        n++;
+    return n;
+}
+
+/*
+ * Stage 91-01: per-argument placement under the SysV AMD64 ABI, shared by the
+ * call site and the callee prologue so both agree on register/stack layout.
+ */
+typedef struct {
+    int is_struct;   /* argument is a struct/union value */
+    int mem;         /* passed on the stack (memory class or out of registers) */
+    int nbytes;      /* object size in bytes (8 for scalars/pointers) */
+    int gp_start;    /* first GP register index (0=rdi..5=r9), or -1 if on stack */
+    int gp_count;    /* number of GP registers consumed (>=1) when in registers */
+    int stack_off;   /* byte offset within the outgoing stack-arg area if on stack */
+} ArgSlot;
+
+typedef struct {
+    int sret;        /* hidden return pointer occupies rdi */
+    int stack_bytes; /* total bytes of stack-passed arguments (each 8-aligned) */
+    int count;
+    ArgSlot items[FUNC_MAX_PARAMS + 8];
+} CallLayout;
+
+/*
+ * Compute argument placement for a call to `fn_decl` (which may be NULL for an
+ * undeclared/libc callee) with `nargs` actual arguments. Struct/union value
+ * parameters are classified per their declared full type; arguments beyond the
+ * declared parameters (variadic extras) are treated as scalar GP eightbytes.
+ */
+static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
+    int num_params = count_params(fn_decl);
+    L->sret = return_is_memory_struct(fn_decl);
+    L->count = nargs;
+    int gp_next = L->sret ? 1 : 0;
+    int stack_off = 0;
+    for (int i = 0; i < nargs; i++) {
+        ArgSlot *s = &L->items[i];
+        s->gp_start = -1; s->gp_count = 0; s->stack_off = -1; s->mem = 0;
+        ASTNode *p = (i < num_params) ? fn_decl->children[i] : NULL;
+        int is_struct = p && is_struct_or_union_kind(p->decl_type);
+        s->is_struct = is_struct;
+        if (is_struct) {
+            int sz = p->full_type ? p->full_type->size : 0;
+            int ebs = struct_reg_eightbytes(p->full_type);
+            s->nbytes = sz;
+            if (ebs > 0 && gp_next + ebs <= 6) {
+                s->gp_start = gp_next; s->gp_count = ebs; gp_next += ebs;
+            } else {
+                s->mem = 1;
+                s->stack_off = stack_off;
+                stack_off += (sz + 7) & ~7;
+            }
+        } else {
+            s->nbytes = 8;
+            if (gp_next < 6) {
+                s->gp_start = gp_next++; s->gp_count = 1;
+            } else {
+                s->mem = 1; s->stack_off = stack_off; stack_off += 8;
+            }
+        }
+    }
+    L->stack_bytes = stack_off;
+}
+
 /*
  * Emit instructions to convert the value currently in rax/eax from
  * `src` to `dst` following assignment-style rules: widen with
@@ -267,6 +374,9 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->variadic_reg_save_offset = 0;
     cg->variadic_named_gp_params = 0;
     cg->variadic_named_stack_params = 0;
+    cg->current_sret_offset = 0;
+    cg->struct_ret_scratch_base = 0;
+    cg->struct_ret_scratch_cursor = 0;
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -402,6 +512,10 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
     cg->locals[cg->local_count].kind = kind;
     cg->locals[cg->local_count].full_type = full_type;
     cg->locals[cg->local_count].is_const = 0;
+    /* Stage 91-01: clear is_static so a slot reused from a prior function's
+     * block-scope static local is not misread as static (&var / member access
+     * consult this flag). Static locals are registered via a separate path. */
+    cg->locals[cg->local_count].is_static = 0;
     cg->local_count++;
     return cg->stack_offset;
 }
@@ -1068,6 +1182,71 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
 }
 
 /*
+ * Stage 91-01: leave the address of a struct/union-valued expression in rax and
+ * return its Type. Handles the forms that can appear as a by-value struct
+ * argument, return value, or copy-assignment source: a struct variable, a
+ * struct member/element, a dereferenced pointer-to-struct, and a struct-
+ * returning function call (which codegen_expression materializes into scratch,
+ * leaving the temp's address in rax).
+ */
+static Type *emit_struct_addr(CodeGen *cg, ASTNode *node) {
+    switch (node->type) {
+    case AST_VAR_REF: {
+        LocalVar *lv = codegen_find_var(cg, node->value);
+        if (lv) {
+            if (!is_struct_or_union_kind(lv->kind) || !lv->full_type)
+                compile_error( "error: '%s' is not a struct/union value\n", node->value);
+            if (lv->is_static)
+                fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
+            else
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+            return lv->full_type;
+        }
+        GlobalVar *gv = codegen_find_global(cg, node->value);
+        if (!gv || !is_struct_or_union_kind(gv->kind) || !gv->full_type)
+            compile_error( "error: '%s' is not a struct/union value\n", node->value);
+        fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
+        return gv->full_type;
+    }
+    case AST_MEMBER_ACCESS: {
+        StructField *f = emit_member_addr(cg, node);
+        if (!is_struct_or_union_kind(f->kind) || !f->full_type)
+            compile_error( "error: member '%s' is not a struct/union value\n", node->value);
+        return f->full_type;
+    }
+    case AST_ARROW_ACCESS: {
+        StructField *f = emit_arrow_addr(cg, node);
+        if (!is_struct_or_union_kind(f->kind) || !f->full_type)
+            compile_error( "error: member '%s' is not a struct/union value\n", node->value);
+        return f->full_type;
+    }
+    case AST_ARRAY_INDEX: {
+        Type *element = emit_array_index_addr(cg, node);
+        if (!element || !is_struct_or_union_kind(element->kind))
+            compile_error( "error: subscripted value is not a struct/union\n");
+        return element;
+    }
+    case AST_DEREF: {
+        codegen_expression(cg, node->children[0]);
+        Type *pt = node->children[0]->full_type;
+        if (!pt || pt->kind != TYPE_POINTER || !pt->base ||
+            !is_struct_or_union_kind(pt->base->kind))
+            compile_error( "error: dereferenced value is not a pointer to struct/union\n");
+        return pt->base;
+    }
+    case AST_FUNCTION_CALL: {
+        codegen_expression(cg, node);
+        if (!node->full_type || !is_struct_or_union_kind(node->decl_type))
+            compile_error( "error: call does not return a struct/union value\n");
+        return node->full_type;
+    }
+    default:
+        compile_error( "error: expression is not a usable struct/union value\n");
+    }
+    return NULL;
+}
+
+/*
  * Conservative upper bound on stack bytes needed for locals: 8 bytes
  * per scalar/pointer declaration, and the array's actual byte count
  * plus 7 bytes of alignment slack per array declaration. The
@@ -1091,6 +1270,39 @@ static int compute_decl_bytes(ASTNode *node) {
         total += compute_decl_bytes(node->children[i]);
     }
     return total;
+}
+
+/*
+ * Stage 91-01: bytes of frame scratch needed to materialize the results of
+ * struct-returning function calls in a body. Each such call gets its own slot
+ * (the simple bump allocator below never frees), sized to the rounded struct
+ * size plus alignment slack. Register-class returns need a slot to spill
+ * rax:rdx into; memory-class returns use the slot directly as the sret buffer.
+ */
+static int compute_struct_ret_bytes(CodeGen *cg, ASTNode *node) {
+    if (!node) return 0;
+    int total = 0;
+    if (node->type == AST_FUNCTION_CALL) {
+        ASTNode *callee = codegen_find_function_decl(cg, node->value);
+        if (callee && is_struct_or_union_kind(callee->decl_type) && callee->full_type) {
+            int sz = callee->full_type->size;
+            total += ((sz + 7) & ~7) + 8;
+        }
+    }
+    for (int i = 0; i < node->child_count; i++)
+        total += compute_struct_ret_bytes(cg, node->children[i]);
+    return total;
+}
+
+/*
+ * Claim a struct-return scratch slot of `size` bytes and return its rbp
+ * offset (the slot occupies [rbp-offset .. rbp-offset+size-1], matching the
+ * struct local layout convention). The region was reserved in the prologue.
+ */
+static int claim_struct_ret_temp(CodeGen *cg, int size) {
+    int rs = (size + 7) & ~7;
+    cg->struct_ret_scratch_cursor += rs;
+    return cg->struct_ret_scratch_cursor;
 }
 
 /*
@@ -1946,23 +2158,38 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             }
             /* Stage 33/72: struct/union-to-struct/union assignment — byte copy. */
             if ((lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) && lv->full_type) {
-                if (node->child_count < 1 || node->children[0]->type != AST_VAR_REF) {
-                    compile_error( "error: %s assignment requires a %s variable\n",
+                if (node->child_count < 1) {
+                    compile_error( "error: %s assignment requires a %s value\n",
                             type_kind_name(lv->kind), type_kind_name(lv->kind));
                 }
-                LocalVar *src = codegen_find_var(cg, node->children[0]->value);
-                if (!src || src->kind != lv->kind || !src->full_type) {
-                    compile_error( "error: cannot assign non-%s to %s '%s'\n",
-                            type_kind_name(lv->kind), type_kind_name(lv->kind), lv->name);
-                }
-                if (src->full_type != lv->full_type) {
-                    compile_error( "error: incompatible %s types in assignment to '%s'\n",
-                            type_kind_name(lv->kind), lv->name);
-                }
-                int sz = lv->full_type->size;
-                for (int b = 0; b < sz; b++) {
-                    fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
-                    fprintf(cg->output, "    mov [rbp - %d], al\n", lv->offset - b);
+                if (node->children[0]->type == AST_VAR_REF &&
+                    codegen_find_var(cg, node->children[0]->value)) {
+                    LocalVar *src = codegen_find_var(cg, node->children[0]->value);
+                    if (src->kind != lv->kind || !src->full_type) {
+                        compile_error( "error: cannot assign non-%s to %s '%s'\n",
+                                type_kind_name(lv->kind), type_kind_name(lv->kind), lv->name);
+                    }
+                    if (src->full_type != lv->full_type) {
+                        compile_error( "error: incompatible %s types in assignment to '%s'\n",
+                                type_kind_name(lv->kind), lv->name);
+                    }
+                    int sz = lv->full_type->size;
+                    for (int b = 0; b < sz; b++) {
+                        fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
+                        fprintf(cg->output, "    mov [rbp - %d], al\n", lv->offset - b);
+                    }
+                } else {
+                    /* Stage 91-01: source is a struct rvalue (function call,
+                     * member, dereference, global, ...). Materialize its
+                     * address and block-copy into the destination slot. */
+                    Type *st = emit_struct_addr(cg, node->children[0]);
+                    if (!st || st != lv->full_type) {
+                        compile_error( "error: incompatible %s types in assignment to '%s'\n",
+                                type_kind_name(lv->kind), lv->name);
+                    }
+                    fprintf(cg->output, "    mov rsi, rax\n");
+                    fprintf(cg->output, "    lea rdi, [rbp - %d]\n", lv->offset);
+                    emit_struct_copy(cg, lv->full_type->size);
                 }
                 node->result_type = lv->kind;
                 node->full_type = lv->full_type;
@@ -2576,6 +2803,131 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } \
     } \
 } while (0)
+
+        /* Stage 91-01: does this call pass a struct by value, or return one?
+         * Only then take the general SysV marshalling path below; otherwise
+         * keep the existing scalar push/pop path byte-for-byte. */
+        int involves_struct = 0;
+        if (callee) {
+            if (is_struct_or_union_kind(callee->decl_type))
+                involves_struct = 1;
+            int np_chk = count_params(callee);
+            for (int i = 0; i < np_chk && i < nargs; i++)
+                if (is_struct_or_union_kind(callee->children[i]->decl_type))
+                    involves_struct = 1;
+        }
+        if (involves_struct) {
+            CallLayout L;
+            compute_call_layout(&L, callee, nargs);
+
+            /* Allocate a scratch slot for a struct return result (any class). */
+            int ret_struct = is_struct_or_union_kind(callee->decl_type);
+            int ret_size   = ret_struct ? callee->full_type->size : 0;
+            int ret_temp   = ret_struct ? claim_struct_ret_temp(cg, ret_size) : 0;
+
+            /* Outgoing stack-argument area, padded so rsp is 16-byte aligned
+             * at the call given the currently outstanding pushes. */
+            int region = (L.stack_bytes + 7) & ~7;
+            if (((cg->push_depth * 8 + region) % 16) != 0)
+                region += 8;
+            if (region > 0) {
+                fprintf(cg->output, "    sub rsp, %d\n", region);
+                cg->push_depth += region / 8;
+            }
+
+            /* Phase 1: evaluate memory-passed (stack) arguments into the area. */
+            for (int i = 0; i < nargs; i++) {
+                ArgSlot *s = &L.items[i];
+                if (!s->mem) continue;
+                if (s->is_struct) {
+                    Type *st = emit_struct_addr(cg, node->children[i]);
+                    int sz = st ? st->size : s->nbytes;
+                    fprintf(cg->output, "    mov rsi, rax\n");
+                    fprintf(cg->output, "    lea rdi, [rsp + %d]\n", s->stack_off);
+                    emit_struct_copy(cg, sz);
+                } else {
+                    codegen_expression(cg, node->children[i]);
+                    EMIT_ARG_CONVERT(node, callee, i);
+                    fprintf(cg->output, "    mov [rsp + %d], rax\n", s->stack_off);
+                }
+            }
+
+            /* Phase 2: evaluate register-passed arguments, spilling each
+             * eightbyte to the stack; the hidden sret pointer (if any) is the
+             * first spill and maps to rdi. */
+            int spill_regs[8];   /* gp register index per spilled eightbyte */
+            int nspill = 0;
+            if (L.sret) {
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", ret_temp);
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                spill_regs[nspill++] = 0;
+            }
+            for (int i = 0; i < nargs; i++) {
+                ArgSlot *s = &L.items[i];
+                if (s->mem) continue;
+                if (s->is_struct) {
+                    emit_struct_addr(cg, node->children[i]);
+                    fprintf(cg->output, "    mov r11, rax\n");
+                    fprintf(cg->output, "    mov rax, [r11]\n");
+                    fprintf(cg->output, "    push rax\n");
+                    cg->push_depth++;
+                    spill_regs[nspill++] = s->gp_start;
+                    if (s->gp_count == 2) {
+                        fprintf(cg->output, "    mov rax, [r11 + 8]\n");
+                        fprintf(cg->output, "    push rax\n");
+                        cg->push_depth++;
+                        spill_regs[nspill++] = s->gp_start + 1;
+                    }
+                } else {
+                    codegen_expression(cg, node->children[i]);
+                    EMIT_ARG_CONVERT(node, callee, i);
+                    fprintf(cg->output, "    push rax\n");
+                    cg->push_depth++;
+                    spill_regs[nspill++] = s->gp_start;
+                }
+            }
+            /* Load the spilled eightbytes into their argument registers. The
+             * j-th of nspill pushes sits at [rsp + (nspill-1-j)*8]. */
+            for (int j = 0; j < nspill; j++) {
+                fprintf(cg->output, "    mov %s, [rsp + %d]\n",
+                        arg_regs[spill_regs[j]], (nspill - 1 - j) * 8);
+            }
+            if (nspill > 0) {
+                fprintf(cg->output, "    add rsp, %d\n", nspill * 8);
+                cg->push_depth -= nspill;
+            }
+            if (callee->is_variadic)
+                fprintf(cg->output, "    xor eax, eax\n");
+            fprintf(cg->output, "    call %s\n", node->value);
+            if (region > 0) {
+                fprintf(cg->output, "    add rsp, %d\n", region);
+                cg->push_depth -= region / 8;
+            }
+
+            /* Result handling. */
+            if (ret_struct) {
+                if (ret_size > 16) {
+                    /* Memory class: result already in the sret buffer. */
+                    fprintf(cg->output, "    lea rax, [rbp - %d]\n", ret_temp);
+                } else {
+                    /* Register class: spill rax:rdx into the temp, then point
+                     * rax at it so consumers treat it as a struct lvalue. */
+                    fprintf(cg->output, "    mov [rbp - %d], rax\n", ret_temp);
+                    if (ret_size > 8)
+                        fprintf(cg->output, "    mov [rbp - %d], rdx\n", ret_temp - 8);
+                    fprintf(cg->output, "    lea rax, [rbp - %d]\n", ret_temp);
+                }
+                node->result_type = callee->decl_type;
+                node->decl_type = callee->decl_type;
+                node->full_type = callee->full_type;
+            } else {
+                node->result_type = node->decl_type;
+                if (callee->decl_type == TYPE_POINTER)
+                    node->full_type = callee->full_type;
+            }
+            return;
+        }
 
         if (nargs <= 6) {
             /* Evaluate all args left-to-right, push, then pop into regs. */
@@ -3596,26 +3948,35 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                                            node->children[0]);
                 }
             } else if (node->child_count > 0) {
-                /* struct/union T d = c — copy from another variable of the same type. */
+                /* struct/union T d = c — copy from another value of the same type. */
                 ASTNode *init = node->children[0];
-                if (init->type != AST_VAR_REF) {
-                    compile_error( "error: %s initializer must be a %s variable\n",
-                            type_kind_name(node->decl_type),
-                            type_kind_name(node->decl_type));
-                }
-                LocalVar *src = codegen_find_var(cg, init->value);
-                if (!src || src->kind != node->decl_type || !src->full_type) {
-                    compile_error( "error: %s initializer must be a %s variable\n",
-                            type_kind_name(node->decl_type),
-                            type_kind_name(node->decl_type));
-                }
-                if (src->full_type != node->full_type) {
-                    compile_error( "error: incompatible %s types in initializer for '%s'\n",
-                            type_kind_name(node->decl_type), node->value);
-                }
-                for (int b = 0; b < size; b++) {
-                    fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
-                    fprintf(cg->output, "    mov [rbp - %d], al\n", offset - b);
+                if (init->type == AST_VAR_REF &&
+                    codegen_find_var(cg, init->value)) {
+                    LocalVar *src = codegen_find_var(cg, init->value);
+                    if (src->kind != node->decl_type || !src->full_type) {
+                        compile_error( "error: %s initializer must be a %s variable\n",
+                                type_kind_name(node->decl_type),
+                                type_kind_name(node->decl_type));
+                    }
+                    if (src->full_type != node->full_type) {
+                        compile_error( "error: incompatible %s types in initializer for '%s'\n",
+                                type_kind_name(node->decl_type), node->value);
+                    }
+                    for (int b = 0; b < size; b++) {
+                        fprintf(cg->output, "    movzx eax, byte [rbp - %d]\n", src->offset - b);
+                        fprintf(cg->output, "    mov [rbp - %d], al\n", offset - b);
+                    }
+                } else {
+                    /* Stage 91-01: initialize from a struct rvalue (function
+                     * call, member, dereference, global, ...). */
+                    Type *st = emit_struct_addr(cg, init);
+                    if (!st || st != node->full_type) {
+                        compile_error( "error: incompatible %s types in initializer for '%s'\n",
+                                type_kind_name(node->decl_type), node->value);
+                    }
+                    fprintf(cg->output, "    mov rsi, rax\n");
+                    fprintf(cg->output, "    lea rdi, [rbp - %d]\n", offset);
+                    emit_struct_copy(cg, size);
                 }
             }
             return;
@@ -3769,6 +4130,35 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 node->children[0]->decl_type == TYPE_VOID) {
                 compile_error(
                         "error: cannot use void function result as return value\n");
+            }
+            /* Stage 91-01: returning a struct/union by value. Get the source
+             * struct's address, then either load its eightbyte(s) into rax:rdx
+             * (register class, <=16 bytes) or copy it into the hidden return
+             * buffer and leave the buffer pointer in rax (memory class). */
+            if (is_struct_or_union_kind(cg->current_return_type)) {
+                Type *st = emit_struct_addr(cg, node->children[0]);
+                int sz = cg->current_return_full_type
+                             ? cg->current_return_full_type->size
+                             : (st ? st->size : 0);
+                if (sz > 16) {
+                    fprintf(cg->output, "    mov rsi, rax\n");
+                    fprintf(cg->output, "    mov rdi, [rbp - %d]\n",
+                            cg->current_sret_offset);
+                    emit_struct_copy(cg, sz);
+                    fprintf(cg->output, "    mov rax, [rbp - %d]\n",
+                            cg->current_sret_offset);
+                } else {
+                    fprintf(cg->output, "    mov r11, rax\n");
+                    fprintf(cg->output, "    mov rax, [r11]\n");
+                    if (sz > 8)
+                        fprintf(cg->output, "    mov rdx, [r11 + 8]\n");
+                }
+                if (cg->has_frame) {
+                    fprintf(cg->output, "    mov rsp, rbp\n");
+                    fprintf(cg->output, "    pop rbp\n");
+                }
+                fprintf(cg->output, "    ret\n");
+                return;
             }
             /* Stage 12-06: a return of the literal `0` from a pointer
              * function is a null pointer constant; accept it before the
@@ -4056,19 +4446,43 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->user_label_count = 0;
         cg->current_func = node->value;
         cg->current_return_type = node->decl_type;
+        /* Stage 91-01: a struct/union return (either class) records its full
+         * type so the return statement knows the object's size. */
         cg->current_return_full_type =
-            (node->decl_type == TYPE_POINTER) ? node->full_type : NULL;
+            (node->decl_type == TYPE_POINTER ||
+             is_struct_or_union_kind(node->decl_type)) ? node->full_type : NULL;
+        cg->current_sret_offset = 0;
 
         /* Pre-walk the body to collect user labels; rejects duplicates. */
         collect_user_labels(cg, body);
 
-        /* Compute stack space: 8 bytes per parameter (conservative
-         * upper bound covering long plus worst-case alignment) plus a
-         * conservative 8-byte upper bound per body declaration.
+        /* Stage 91-01: does the prologue need struct-by-value binding (a struct
+         * value parameter, or a hidden sret pointer for a memory-class return)? */
+        int prologue_struct = return_is_memory_struct(node);
+        for (int i = 0; i < num_params; i++)
+            if (is_struct_or_union_kind(node->children[i]->decl_type))
+                prologue_struct = 1;
+
+        /* Compute stack space. Stage 91-01: a struct value parameter reserves
+         * its rounded size (register-class) — memory-class struct params are
+         * referenced in place and cost nothing; a memory-class return reserves
+         * 8 bytes for the saved hidden pointer; struct-returning calls in the
+         * body reserve a scratch region for their result temporaries.
          * Stage 75-04: variadic functions also reserve 304 bytes for the
-         * hidden GP/FP register save area.
-         * Rounded up to a 16-byte multiple. */
-        int stack_size = num_params * 8 + compute_decl_bytes(body);
+         * hidden GP/FP register save area. Rounded up to a 16-byte multiple. */
+        int param_bytes = 0;
+        for (int i = 0; i < num_params; i++) {
+            ASTNode *p = node->children[i];
+            if (is_struct_or_union_kind(p->decl_type) && p->full_type) {
+                param_bytes += (p->full_type->size + 7) & ~7;
+            } else {
+                param_bytes += 8;
+            }
+        }
+        int sret_bytes = return_is_memory_struct(node) ? 8 : 0;
+        int scratch_bytes = compute_struct_ret_bytes(cg, body);
+        int stack_size = param_bytes + compute_decl_bytes(body) +
+                         scratch_bytes + sret_bytes;
         if (node->is_variadic)
             stack_size += 304;
         if (stack_size % 16 != 0)
@@ -4115,6 +4529,18 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             cg->variadic_named_stack_params = 0;
         }
 
+        /* Stage 91-01: reserve the struct-return scratch region (above the
+         * parameter/local area) and, for a memory-class return, an 8-byte slot
+         * holding the hidden return pointer (rdi at entry). */
+        cg->struct_ret_scratch_cursor = cg->stack_offset;
+        if (scratch_bytes > 0)
+            cg->stack_offset += scratch_bytes;
+        if (return_is_memory_struct(node)) {
+            cg->stack_offset += 8;
+            cg->current_sret_offset = cg->stack_offset;
+            fprintf(cg->output, "    mov [rbp - %d], rdi\n", cg->current_sret_offset);
+        }
+
         /*
          * Parameters share the outermost body scope (scope_start stays at 0).
          * A body-level declaration that collides with a parameter name is
@@ -4126,6 +4552,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * SysV AMD64 argument register so the full declared width is
          * preserved and nothing above it is touched.
          */
+        if (!prologue_struct) {
         int reg_params = num_params < 6 ? num_params : 6;
         for (int i = 0; i < reg_params; i++) {
             /* Stage 75-01: unnamed params in variadic definitions are ignored. */
@@ -4179,6 +4606,91 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                 break;
             }
             emit_store_local(cg, offset, sz, sz == 8 ? 1 : 0);
+        }
+        } else {
+            /* Stage 91-01: struct-by-value-aware parameter binding driven by the
+             * shared SysV layout. Register-passed parameters are bound first
+             * (plain stores, no register clobbering); stack-passed parameters
+             * are bound second, since copying them clobbers rdi/rsi/rcx. */
+            CallLayout L;
+            compute_call_layout(&L, node, num_params);
+            /* Pass A: register-passed parameters. */
+            for (int i = 0; i < num_params; i++) {
+                ASTNode *p = node->children[i];
+                ArgSlot *s = &L.items[i];
+                if (p->value[0] == '\0' || s->mem) continue;
+                if (is_struct_or_union_kind(p->decl_type)) {
+                    int slot = (p->full_type->size + 7) & ~7;
+                    int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
+                    int off = codegen_add_var(cg, p->value, slot, align,
+                                              p->decl_type, p->full_type);
+                    cg->locals[cg->local_count - 1].is_unsigned = 0;
+                    fprintf(cg->output, "    mov [rbp - %d], %s\n", off, arg_regs[s->gp_start]);
+                    if (s->gp_count == 2)
+                        fprintf(cg->output, "    mov [rbp - %d], %s\n", off - 8,
+                                arg_regs[s->gp_start + 1]);
+                } else {
+                    int sz = type_kind_bytes(p->decl_type);
+                    int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
+                    cg->locals[cg->local_count - 1].is_unsigned = p->is_unsigned;
+                    const char *reg;
+                    int gi = s->gp_start;
+                    switch (sz) {
+                    case 1: reg = param_regs_8[gi];  break;
+                    case 2: reg = param_regs_16[gi]; break;
+                    case 8: reg = param_regs_64[gi]; break;
+                    case 4:
+                    default: reg = param_regs_32[gi]; break;
+                    }
+                    fprintf(cg->output, "    mov [rbp - %d], %s\n", off, reg);
+                }
+            }
+            /* Pass B: stack-passed parameters (incoming at [rbp+16+stack_off]). */
+            for (int i = 0; i < num_params; i++) {
+                ASTNode *p = node->children[i];
+                ArgSlot *s = &L.items[i];
+                if (p->value[0] == '\0' || !s->mem) continue;
+                int src = 16 + s->stack_off;
+                if (is_struct_or_union_kind(p->decl_type)) {
+                    /* Memory-class struct: copy the caller's stack copy into a
+                     * local slot so the callee owns a private, mutable copy. */
+                    int sz = p->full_type->size;
+                    int slot = (sz + 7) & ~7;
+                    int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
+                    int off = codegen_add_var(cg, p->value, slot, align,
+                                              p->decl_type, p->full_type);
+                    cg->locals[cg->local_count - 1].is_unsigned = 0;
+                    fprintf(cg->output, "    lea rsi, [rbp + %d]\n", src);
+                    fprintf(cg->output, "    lea rdi, [rbp - %d]\n", off);
+                    emit_struct_copy(cg, sz);
+                } else {
+                    int sz = type_kind_bytes(p->decl_type);
+                    int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
+                    cg->locals[cg->local_count - 1].is_unsigned = p->is_unsigned;
+                    switch (sz) {
+                    case 1:
+                        if (p->is_unsigned)
+                            fprintf(cg->output, "    movzx eax, byte [rbp + %d]\n", src);
+                        else
+                            fprintf(cg->output, "    movsx eax, byte [rbp + %d]\n", src);
+                        break;
+                    case 2:
+                        if (p->is_unsigned)
+                            fprintf(cg->output, "    movzx eax, word [rbp + %d]\n", src);
+                        else
+                            fprintf(cg->output, "    movsx eax, word [rbp + %d]\n", src);
+                        break;
+                    case 8:
+                        fprintf(cg->output, "    mov rax, [rbp + %d]\n", src);
+                        break;
+                    case 4:
+                    default:
+                        fprintf(cg->output, "    mov eax, [rbp + %d]\n", src);
+                        break;
+                    }
+                    emit_store_local(cg, off, sz, sz == 8 ? 1 : 0);
+                }
+            }
         }
 
         /* Generate body statements directly — the function body acts as the outermost scope. */

@@ -151,6 +151,17 @@ typedef struct {
     int variadic_reg_save_offset;
     int variadic_named_gp_params;
     int variadic_named_stack_params;
+    /* Stage 91-01: struct-by-value return support.
+     * current_sret_offset: rbp-relative offset of the slot holding the hidden
+     * return pointer (rdi at entry) when the current function returns a
+     * memory-class struct (>16 bytes); 0 otherwise.
+     * struct_ret_scratch_base / struct_ret_scratch_cursor: a per-function
+     * scratch region used to materialize struct-returning call results. The
+     * base is the highest rbp offset of the region (reserved in the prologue);
+     * the cursor bumps downward as each call site claims a temp. */
+    int current_sret_offset;
+    int struct_ret_scratch_base;
+    int struct_ret_scratch_cursor;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
