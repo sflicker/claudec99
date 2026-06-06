@@ -72,10 +72,10 @@ do_bootstrap_build() {
     # Derive a clean single-token BuiltBy value from the --version output.
     local version_line
     version_line=$(timeout 10 "$ccompiler" --version 2>&1 | head -1 || true)
-    # Extract the dotted version number (e.g. "00.02.00920000") and convert
-    # dots and spaces to underscores to form a valid C token.
+    # Extract the full dotted version (e.g. "00.02.00940000.00656") — all four
+    # groups including the build number — and convert dots to underscores.
     local version_num
-    version_num=$(echo "$version_line" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | tr '.' '_')
+    version_num=$(echo "$version_line" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1 | tr '.' '_')
     local builtby
     if [ -n "$version_num" ]; then
         builtby="ClaudeC99_v${version_num}"
@@ -160,6 +160,16 @@ do_self_host_test() {
         echo "FAIL: test suite failed with C0" >&2
         return 1
     fi
+
+    # Commit after C0 is verified so C1's build number is strictly higher.
+    echo ""
+    echo "--- Committing C0 checkpoint ---"
+    git -C "$SCRIPT_DIR" add -u
+    git -C "$SCRIPT_DIR" commit --allow-empty -m "self-host C0 verified: all tests pass
+
+Checkpoint commit so C1 build number exceeds C0.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
     # C0 → C1
     echo ""
