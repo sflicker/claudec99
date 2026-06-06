@@ -33,12 +33,14 @@ Before beginning, read these supporting files when relevant:
 
 Also always read the `README.md` file in the project root
 
+## Analysis and Planning Phase
+
 Then do the following:
 
 1. Read and summarize the stage spec.
 2. Identify exactly what must change from the previous stage.
 3. Call out any ambiguity, inconsistency, or grammar/spec issue before implementation.
-4. Produce the Kickoff artifact. Delegate this artifact generation to 'haiku-stage-artifact-writer'
+4. Produce the *Kickoff artifact*. Delegate this artifact generation to 'haiku-stage-artifact-writer'
 4. Propose an implementation plan in this order:
 
    * tokenizer
@@ -49,7 +51,7 @@ Then do the following:
    * documentation updates (if needed)
    * commit the changes (if needed) including a commit message.
 
-Implementation Rules:
+## Implementation Phase:
 
 * Follow the spec exactly.
 * Do not introduce features beyond what is defined in the spec.
@@ -63,12 +65,26 @@ Implementation Rules:
 * Update the src/version.c code module to contain the current stage. See the section on version.c below for the formatting rules.
 * During the feature implementation phase use the normal compiler (GCC or clang).
 * After the stage's features changes have been implemented and all the tests (old and new) are passing then commit the code.
-* next do a self hosting test
-   Use the bootstrap build settings to use the compiler just generated (C0) to build a new version of itself (C1).
-   Then use C1 to run the the full test suite.
-   if any issues arise prompt for guidence of either fixing the issue or ending the self hosting test 
-   UPdate the self-compile-report.md. then proceed with the output generatation stepes below.
 
+## Self Host Test Phase
+
+* next do a self hosting test using C0 which was generated from the implementation portion of the stage.
+
+   if any issues arise prompt for guidence to either fix the issue(s) or ending the self hosting test.
+
+   Using the bootstrap build settings.
+   Use C0 to build a new version of itself C1.
+   Then run the the full test suite with C1.
+   Commit the changes. Should at least be updated version.c and possibly bug fixes found during the build.
+   Then use C1 to build a C2.
+   Then use C2 to run the full test suit.
+
+   Update the self-compilation-report.md. If any issues where found they should be documented in this report. 
+   Commit the changes
+
+   Then proceed with the output generatation stepes below.
+
+## Documentation Phase
 Output Requirements:
 
 * Before implementation, produce a clearly labeled **Planned Changes** section listing the expected file/module updates.
@@ -120,3 +136,6 @@ version.c
     * The stage number would be 00700300
     * the `#define VERSION_STAGE  "00700100"` object macro in the version.c code module should be 
       updated during the stage implementation following the above rules.
+* Update the BuildBy 
+    * Uses the compiler used for the build and record it's `--version` as <BUILDBY>
+    * when compiling version.c use a `-D VERSION_BUILDBY= <BUILDBY> from the previous step.
