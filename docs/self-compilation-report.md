@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-06
-**Stage:** stage-94 (self-host validation and implement-stage skill test)
+**Stage:** stage-95-02 (add Vec generic growable-array module)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -14,10 +14,10 @@ and runs the full test suite again. Named copies are saved as
 ## Status
 
 **Fully self-hosting.** C0 (the gcc-built compiler) compiles its own source
-to produce C1; C1 compiles the same source to produce C2. Both C1 and C2
-pass the entire **1306-test** suite with no regressions, confirming the
-compiler reproduces a working copy of itself and that the bootstrap has
-reached a stable fixed point.
+to produce C1; C1 compiles the same source to produce C2. All three pass the
+entire **1412-test** suite (1306 compiler tests + 106 new Vec unit tests) with
+no regressions, confirming the compiler reproduces a working copy of itself
+and that the bootstrap has reached a stable fixed point.
 
 Getting here took two passes. The first validation pass (this report's
 earlier revision) surfaced and fixed seven real defects/limits — including a
@@ -125,7 +125,27 @@ After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
 
-## Result
+## Issues found during stage 95-02 self-hosting test
+
+None. `vec.c` is not compiled by the self-hosted compiler (it is only a utility
+library consumed by future growable-storage stages). The new `test/unit/`
+suite is compiled by the system GCC in the unit test runner and does not
+participate in the C1/C2 bootstrap. All 1412 tests passed at each stage.
+
+## Result (stage 95-02)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950200.00665` | `GNU_13_3_0` | 1412/1412 |
+| C1 | `build/ccompiler-c1` | `00.02.00950200.00666` | `ClaudeC99_v00_02_00950200_00665` | 1412/1412 |
+| C2 | `build/ccompiler-c2` | `00.02.00950200.00667` | `ClaudeC99_v00_02_00950200_00666` | 1412/1412 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible. Timeout guards (300 s per file) added in stage 93 were confirmed
+active — all modules compiled well within the limit.
+
+## Result (stage 94)
 
 | Step | Binary | Version | BuiltBy | Tests |
 |------|--------|---------|---------|-------|
