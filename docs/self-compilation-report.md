@@ -1,15 +1,33 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-06-04
-**Stage:** stage-92 (self-compile validation)
+**Date:** 2026-06-06
+**Stage:** stage-92 (self-compile validation) — achieved via stage 91-01
 **Compiler:** `build/ccompiler` (C0, gcc-built) bootstrapping itself
 **Method:** full bootstrap via `bin/cc99 -Iinclude -o build/ccompiler-c1 src/*.c`
 (`ccompiler` → `nasm -f elf64` → `gcc -no-pie` link), **not** per-module
-`.asm` production alone.
+`.asm` production alone. Repeated a second time (C1 → C2) to confirm
+fixed-point stability.
 
-## Why the previous report was wrong
+## Status
 
-The 2026-06-03 report claimed all 10 modules "compiled cleanly" and that the
+**Fully self-hosting.** C0 (the gcc-built compiler) compiles its own source
+to produce C1; C1 compiles the same source to produce C2. Both C1 and C2
+pass the entire **1306-test** suite with no regressions, confirming the
+compiler reproduces a working copy of itself and that the bootstrap has
+reached a stable fixed point.
+
+Getting here took two passes. The first validation pass (this report's
+earlier revision) surfaced and fixed seven real defects/limits — including a
+silent AST-truncation bug that had invalidated an even earlier "self-hosting"
+claim — and isolated the principal remaining blocker: struct/union by-value
+parameters and returns, used pervasively by the lexer/parser `Token`
+interface. That blocker was implemented in **stage 91-01**, after which a
+second full bootstrap pass surfaced six more silent codegen bugs (all
+struct-by-value or `sizeof` edge cases), which were fixed in **stage 92**.
+
+## Why the very first report was wrong
+
+The original report claimed all 10 modules "compiled cleanly" and that the
 compiler was fully self-hosting. That conclusion was an artifact of the
 measurement: it only checked that `ccompiler` emitted a `.asm` file and exited
 0 for each module. It never **assembled**, **linked**, or **ran** the result.
@@ -24,9 +42,10 @@ old per-module check reported a false PASS.
 
 A true bootstrap (compile → assemble → link → test) exposes the real picture.
 
-## Blockers found and fixed in stage-92
+## Pass 1 — blockers found and fixed during validation
 
-All fixes below keep the host (gcc-built) test suite green at **1302/1302**.
+These seven fixes kept the host (gcc-built) test suite green and got the
+bootstrap from "truncated stub" to "halts only on struct-by-value".
 
 | # | Symptom | Root cause | Fix |
 |---|---------|------------|-----|
@@ -39,20 +58,19 @@ All fixes below keep the host (gcc-built) test suite green at **1302/1302**.
 | 7 | `compiler.c`: `strcmp` arg "expected pointer, got integer" | The `T *name[]` parameter form (`char *argv[]`) mis-typed its element on subscript; only the `T **name` spelling works | Changed `main`'s signature to the equivalent `char **argv` (`src/compiler.c`) |
 
 After fixes 1–7, modules `ast.c`, `ast_pretty_printer.c`, `codegen.c`,
-`compiler.c`, `type.c`, `util.c`, and `version.c` compile, assemble, and link
-cleanly during the bootstrap.
+`compiler.c`, `type.c`, `util.c`, and `version.c` compiled, assembled, and
+linked cleanly; the bootstrap then halted in `lexer.c`.
 
-## Remaining blocker — struct by value (deferred)
+## The principal blocker — struct by value (resolved in stage 91-01)
 
-The bootstrap currently halts in `lexer.c`:
+Pass 1 halted in `lexer.c`:
 
 ```
 lexer.c:116: error: '.' applied to non-struct/union 'token'
 ```
 
 The lexer/parser interface passes and returns the `Token` struct **by value**,
-which the compiler does not yet support (a documented "Not yet supported"
-feature). Affected functions:
+which the compiler did not yet support. Affected functions:
 
 - `Token lexer_next_token(Lexer *lexer)` — returns `Token` by value (the core
   lexer → parser interface; `Token` is a large, memory-class struct).
@@ -61,23 +79,52 @@ feature). Affected functions:
 - `static Token parser_expect(Parser *parser, TokenType type)` — returns
   `Token` by value.
 
-Resolving this requires either (a) implementing SysV AMD64 struct-by-value
-parameters and return values (memory-class structs returned via a hidden
-pointer in `rdi`), or (b) refactoring the lexer/parser interface to pass
-`Token` through pointers/out-parameters. Both are larger than a validation
-pass and are deferred to a dedicated future stage.
+**Stage 91-01** resolved this by implementing the System V AMD64 struct/union
+by-value calling convention: register-class aggregates (≤16 bytes) travel in
+registers, memory-class aggregates (>16 bytes — `Token` among them) travel
+through a hidden pointer. The work added `emit_struct_addr`,
+`emit_struct_copy` (`rep movsb`), `compute_struct_ret_bytes`, and
+`claim_struct_ret_temp`, plus a shared call-layout helper used by both call
+sites and prologues. With this in place the bootstrap proceeded past
+`lexer.c` and exercised `parser.c` and `preprocessor.c` end-to-end.
 
-## Caveat
+## Pass 2 — silent codegen bugs found once the bootstrap ran end-to-end
 
-The bootstrap stops at the first error per module (`bin/cc99` runs
-`ccompiler` with its default `--max-errors`). Validation therefore reached
-`lexer.c` and has **not** yet exercised `lexer.c` (post-`finalize`),
-`parser.c`, or `preprocessor.c` end-to-end. Additional blockers may exist
-beyond the struct-by-value gap and will surface only once it is resolved.
+With struct-by-value working, a second full bootstrap pass (and running the
+resulting C1) surfaced six more bugs that had been latent because no host test
+exercised them. All six were fixed in **stage 92**:
 
-## Status
+| # | Bug | Fix area |
+|---|-----|----------|
+| 1 | Struct-by-value assignment via subscript (`arr[i] = struct_func()`) | `src/codegen.c` |
+| 2 | Struct-by-value assignment via member-dot (`obj.m = struct_func()`) | `src/codegen.c` |
+| 3 | Struct-by-value assignment via member-arrow (`ptr->m = struct_func()`) | `src/codegen.c` |
+| 4 | Struct-by-value assignment via deref (`*ptr = struct_func()`) | `src/codegen.c` |
+| 5 | `sizeof` of arrow-access array/struct/union members | `src/codegen.c` |
+| 6 | `sizeof` of subscripted-struct members | `src/codegen.c` |
 
-**Not yet self-hosting.** Stage-92 validation surfaced and fixed seven real
-defects/limits (including a silent AST-truncation bug that invalidated the
-prior report) and isolated the principal remaining blocker (struct by value).
-Full self-compilation remains pending.
+Stage 92 also added `MAX_CALL_LAYOUT_ITEMS` (`include/constants.h`), an
+`is_static_linkage` field on `GlobalVar`, and `global` NASM directives for
+non-static file-scope variables (so the bootstrap link resolves cross-module
+symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
+
+## Result
+
+| Step | Compiler | Built by | Tests |
+|------|----------|----------|-------|
+| C0   | `build/ccompiler` | gcc | 1306/1306 |
+| C1   | self-compiled from C0 | C0 | 1306/1306 |
+| C2   | self-compiled from C1 | C1 | 1306/1306 |
+
+C0, C1, and C2 each compile successfully with identical test results. The
+compiler is self-hosting and the bootstrap is reproducible. The build can be
+driven through `build.sh --mode=bootstrap` (stage 93), which self-compiles via
+a pre-built ccompiler with a per-file timeout guard.
+
+## Known limitation surfaced by self-compilation
+
+Self-hosting works against the current `src/` tree as written, which avoids
+two still-unsupported constructs: **inline struct/union literals** (`(T){ … }`)
+and **block-scope `static` arrays** (the six register tables in `codegen.c`
+were hoisted to file scope rather than relying on this). Both remain future
+work but do not block the bootstrap.

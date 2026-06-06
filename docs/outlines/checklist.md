@@ -1177,6 +1177,46 @@
 - [x] Enables `&s.member`, `&p->member`, `&arr[i].member`
 - [x] Full `src/` tree now self-compiles (last self-compilation parser gap closed)
 
+## Stage 91-01 - Struct/Union By-Value Parameters and Returns
+
+- [x] System V AMD64 ABI struct/union value parameters and return values
+	- [x] Register-class (≤16 bytes) vs memory-class (>16 bytes) classification
+	- [x] Shared call-layout helper used by both call sites and prologues
+	- [x] `emit_struct_addr()` (field addresses) and `emit_struct_copy()` (block copy via `rep movsb`)
+	- [x] `compute_struct_ret_bytes()` / `claim_struct_ret_temp()` for struct-return scratch
+- [x] `AST_FUNCTION_CALL` rewritten with struct-aware argument marshalling (scalar push/pop preserved)
+- [x] Prologue binds register-class structs by direct stores; memory-class structs copied to private local, hidden sret pointer saved
+- [x] `AST_RETURN_STATEMENT` returns structs by value (register-class in rax/rdx, memory-class via hidden pointer)
+- [x] Whole-struct assignment and declaration-initialization accept struct rvalues (variable, call result, or copy)
+- [x] codegen context: `struct_ret_scratch_base`, `struct_ret_scratch_cursor`, `current_sret_offset`
+- [x] Parser attaches `full_type` to struct/union value parameters and return types
+- [ ] Inline struct literals not yet supported (values must originate from variables, returns, or copies)
+
+## Stage 92 - Self-Compilation (Full Self-Hosting)
+
+- [x] Compiler self-compiles: C0 (gcc-built) → C1 → C2, each passing all 1306 tests
+- [x] `ASTNode.children` converted from fixed cap (64) to lazily-allocated doubling dynamic array (fixed silent truncation of large translation units, blocks, switches)
+- [x] `codegen_emit_externs` suppresses `extern` for objects defined in the same TU; dedupes repeats
+- [x] `is_static_linkage` field on `GlobalVar`; `global` NASM directive emitted for non-static file-scope variables
+- [x] Six silent codegen bugs fixed during bootstrap:
+	- [x] Struct-by-value assignment via subscript (`arr[i] = f()`), dot (`obj.m = f()`), arrow (`p->m = f()`), and deref (`*p = f()`)
+	- [x] `sizeof` of arrow-access array/struct/union members
+	- [x] `sizeof` of subscripted-struct members
+- [x] `sizeof` of a string literal returns `strlen+1` (was 4)
+- [x] `MAX_STRING_LITERALS` 256 → 2048; `MAX_SWITCH_LABELS` 64 → 256; new `MAX_CALL_LAYOUT_ITEMS`
+- [x] Six block-scope `static const char *[]` register tables hoisted to file scope (block-scope static arrays still unsupported)
+- [x] `main` signature uses `char **argv` form (the `T *name[]` element typing path is not yet correct)
+- [x] Stub `stdlib.h`: `strtol`, `strtoul` added
+
+## Stage 93 - Bootstrap Build Workflow
+
+- [x] `build.sh` wrapper with three modes: `--mode=normal` (cmake), `--mode=bootstrap` (self-compile via pre-built ccompiler), `--mode=fallback` (bootstrap if available, else normal)
+- [x] Bootstrap mode per-file `--timeout` guard (default 300s) against infinite loops
+- [x] `CMakeLists.txt` computes `BUILTBY_TOKEN` from compiler ID/version
+- [x] `VERSION_BUILTBY` macro (default `DefaultCcompiler`, stringified via C99 `#` operator); version output extended to two lines with `BuiltBy:` field; `version_buf` 128 → 256 bytes
+- [x] `VERSION_STAGE` "00930000"
+- [x] Test suites gain `TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}` and timeout-wrapped compiler/program invocations
+
 ---
 
 ## TODO
@@ -1278,7 +1318,7 @@
 - [ ] Debug information (DWARF)
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
 - [x] Stack-passing for more than 6 arguments (SysV; caller and callee side) (Stage 68)
-- [ ] Calling convention for struct arguments and return values (hidden-pointer ABI for large structs; prerequisite for self-hosting)
+- [x] Calling convention for struct arguments and return values (SysV: register-class ≤16 bytes, memory-class via hidden pointer; enabled self-hosting) (Stage 91-01)
 - [ ] Floating-point ABI (xmm registers for float/double arguments)
 - [ ] Tail-call opportunities
 - [ ] Constant folding for integer expressions
@@ -1302,5 +1342,5 @@
 - [ ] -c compile-only (emit object file) option
 - [ ] -S assembly output option (currently the only mode)
 - [ ] -O optimization level flags
-- [ ] Makefile / build system for the compiler itself
+- [x] Makefile / build system for the compiler itself (`build.sh`: normal / bootstrap / fallback modes) (Stage 93)
 - [ ] Comprehensive conformance test suite against C99 standard
