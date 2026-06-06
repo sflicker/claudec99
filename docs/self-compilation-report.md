@@ -3,16 +3,13 @@
 **Date:** 2026-06-06
 **Stage:** stage-94 (self-host validation and implement-stage skill test)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
-**Method:** `./build.sh --mode=bootstrap` (stage 93/94 bootstrap driver):
-each source module compiled by `ccompiler` with timeout guard (300 s),
-assembled with `nasm -f elf64`, all objects linked with `gcc -no-pie`.
-Repeated twice (C0→C1, then C1→C2) to confirm fixed-point stability.
-
-**Stage 93 method note:** The original `build.sh --mode=bootstrap` command
-introduced in stage 93 was missing `-I test/include`; the stub system headers
-(`stdio.h`, `stdlib.h`, etc.) live there and are required when compiling the
-compiler's own source. Discovered and fixed in stage 94 (see "Issues found"
-below); all stage-94 bootstrap runs used the corrected script.
+**Method:** `./build.sh --mode=self-host` (added in stage 94):
+archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
+bootstraps C0 → C1 (each source module compiled by `ccompiler` with 300 s
+timeout guard, assembled with `nasm -f elf64`, linked with `gcc -no-pie`),
+runs full test suite, makes a checkpoint commit, then bootstraps C1 → C2
+and runs the full test suite again. Named copies are saved as
+`build/ccompiler-c0/c1/c2`; `build/ccompiler` is left as C2.
 
 ## Status
 
@@ -118,22 +115,25 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 
 | # | Symptom | Root cause | Fix |
 |---|---------|------------|-----|
-| 1 | `build.sh --mode=bootstrap` failed immediately: `error: include file not found: <stdio.h>` | Bootstrap script only passed `-I include` (project headers), not `-I test/include` (stub system headers). `bin/cc99` correctly appended `test/include` but `build.sh` did not mirror this. | Added `-I "$SCRIPT_DIR/test/include"` to the `ccompiler` invocation in `do_bootstrap_build` (`build.sh`) |
+| 1 | `build.sh --mode=bootstrap` failed immediately: `error: include file not found: <stdio.h>` | Bootstrap script only passed `-I include` (project headers), not `-I test/include` (stub system headers). `bin/cc99` correctly appended `test/include` but `build.sh` did not mirror this. | Added `-I "$SCRIPT_DIR/test/include"` to `do_bootstrap_build` in `build.sh` |
+| 2 | C1 and C2 showed `00000` as build number | `build.sh` never computed or passed `-DVERSION_BUILD`; cmake derives it from `git rev-list --count HEAD` at configure time but the bootstrap did not. | Added `git rev-list --count HEAD` computation and `-DVERSION_BUILD=${build_num}` to the compiler invocation in `do_bootstrap_build` (`build.sh`) |
+| 3 | C1 and C2 reported identical version strings | No commit occurred between the C1 and C2 bootstrap runs, so both read the same git commit count. | Added a `git commit --allow-empty` checkpoint step after C1 passes in `--mode=self-host`; C2's build number is now always strictly greater than C1's |
 
-After fix #1, all modules compiled and all tests passed on both C1 and C2.
+After fixes 1–3, all modules compiled and all tests passed on C0, C1, and C2,
+each with a distinct version string.
 
 ## Result
 
-| Step | Compiler | Built by | Tests |
-|------|----------|----------|-------|
-| C0   | `build/ccompiler` | GCC 13.3.0 (stage-94 normal build) | 1306/1306 |
-| C1   | self-compiled from C0 via `build.sh --mode=bootstrap` | C0 (ClaudeC99_v00_02_00940000) | 1306/1306 |
-| C2   | self-compiled from C1 via `build.sh --mode=bootstrap` | C1 (ClaudeC99_v00_02_00940000) | 1306/1306 |
+| Step | Compiler | Version | Built by | Tests |
+|------|----------|---------|----------|-------|
+| C0   | `build/ccompiler-c0` | `00.02.00940000.00650` | GNU_13_3_0 | 1306/1306 |
+| C1   | `build/ccompiler-c1` | `00.02.00940000.00651` | ClaudeC99_v00_02_00940000 | 1306/1306 |
+| C2   | `build/ccompiler-c2` | `00.02.00940000.00652` | ClaudeC99_v00_02_00940000 | 1306/1306 |
 
-C0, C1, and C2 each compile successfully with identical test results. The
-compiler is self-hosting and the bootstrap is reproducible. Timeout guards
-(300 s per file) added in stage 93 were exercised in this run and confirmed
-active — all modules compiled well within the limit.
+C0, C1, and C2 each compile successfully with distinct version strings and
+identical test results. The compiler is self-hosting and the bootstrap is
+reproducible. Timeout guards (300 s per file) added in stage 93 were
+confirmed active — all modules compiled well within the limit.
 
 ## Known limitation surfaced by self-compilation
 
