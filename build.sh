@@ -3,10 +3,16 @@
 # build.sh — Bootstrap-aware build driver for ClaudeC99
 #
 # Modes (--mode=):
-#   normal    Use the system C compiler (GCC or Clang) via cmake.  Default.
-#   bootstrap Use the pre-built ClaudeC99 compiler at build/ccompiler.
-#             Requires a prior normal build to exist.
-#   fallback  Use ClaudeC99 if build/ccompiler exists; otherwise normal.
+#   normal     Use the system C compiler (GCC or Clang) via cmake.  Default.
+#   bootstrap  Use the pre-built ClaudeC99 compiler at build/ccompiler.
+#              Requires a prior normal build to exist.
+#   fallback   Use ClaudeC99 if build/ccompiler exists; otherwise normal.
+#   self-host  Full self-hosting test cycle (requires a prior normal build):
+#              1. Archive existing ccompiler-c0/c1/c2 to build/previous/
+#              2. Save current build/ccompiler as build/ccompiler-c0
+#              3. Bootstrap C0 → C1; run test suite; save as ccompiler-c1
+#              4. Bootstrap C1 → C2; run test suite; save as ccompiler-c2
+#              build/ccompiler is left as C2 at the end.
 #
 # Options:
 #   --timeout=N   Per-file compilation timeout in seconds for bootstrap
@@ -14,7 +20,8 @@
 #
 # Usage examples:
 #   ./build.sh                          # normal cmake build
-#   ./build.sh --mode=bootstrap         # self-hosted build
+#   ./build.sh --mode=bootstrap         # single self-hosted build
+#   ./build.sh --mode=self-host         # full C0→C1→C2 cycle with tests
 #   ./build.sh --mode=fallback          # auto-select
 #   ./build.sh --mode=bootstrap --timeout=60
 
@@ -30,7 +37,7 @@ for arg in "$@"; do
         --timeout=*) BUILD_TIMEOUT="${arg#--timeout=}" ;;
         *)
             echo "Unknown argument: $arg" >&2
-            echo "Usage: $0 [--mode=normal|bootstrap|fallback] [--timeout=N]" >&2
+            echo "Usage: $0 [--mode=normal|bootstrap|self-host|fallback] [--timeout=N]" >&2
             exit 1
             ;;
     esac
@@ -128,6 +135,58 @@ do_bootstrap_build() {
     echo "Bootstrap build complete."
 }
 
+do_self_host_test() {
+    local prev_dir="$SCRIPT_DIR/build/previous"
+
+    # Archive existing named copies so the current run starts clean.
+    mkdir -p "$prev_dir"
+    for name in ccompiler-c0 ccompiler-c1 ccompiler-c2; do
+        if [ -f "$SCRIPT_DIR/build/$name" ]; then
+            echo "Archiving build/$name -> build/previous/$name"
+            mv "$SCRIPT_DIR/build/$name" "$prev_dir/$name"
+        fi
+    done
+
+    # C0 — the GCC-built compiler that was just produced by a normal build.
+    cp "$CCOMPILER_PATH" "$SCRIPT_DIR/build/ccompiler-c0"
+    echo ""
+    echo "=== C0 (GCC-built) ==="
+    "$SCRIPT_DIR/build/ccompiler-c0" --version
+    echo "--- Running test suite with C0 ---"
+    if ! "$SCRIPT_DIR/test/run_all_tests.sh"; then
+        echo "FAIL: test suite failed with C0" >&2
+        return 1
+    fi
+
+    # C0 → C1
+    echo ""
+    echo "=== Bootstrap C0 → C1 ==="
+    do_bootstrap_build
+    cp "$CCOMPILER_PATH" "$SCRIPT_DIR/build/ccompiler-c1"
+    echo "--- Running test suite with C1 ---"
+    if ! "$SCRIPT_DIR/test/run_all_tests.sh"; then
+        echo "FAIL: test suite failed with C1" >&2
+        return 1
+    fi
+
+    # C1 → C2
+    echo ""
+    echo "=== Bootstrap C1 → C2 ==="
+    do_bootstrap_build
+    cp "$CCOMPILER_PATH" "$SCRIPT_DIR/build/ccompiler-c2"
+    echo "--- Running test suite with C2 ---"
+    if ! "$SCRIPT_DIR/test/run_all_tests.sh"; then
+        echo "FAIL: test suite failed with C2" >&2
+        return 1
+    fi
+
+    echo ""
+    echo "Self-host test complete."
+    echo "  C0: $("$SCRIPT_DIR/build/ccompiler-c0" --version | head -1)"
+    echo "  C1: $("$SCRIPT_DIR/build/ccompiler-c1" --version | head -1)"
+    echo "  C2: $("$SCRIPT_DIR/build/ccompiler-c2" --version | head -1)"
+}
+
 case "$MODE" in
     normal)
         echo "=== Normal build ==="
@@ -141,6 +200,14 @@ case "$MODE" in
         fi
         echo "=== Bootstrap build ==="
         do_bootstrap_build
+        ;;
+    self-host)
+        if [ ! -x "$CCOMPILER_PATH" ]; then
+            echo "Error: build/ccompiler not found; run a normal build first." >&2
+            exit 1
+        fi
+        echo "=== Self-host test ==="
+        do_self_host_test
         ;;
     fallback)
         if [ -x "$CCOMPILER_PATH" ]; then
