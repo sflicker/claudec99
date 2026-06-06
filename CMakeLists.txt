@@ -28,6 +28,7 @@ add_executable(ccompiler
     src/preprocessor.c
     src/type.c
     src/util.c
+    src/vec.c
     src/version.c
 )
 
