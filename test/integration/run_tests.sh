@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp_integration"
+TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
 mkdir -p "$WORK_DIR"
@@ -72,7 +73,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     if [ -f "$error_file" ]; then
         expected_error="$(cat "$error_file")"
         compile_exit=0
-        (cd "$test_dir" && "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
         if [ "$compile_exit" -eq 0 ]; then
             echo "FAIL  $name  (expected compile error, but succeeded)"
             fail=$((fail + 1))
@@ -98,7 +99,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
         [ -f "$src" ] || continue
         src_name=$(basename "$src" .c)
 
-        if ! (cd "$test_dir" && "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$src") 2>/dev/null; then
+        if ! (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$src") 2>/dev/null; then
             echo "FAIL  $name  (compiler error: $src_name.c)"
             fail=$((fail + 1))
             compile_failed=1
@@ -132,9 +133,9 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     stdout_file="$test_work/${name}.stdout"
     if [ -f "$input_file" ]; then
-        (cd "$test_work" && "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
+        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
     else
-        (cd "$test_work" && "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
+        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
     fi
     actual=$?
 

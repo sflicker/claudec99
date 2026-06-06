@@ -201,6 +201,20 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 93 (bootstrap build workflow):
+
+> Stage 93 adds a multi-mode build system supporting normal (gcc/clang),
+> bootstrap (self-hosted), and fallback build strategies. A new `build.sh`
+> wrapper script offers three modes: `--mode=normal` (default cmake build),
+> `--mode=bootstrap` (compile with pre-built ccompiler to NASM assembly,
+> assemble, and link), and `--mode=fallback` (bootstrap if available, normal
+> otherwise). Timeout guards (300s per file, configurable) prevent infinite
+> loops during bootstrap compilation. The version system records which compiler
+> built the binary via a new `VERSION_BUILTBY` macro. All test suites include
+> timeout protection (30s default) to prevent runaway execution. No compiler
+> language features were changed; this is a build infrastructure stage. All
+> 1306 tests pass.
+
 Through stage 92 (self-compilation validation):
 
 > Stage 92 validates self-compilation of the ClaudeC99 compiler. The compiler
@@ -506,7 +520,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 92 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 93 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

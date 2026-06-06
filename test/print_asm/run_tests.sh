@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/print_asm_tmp"
+TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
 mkdir -p "$WORK_DIR"
 
@@ -31,7 +32,7 @@ for src in "$SCRIPT_DIR"/test_*.c; do
     # Compile .c -> .asm. The compiler writes the .asm into the
     # current working directory using only the source basename, so
     # run from the work dir to keep the source tree clean.
-    if ! ( cd "$WORK_DIR" && "$COMPILER" "$src" >/dev/null 2>&1 ); then
+    if ! ( cd "$WORK_DIR" && timeout "$TIMEOUT" "$COMPILER" "$src" >/dev/null 2>&1 ); then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue

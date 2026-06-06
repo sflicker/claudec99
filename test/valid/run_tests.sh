@@ -9,6 +9,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp"
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
+TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
 mkdir -p "$WORK_DIR"
 
@@ -29,7 +30,7 @@ for src in "$SCRIPT_DIR"/*.c; do
     fi
 
     # Compile .c -> .asm
-    if ! "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" 2>/dev/null; then
+    if ! timeout "$TIMEOUT" "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" 2>/dev/null; then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue
@@ -61,7 +62,7 @@ for src in "$SCRIPT_DIR"/*.c; do
     # don't pollute the runner's PASS/FAIL output, and so the optional
     # .expected-file comparison below can use it.
     stdout_file="$WORK_DIR/${name}.stdout"
-    "$WORK_DIR/${name}" >"$stdout_file"
+    timeout "$TIMEOUT" "$WORK_DIR/${name}" >"$stdout_file"
     actual=$?
 
     if [ "$actual" -ne "$expected" ]; then

@@ -31,6 +31,14 @@ add_executable(ccompiler
     src/version.c
 )
 
-target_compile_definitions(ccompiler PRIVATE VERSION_BUILD=${VERSION_BUILD})
+# Record which compiler built the binary.  Dots in the version number are
+# replaced with underscores so the value is a valid C token for stringification.
+string(REPLACE "." "_" COMPILER_VER_CLEAN "${CMAKE_C_COMPILER_VERSION}")
+set(BUILTBY_TOKEN "${CMAKE_C_COMPILER_ID}_${COMPILER_VER_CLEAN}")
+
+target_compile_definitions(ccompiler PRIVATE
+    VERSION_BUILD=${VERSION_BUILD}
+    VERSION_BUILTBY=${BUILTBY_TOKEN}
+)
 target_include_directories(ccompiler PRIVATE include)
 target_compile_options(ccompiler PRIVATE -Wall -Wextra -pedantic)

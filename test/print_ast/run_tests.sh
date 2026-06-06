@@ -8,6 +8,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
+TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
 pass=0
 fail=0
@@ -24,7 +25,7 @@ for src in "$SCRIPT_DIR"/test_*.c; do
     fi
 
     # Run compiler with --print-ast
-    actual=$("$COMPILER" --print-ast "$src" 2>&1)
+    actual=$(timeout "$TIMEOUT" "$COMPILER" --print-ast "$src" 2>&1)
     rc=$?
 
     if [ "$rc" -ne 0 ]; then

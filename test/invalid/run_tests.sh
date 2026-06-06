@@ -11,6 +11,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
+TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
 pass=0
 fail=0
@@ -33,7 +34,7 @@ for src in "$SCRIPT_DIR"/test_*.c; do
     # Compile — should fail. The compiler may have already opened/written
     # a partial .asm in the caller's cwd before detecting the error, so
     # remove any leftover file unconditionally.
-    output=$("$COMPILER" "$src" 2>&1)
+    output=$(timeout "$TIMEOUT" "$COMPILER" "$src" 2>&1)
     rc=$?
     rm -f "${name}.asm"
 
