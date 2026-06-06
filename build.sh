@@ -7,11 +7,11 @@
 #   bootstrap  Use the pre-built ClaudeC99 compiler at build/ccompiler.
 #              Requires a prior normal build to exist.
 #   fallback   Use ClaudeC99 if build/ccompiler exists; otherwise normal.
-#   self-host  Full self-hosting test cycle (requires a prior normal build):
+#   self-host  Full self-hosting test cycle (self-contained):
 #              1. Archive existing ccompiler-c0/c1/c2 to build/previous/
-#              2. Save current build/ccompiler as build/ccompiler-c0
+#              2. Run cmake build to produce a fresh GCC-built ccompiler-c0
 #              3. Bootstrap C0 → C1; run test suite; save as ccompiler-c1
-#              4. Bootstrap C1 → C2; run test suite; save as ccompiler-c2
+#              4. Commit C1 checkpoint; bootstrap C1 → C2; run test suite; save as ccompiler-c2
 #              build/ccompiler is left as C2 at the end.
 #
 # Options:
@@ -147,7 +147,10 @@ do_self_host_test() {
         fi
     done
 
-    # C0 — the GCC-built compiler that was just produced by a normal build.
+    # C0 must always be GCC-built. Run cmake now so it is, regardless of
+    # what build/ccompiler currently contains.
+    echo "=== Normal build (C0) ==="
+    do_cmake_build
     cp "$CCOMPILER_PATH" "$SCRIPT_DIR/build/ccompiler-c0"
     echo ""
     echo "=== C0 (GCC-built) ==="

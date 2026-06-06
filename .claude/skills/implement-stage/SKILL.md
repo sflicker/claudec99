@@ -68,17 +68,18 @@ Then do the following:
 
 ## Self Host Test Phase
 
-The Implementation Phase ends with a GCC-built `build/ccompiler` (C0) and a
-passing test suite. The self-host phase runs the full bootstrap cycle using
-a single command:
+The self-host phase runs the full bootstrap cycle using a single command:
 
 ```
 ./build.sh --mode=self-host
 ```
 
-This command:
+This command is self-contained — it always starts with a fresh GCC cmake
+build to guarantee C0 is GCC-built, regardless of what `build/ccompiler`
+currently contains:
+
 1. Archives any existing `build/ccompiler-c0/c1/c2` to `build/previous/`
-2. Saves the current GCC-built `build/ccompiler` as `build/ccompiler-c0`
+2. Runs `cmake` build to produce a fresh GCC-built `build/ccompiler-c0`
 3. Runs the full test suite with C0
 4. Bootstraps C0 → C1 (`build/ccompiler`); runs full test suite with C1
 5. Makes a checkpoint git commit (so C2's build number exceeds C1's)

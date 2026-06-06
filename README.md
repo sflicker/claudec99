@@ -55,16 +55,15 @@ This produces `build/ccompiler`.
 |------|--------------|
 | `normal` | cmake build via GCC/Clang (default) |
 | `bootstrap` | Single self-hosted build: compiles all sources with `build/ccompiler`, assembles with `nasm`, links with `gcc -no-pie`. Requires a prior normal build. |
-| `self-host` | Full C0→C1→C2 cycle: archives old named binaries to `build/previous/`, saves current `build/ccompiler` as `ccompiler-c0`, bootstraps to `ccompiler-c1` (runs test suite, commits checkpoint), bootstraps to `ccompiler-c2` (runs test suite). `build/ccompiler` is left as C2. |
+| `self-host` | Full C0→C1→C2 cycle (self-contained): archives old named binaries to `build/previous/`, runs a fresh cmake build to produce `ccompiler-c0` (always GCC-built), bootstraps to `ccompiler-c1` (runs test suite, commits checkpoint), bootstraps to `ccompiler-c2` (runs test suite). `build/ccompiler` is left as C2. |
 | `fallback` | Uses `build/ccompiler` if present, otherwise normal cmake build. |
 
 `--timeout=N` sets the per-file compilation timeout for bootstrap builds (default: 300 s).
 
-The standard stage workflow is:
+The standard self-hosting workflow is:
 
 ```
-./build.sh --mode=normal      # implementation phase: GCC build + tests
-./build.sh --mode=self-host   # self-host phase: C0→C1→C2 cycle with tests
+./build.sh --mode=self-host   # full C0→C1→C2 cycle with tests (GCC build included)
 ```
 
 ## Compiler limits
