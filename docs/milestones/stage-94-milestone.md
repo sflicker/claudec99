@@ -1,15 +1,14 @@
 # Milestone Summary
 
-## Stage 94: Self-Host Validation and Implement-Stage Skill Test - Complete
+## Stage 94: Self-Hosting Validation and Bootstrap Cycle - Complete
 
-stage-94 validates the updated implement-stage skill's 4-phase workflow through a full bootstrap cycle and fixes three build-infrastructure bugs discovered during self-hosting. No new compiler language features; all work focused on build system corrections and self-hosting validation.
+Stage 94 is a process/validation stage that validates the updated implement-stage skill's 4-phase workflow (analysis/planning, implementation, self-hosting test, documentation) and establishes a robust, repeatable self-hosting bootstrap cycle. Five critical build infrastructure issues were found and fixed during self-hosting validation.
 
 - Tokenizer: No changes.
 - Grammar/Parser: No changes.
 - AST/Semantics: No changes.
 - Codegen: No changes.
-- Build System: Fixed `build.sh --mode=bootstrap` to include `-I test/include` (stub system headers). Added `-DVERSION_BUILD` computation via `git rev-list --count HEAD` to bootstrap compiler invocation. Introduced `--mode=self-host` mode that archives prior binaries, bootstraps C0→C1 (with checkpoint commit), then C1→C2, and runs full test suite at each stage.
-- Version: `VERSION_STAGE` set to "00940000". No other version changes; infrastructure uses existing stage 93 `VERSION_BUILTBY` system.
-- Tests: All 1306 tests pass at each stage: C0 (gcc-built), C1 (self-compiled), C2 (C1-compiled). No test additions (validation stage only). No regressions. Full suite pass rate: 1306/1306.
-- Docs: Updated `docs/self-compilation-report.md` with stage 94 method, all three issues found and fixed, and final C0/C1/C2 result table. Updated README.md Build section and SKILL.md Self Host Test Phase.
-- Notes: Three issues found during bootstrap and fixed: (1) bootstrap invocation lacked `-I test/include`; (2) bootstrap didn't compute `VERSION_BUILD`, causing C1/C2 to show `00000`; (3) C1/C2 had identical version strings until checkpoint commit added between them. C0/C1/C2 now produce distinct, reproducible version strings.
+- Build System: Added `--mode=self-host` to `build.sh`. This mode performs a complete self-hosting cycle: (1) archives prior binaries to `build/previous/`, (2) runs a fresh cmake build to produce C0 (gcc-built), (3) runs full test suite with C0 and commits C0 checkpoint, (4) bootstraps C0 → C1, runs full test suite, commits C1 checkpoint, (5) bootstraps C1 → C2, runs full test suite, reports final versions. Fixed five critical issues: bootstrap missing `-I test/include` for stub system headers; missing `-DVERSION_BUILD` computation and passing; missing commit checkpoints between C0/C1 and C1/C2; VERSION_BUILTBY regex capturing only 3 of 4 version groups. `src/version.c` updated to `VERSION_STAGE "00940000"`.
+- Tests: All 1306 tests pass for C0 (gcc-built), C1 (bootstrapped from C0), and C2 (bootstrapped from C1). No regressions. Full provenance chain verified: C1's BuiltBy names C0's exact version; C2's BuiltBy names C1's exact version.
+- Docs: `docs/self-compilation-report.md` updated with all 5 issues and final result table. `README.md` Build section expanded with build.sh mode table and updated to "Through stage 94". `.claude/skills/implement-stage/SKILL.md` Self Host Test Phase updated to use `--mode=self-host`.
+- Notes: Process stage with no language feature changes. Workflow validation succeeded: 4-phase approach is sound and repeatable. All files changed are build infrastructure and documentation only.
