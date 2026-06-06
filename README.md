@@ -226,6 +226,21 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 95-03 (dynamic string buffer module):
+
+> Stage 95-03 adds a `StrBuf` dynamic character/string buffer module
+> (`include/strbuf.h`, `src/strbuf.c`) modeled after the `Vec` module from
+> stage 95-02. The API provides `strbuf_init`, `strbuf_free`, `strbuf_reserve`,
+> `strbuf_append_char`, `strbuf_append_str`, `strbuf_append_n`, and
+> `strbuf_null_terminate` with doubling growth, overflow checks, and fatal-error
+> reporting on allocation failure. `strbuf_null_terminate` writes a null byte at
+> `data[len]` without incrementing `len`, making `data` a valid C string while
+> keeping `len` as the character count. A new `test/unit/test_strbuf.c` adds 59
+> assertions; the unit runner now builds and aggregates both Vec and StrBuf
+> binaries (165 unit assertions total). No language features were added.
+> All 1471 tests pass at C0, C1, and C2
+> (165 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+
 Through stage 95-02 (Vec generic growable-array foundation):
 
 > Stage 95-02 adds a reusable `Vec` generic growable-array module (`include/vec.h`,
@@ -555,7 +570,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-02 all tests pass (106 unit, 823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1412 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-03 all tests pass (165 unit, 823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1471 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
