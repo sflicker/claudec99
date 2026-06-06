@@ -68,21 +68,34 @@ Then do the following:
 
 ## Self Host Test Phase
 
-* next do a self hosting test using C0 which was generated from the implementation portion of the stage.
+The Implementation Phase ends with a GCC-built `build/ccompiler` (C0) and a
+passing test suite. The self-host phase runs the full bootstrap cycle using
+a single command:
 
-   if any issues arise prompt for guidence to either fix the issue(s) or ending the self hosting test.
+```
+./build.sh --mode=self-host
+```
 
-   Using the bootstrap build settings.
-   Use C0 to build a new version of itself C1.
-   Then run the the full test suite with C1.
-   Commit the changes. Should at least be updated version.c and possibly bug fixes found during the build.
-   Then use C1 to build a C2.
-   Then use C2 to run the full test suit.
+This command:
+1. Archives any existing `build/ccompiler-c0/c1/c2` to `build/previous/`
+2. Saves the current GCC-built `build/ccompiler` as `build/ccompiler-c0`
+3. Runs the full test suite with C0
+4. Bootstraps C0 → C1 (`build/ccompiler`); runs full test suite with C1
+5. Makes a checkpoint git commit (so C2's build number exceeds C1's)
+6. Bootstraps C1 → C2 (`build/ccompiler`); runs full test suite with C2
+7. Reports final versions of C0, C1, and C2
 
-   Update the self-compilation-report.md. If any issues where found they should be documented in this report. 
-   Commit the changes
+`build/ccompiler` is left as C2 at the end of the run.
 
-   Then proceed with the output generatation stepes below.
+If any issues arise during the bootstrap, stop and prompt for guidance to
+either fix the issue(s) or end the self-hosting test.
+
+After the `--mode=self-host` run completes:
+* Update `docs/self-compilation-report.md` with the stage number, date,
+  method, any issues found and fixed, and the C0/C1/C2 result table.
+* Commit the updated report.
+
+Then proceed with the output generation steps below.
 
 ## Documentation Phase
 Output Requirements:
