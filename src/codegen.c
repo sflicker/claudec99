@@ -370,7 +370,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->tu_root = NULL;
     cg->string_pool_count = 0;
     cg->warnings_are_errors = 0;
-    cg->local_static_count = 0;
+    vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
     cg->variadic_named_gp_params = 0;
     cg->variadic_named_stack_params = 0;
@@ -3966,11 +3966,6 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 compile_error(
                         "error: static local arrays, structs and unions are not yet supported\n");
             }
-            if (cg->local_static_count >= MAX_LOCAL_STATICS) {
-                compile_error(
-                        "error: too many local static variables (max %d)\n",
-                        MAX_LOCAL_STATICS);
-            }
             /* Validate that the initializer (if any) is a compile-time constant. */
             long init_value = 0;
             int is_initialized = 0;
@@ -4017,7 +4012,17 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             lv->static_label[255] = '\0';
             cg->local_count++;
             /* Add to the deferred emission pool (.data or .bss). */
-            LocalStaticVar *sv = &cg->local_statics[cg->local_static_count++];
+            LocalStaticVar new_sv;
+            new_sv.label[0] = '\0';
+            new_sv.kind = TYPE_INT;
+            new_sv.full_type = NULL;
+            new_sv.size = 0;
+            new_sv.is_initialized = 0;
+            new_sv.init_value = 0;
+            new_sv.is_unsigned = 0;
+            vec_push(&cg->local_statics, &new_sv);
+            LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics,
+                                    cg->local_statics.len - 1);
             strncpy(sv->label, label, 255);
             sv->label[255] = '\0';
             sv->kind = node->decl_type;
@@ -5291,14 +5296,16 @@ static void codegen_emit_bss(CodeGen *cg) {
  * and are merged by the assembler. */
 static void codegen_emit_local_statics(CodeGen *cg) {
     int has_data = 0, has_bss = 0;
-    for (int i = 0; i < cg->local_static_count; i++) {
-        if (cg->local_statics[i].is_initialized) has_data = 1;
+    size_t i;
+    for (i = 0; i < cg->local_statics.len; i++) {
+        LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
+        if (sv->is_initialized) has_data = 1;
         else has_bss = 1;
     }
     if (has_data) {
         fprintf(cg->output, "section .data\n");
-        for (int i = 0; i < cg->local_static_count; i++) {
-            LocalStaticVar *sv = &cg->local_statics[i];
+        for (i = 0; i < cg->local_statics.len; i++) {
+            LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
             if (!sv->is_initialized) continue;
             fprintf(cg->output, "%s: %s %ld\n",
                     sv->label, data_init_directive(sv->kind), sv->init_value);
@@ -5306,8 +5313,8 @@ static void codegen_emit_local_statics(CodeGen *cg) {
     }
     if (has_bss) {
         fprintf(cg->output, "section .bss\n");
-        for (int i = 0; i < cg->local_static_count; i++) {
-            LocalStaticVar *sv = &cg->local_statics[i];
+        for (i = 0; i < cg->local_statics.len; i++) {
+            LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
             if (sv->is_initialized) continue;
             fprintf(cg->output, "%s: %s 1\n",
                     sv->label, bss_res_directive(sv->kind));

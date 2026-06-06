@@ -3,7 +3,7 @@
 
 #define VERSION_MAJOR  "00"
 #define VERSION_MINOR  "02"
-#define VERSION_STAGE  "00950300"
+#define VERSION_STAGE  "00950400"
 
 #ifndef VERSION_BUILD
 #define VERSION_BUILD  0

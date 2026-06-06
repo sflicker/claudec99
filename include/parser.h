@@ -5,6 +5,7 @@
 #include "lexer.h"
 #include "token.h"
 #include "type.h"
+#include "vec.h"
 #include <stdio.h>
 
 typedef struct {
@@ -79,14 +80,12 @@ typedef struct {
     /* Stage 29: enum constant and tag tables (flat, global scope). */
     EnumConst enum_consts[PARSER_MAX_ENUM_CONSTS];
     int enum_const_count;
-    EnumTag enum_tags[PARSER_MAX_ENUM_TAGS];
-    int enum_tag_count;
+    Vec enum_tags;  /* EnumTag; dynamic — stage 95-04 */
     /* Stage 30: struct tag table (flat, global scope). */
     StructTag struct_tags[PARSER_MAX_STRUCT_TAGS];
     int struct_tag_count;
     /* Stage 72: union tag table (flat, global scope). */
-    UnionTag union_tags[PARSER_MAX_UNION_TAGS];
-    int union_tag_count;
+    Vec union_tags;  /* UnionTag; dynamic — stage 95-04 */
     /* Stage 75-03: set while parsing the body of a variadic function
      * definition so __builtin_va_start can verify its context. */
     int current_func_is_variadic;

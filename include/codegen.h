@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "ast.h"
 #include "type.h"
+#include "vec.h"
 
 typedef struct {
     char name[MAX_NAME_LEN];
@@ -141,9 +142,9 @@ typedef struct {
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
     /* Stage 71: block-scope static variable pool — accumulated across all
-     * function bodies and emitted to .data/.bss after function code. */
-    LocalStaticVar local_statics[MAX_LOCAL_STATICS];
-    int local_static_count;
+     * function bodies and emitted to .data/.bss after function code.
+     * Stage 95-04: converted from fixed array to Vec. */
+    Vec local_statics;  /* LocalStaticVar */
     /* Stage 75-04: variadic function register save area.
      * variadic_reg_save_offset: rbp-relative offset of the 304-byte register
      * save area (0 for non-variadic functions).

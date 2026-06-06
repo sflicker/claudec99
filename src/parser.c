@@ -80,9 +80,9 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->typedef_count = 0;
     parser->scope_depth = 0;
     parser->enum_const_count = 0;
-    parser->enum_tag_count = 0;
+    vec_init(&parser->enum_tags, sizeof(EnumTag));
     parser->struct_tag_count = 0;
-    parser->union_tag_count = 0;
+    vec_init(&parser->union_tags, sizeof(UnionTag));
 }
 
 /* Stage 28-01: typedef name table helpers. */
@@ -533,9 +533,10 @@ static Type *parse_struct_specifier(Parser *parser) {
 
 /* Stage 72: union tag table helpers. */
 static UnionTag *parser_find_union_tag(Parser *parser, const char *tag) {
-    for (int i = 0; i < parser->union_tag_count; i++) {
-        if (strcmp(parser->union_tags[i].tag, tag) == 0)
-            return &parser->union_tags[i];
+    for (size_t i = 0; i < parser->union_tags.len; i++) {
+        UnionTag *ut = (UnionTag *)vec_get(&parser->union_tags, i);
+        if (strcmp(ut->tag, tag) == 0)
+            return ut;
     }
     return NULL;
 }
@@ -543,11 +544,11 @@ static UnionTag *parser_find_union_tag(Parser *parser, const char *tag) {
 static UnionTag *parser_register_union_tag(Parser *parser, const char *tag) {
     UnionTag *ut = parser_find_union_tag(parser, tag);
     if (ut) return ut;
-    if (parser->union_tag_count >= PARSER_MAX_UNION_TAGS) {
-        PARSER_ERROR(parser, "error: too many union tags (max %d)\n",
-                PARSER_MAX_UNION_TAGS);
-    }
-    ut = &parser->union_tags[parser->union_tag_count++];
+    UnionTag new_ut;
+    new_ut.tag[0] = '\0';
+    new_ut.type = NULL;
+    vec_push(&parser->union_tags, &new_ut);
+    ut = (UnionTag *)vec_get(&parser->union_tags, parser->union_tags.len - 1);
     strncpy(ut->tag, tag, sizeof(ut->tag) - 1);
     ut->tag[sizeof(ut->tag) - 1] = '\0';
     ut->type = NULL;
@@ -740,18 +741,20 @@ static Type *parse_enum_specifier(Parser *parser) {
         if (has_tag) {
             /* Register or update the tag as defined. */
             EnumTag *et = NULL;
-            for (int i = 0; i < parser->enum_tag_count; i++) {
-                if (strcmp(parser->enum_tags[i].tag, tag) == 0) {
-                    et = &parser->enum_tags[i];
+            for (size_t i = 0; i < parser->enum_tags.len; i++) {
+                EnumTag *t = (EnumTag *)vec_get(&parser->enum_tags, i);
+                if (strcmp(t->tag, tag) == 0) {
+                    et = t;
                     break;
                 }
             }
             if (!et) {
-                if (parser->enum_tag_count >= PARSER_MAX_ENUM_TAGS) {
-                    PARSER_ERROR(parser, "error: too many enum tags (max %d)\n",
-                            PARSER_MAX_ENUM_TAGS);
-                }
-                et = &parser->enum_tags[parser->enum_tag_count++];
+                EnumTag new_et;
+                new_et.tag[0] = '\0';
+                new_et.is_defined = 0;
+                vec_push(&parser->enum_tags, &new_et);
+                et = (EnumTag *)vec_get(&parser->enum_tags,
+                                        parser->enum_tags.len - 1);
                 strncpy(et->tag, tag, sizeof(et->tag) - 1);
                 et->tag[sizeof(et->tag) - 1] = '\0';
             }
@@ -818,9 +821,9 @@ static Type *parse_enum_specifier(Parser *parser) {
             PARSER_ERROR(parser, "error: expected identifier or '{' after 'enum'\n");
         }
         int found = 0;
-        for (int i = 0; i < parser->enum_tag_count; i++) {
-            if (strcmp(parser->enum_tags[i].tag, tag) == 0 &&
-                parser->enum_tags[i].is_defined) {
+        for (size_t i = 0; i < parser->enum_tags.len; i++) {
+            EnumTag *t = (EnumTag *)vec_get(&parser->enum_tags, i);
+            if (strcmp(t->tag, tag) == 0 && t->is_defined) {
                 found = 1;
                 break;
             }
