@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-06
-**Stage:** stage-95-02 (add Vec generic growable-array module)
+**Stage:** stage-95-03 (add StrBuf dynamic character/string buffer)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -124,6 +124,25 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
+
+## Issues found during stage 95-03 self-hosting test
+
+None. `strbuf.c` is not compiled by the self-hosted compiler (it is only a
+utility library consumed by future growable-storage stages). The unit tests are
+compiled by the system GCC and do not participate in the C1/C2 bootstrap.
+All 1471 tests passed at each stage.
+
+## Result (stage 95-03)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950300.00672` | `GNU_13_3_0` | 1471/1471 |
+| C1 | `build/ccompiler-c1` | `00.02.00950300.00673` | `ClaudeC99_v00_02_00950300_00672` | 1471/1471 |
+| C2 | `build/ccompiler-c2` | `00.02.00950300.00674` | `ClaudeC99_v00_02_00950300_00673` | 1471/1471 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
 
 ## Issues found during stage 95-02 self-hosting test
 
