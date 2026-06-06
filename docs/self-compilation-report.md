@@ -118,22 +118,26 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 | 1 | `build.sh --mode=bootstrap` failed immediately: `error: include file not found: <stdio.h>` | Bootstrap script only passed `-I include` (project headers), not `-I test/include` (stub system headers). `bin/cc99` correctly appended `test/include` but `build.sh` did not mirror this. | Added `-I "$SCRIPT_DIR/test/include"` to `do_bootstrap_build` in `build.sh` |
 | 2 | C1 and C2 showed `00000` as build number | `build.sh` never computed or passed `-DVERSION_BUILD`; cmake derives it from `git rev-list --count HEAD` at configure time but the bootstrap did not. | Added `git rev-list --count HEAD` computation and `-DVERSION_BUILD=${build_num}` to the compiler invocation in `do_bootstrap_build` (`build.sh`) |
 | 3 | C1 and C2 reported identical version strings | No commit occurred between the C1 and C2 bootstrap runs, so both read the same git commit count. | Added a `git commit --allow-empty` checkpoint step after C1 passes in `--mode=self-host`; C2's build number is now always strictly greater than C1's |
+| 4 | C0 and C1 reported identical version strings | No commit occurred between the cmake build and the first bootstrap run. | Added a `git commit --allow-empty` checkpoint step after C0 passes in `--mode=self-host`; C1's build number is now always strictly greater than C0's |
+| 5 | BuiltBy token for C1/C2 omitted the build number (e.g. `ClaudeC99_v00_02_00940000` instead of `ClaudeC99_v00_02_00940000_00657`) | The regex in `do_bootstrap_build` matched only three dotted groups, discarding the fourth (build number). | Changed regex from `[0-9]+\.[0-9]+\.[0-9]+` to `[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+` to capture all four version groups. |
 
-After fixes 1–3, all modules compiled and all tests passed on C0, C1, and C2,
-each with a distinct version string.
+After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
+carry a distinct version string and a BuiltBy token that names the exact
+compiler version (including build number) that produced them.
 
 ## Result
 
-| Step | Compiler | Version | Built by | Tests |
-|------|----------|---------|----------|-------|
-| C0   | `build/ccompiler-c0` | `00.02.00940000.00650` | GNU_13_3_0 | 1306/1306 |
-| C1   | `build/ccompiler-c1` | `00.02.00940000.00651` | ClaudeC99_v00_02_00940000 | 1306/1306 |
-| C2   | `build/ccompiler-c2` | `00.02.00940000.00652` | ClaudeC99_v00_02_00940000 | 1306/1306 |
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00940000.00657` | `GNU_13_3_0` | 1306/1306 |
+| C1 | `build/ccompiler-c1` | `00.02.00940000.00658` | `ClaudeC99_v00_02_00940000_00657` | 1306/1306 |
+| C2 | `build/ccompiler-c2` | `00.02.00940000.00659` | `ClaudeC99_v00_02_00940000_00658` | 1306/1306 |
 
 C0, C1, and C2 each compile successfully with distinct version strings and
-identical test results. The compiler is self-hosting and the bootstrap is
-reproducible. Timeout guards (300 s per file) added in stage 93 were
-confirmed active — all modules compiled well within the limit.
+full build provenance: C1's BuiltBy names C0's exact version, and C2's BuiltBy
+names C1's exact version. The compiler is self-hosting and the bootstrap is
+reproducible. Timeout guards (300 s per file) added in stage 93 were confirmed
+active — all modules compiled well within the limit.
 
 ## Known limitation surfaced by self-compilation
 
