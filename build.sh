@@ -169,6 +169,18 @@ do_self_host_test() {
         return 1
     fi
 
+    # Commit after C1 is verified so C2's build number is strictly higher.
+    # Stages any tracked-file changes first; falls back to an empty commit
+    # when no source files changed (e.g. a clean pass with no bug fixes).
+    echo ""
+    echo "--- Committing C1 checkpoint ---"
+    git -C "$SCRIPT_DIR" add -u
+    git -C "$SCRIPT_DIR" commit --allow-empty -m "self-host C1 verified: all tests pass
+
+Checkpoint commit so C2 build number exceeds C1.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+
     # C1 → C2
     echo ""
     echo "=== Bootstrap C1 → C2 ==="
