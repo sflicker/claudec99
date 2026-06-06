@@ -201,19 +201,17 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 93 (bootstrap build workflow):
+Through stage 94 (self-hosting validation and implement-stage skill test):
 
-> Stage 93 adds a multi-mode build system supporting normal (gcc/clang),
-> bootstrap (self-hosted), and fallback build strategies. A new `build.sh`
-> wrapper script offers three modes: `--mode=normal` (default cmake build),
-> `--mode=bootstrap` (compile with pre-built ccompiler to NASM assembly,
-> assemble, and link), and `--mode=fallback` (bootstrap if available, normal
-> otherwise). Timeout guards (300s per file, configurable) prevent infinite
-> loops during bootstrap compilation. The version system records which compiler
-> built the binary via a new `VERSION_BUILTBY` macro. All test suites include
-> timeout protection (30s default) to prevent runaway execution. No compiler
-> language features were changed; this is a build infrastructure stage. All
-> 1306 tests pass.
+> Stage 94 validates the implement-stage skill's 4-phase workflow and confirms
+> bootstrap stability by successfully compiling the compiler with itself (C0 → C1 → C2).
+> All 1306 tests pass at every stage. One bug was found and fixed during self-hosting:
+> `build.sh` was missing `-I test/include` when invoking the bootstrap compiler,
+> preventing resolution of stub system headers needed to compile the compiler's own source.
+> The compiler reached a fixed point — C1 and C2 are behavior-identical. Timeout guards
+> from stage 93 (300s per file, 30s per test) were confirmed active during the bootstrap
+> cycle. No new compiler language features were added; this is a process/validation stage.
+> All 1306 tests pass (823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 92 (self-compilation validation):
 
