@@ -226,6 +226,17 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 95-02 (Vec generic growable-array foundation):
+
+> Stage 95-02 adds a reusable `Vec` generic growable-array module (`include/vec.h`,
+> `src/vec.c`) as a foundation for future stages that will replace fixed-capacity
+> compiler tables with dynamic storage. The API provides `vec_init`, `vec_free`,
+> `vec_reserve`, `vec_push`, `vec_get`, `vec_pop`, and `vec_clear` with doubling
+> growth, overflow checks, and fatal-error reporting on allocation failure.
+> A new `test/unit/` suite of 106 assertions exercises all operations.
+> No language features were added. All 1412 tests pass at C0, C1, and C2
+> (106 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+
 Through stage 94 (self-hosting validation and implement-stage skill test):
 
 > Stage 94 validates the implement-stage skill's 4-phase workflow and confirms
@@ -525,10 +536,11 @@ The authoritative grammar for the supported language is in
 
 ## Tests
 
-The test harness consists of six suites under `test/`:
+The test harness consists of seven suites under `test/`:
 
 | Suite          | What it checks                                                      |
 | -------------- | ------------------------------------------------------------------- |
+| `unit`         | Standalone C unit tests for compiler utility modules (compiled with system GCC, not `build/ccompiler`). Each runner compiles and runs the test binary directly and outputs "Results: P passed, F failed, T total". |
 | `valid`        | Compile, assemble, link, run; exit code must match `__N` in filename. If a sibling `<name>.expected` file is present, the program's stdout must also match it byte-for-byte. |
 | `invalid`      | Compiler must reject the program                                    |
 | `integration`  | Multi-file tests in subdirectories; compile all `.c` files, assemble, link against libc with `cc -no-pie`, run; companion files (`.expected`, `.libs`, `.cflags`, `.args`, `.input`, `.status`) drive expected stdout, link flags, compiler flags, runtime argv, stdin, and exit code. The runner always appends `-I${PROJECT_DIR}/test/include` after the test's own `.cflags` so stub system headers (`stdio.h`, `stddef.h`, etc.) are found automatically — `.cflags` files only need to list test-local include paths (e.g. `-Iinclude`). |
@@ -543,7 +555,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 93 all tests pass (823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1306 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-02 all tests pass (106 unit, 823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1412 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
