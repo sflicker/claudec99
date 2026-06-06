@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-06
-**Stage:** stage-95-03 (add StrBuf dynamic character/string buffer)
+**Stage:** stage-95-04 (convert low-risk static arrays to Vec)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -124,6 +124,30 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
+
+## Issues found during stage 95-04 self-hosting test
+
+Two issues were discovered and fixed during this bootstrap run. Both are
+pre-existing latent defects that stage 95-04 was the first to exercise.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | Link error `undefined reference to 'vec_init'`, `vec_push`, `vec_get` for C1 | `src/vec.c` and `src/strbuf.c` were missing from `SRC_FILES` in `build.sh` since stage 95-02 when they were added; the normal cmake build picked them up via `CMakeLists.txt`, but the bootstrap script's hand-maintained list was not updated. | Added `src/strbuf.c` and `src/vec.c` to `SRC_FILES` in `build.sh`. |
+| 2 | C1 crash: `internal error: vec_reserve: capacity overflow` on union/enum/local-static tests | `vec_reserve` contains `(size_t)-1 / v->elem_size`; our compiler emits `cqo; idiv` (signed division) for this expression because `v->elem_size` is a struct member accessed through a pointer and the unsigned type is not correctly propagated to the division codegen. The signed quotient of `(unsigned long)-1 / 264` ≈ `0`, so `min_cap (8) > 0` triggered the fatal error. | Rewrote the overflow check in `vec_reserve` to copy struct members to explicit local `size_t` variables first — local `size_t` variables correctly generate `div`. |
+
+After both fixes all 1471 tests passed at C0, C1, and C2.
+
+## Result (stage 95-04)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950400.00683` | `GNU_13_3_0` | 1471/1471 |
+| C1 | `build/ccompiler-c1` | `00.02.00950400.00684` | `ClaudeC99_v00_02_00950400_00683` | 1471/1471 |
+| C2 | `build/ccompiler-c2` | `00.02.00950400.00685` | `ClaudeC99_v00_02_00950400_00684` | 1471/1471 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
 
 ## Issues found during stage 95-03 self-hosting test
 
