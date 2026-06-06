@@ -93,6 +93,7 @@ do_bootstrap_build() {
         # Run the compiler from the output dir so the .asm lands there.
         if ! (cd "$outdir" && timeout "$BUILD_TIMEOUT" "$ccompiler" \
                 -I "$SCRIPT_DIR/include" \
+                -I "$SCRIPT_DIR/test/include" \
                 "-DVERSION_BUILTBY=${builtby}" \
                 "$src_full"); then
             echo "FAIL: compilation failed for $src" >&2
