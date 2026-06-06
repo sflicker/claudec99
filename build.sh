@@ -77,6 +77,11 @@ do_bootstrap_build() {
     fi
     echo "BuiltBy token: $builtby"
 
+    # Compute the build number the same way cmake does (git commit count).
+    local build_num
+    build_num=$(git -C "$SCRIPT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
+    echo "Build number: $build_num"
+
     local outdir="$SCRIPT_DIR/build/bootstrap_tmp"
     mkdir -p "$outdir"
 
@@ -95,6 +100,7 @@ do_bootstrap_build() {
                 -I "$SCRIPT_DIR/include" \
                 -I "$SCRIPT_DIR/test/include" \
                 "-DVERSION_BUILTBY=${builtby}" \
+                "-DVERSION_BUILD=${build_num}" \
                 "$src_full"); then
             echo "FAIL: compilation failed for $src" >&2
             rm -rf "$outdir"
