@@ -61,6 +61,13 @@ Implementation Rules:
 * Add tests listed in the spec if a similar test is not already present.
 * Additional tests may be added to fill test coverage gaps.
 * Update the src/version.c code module to contain the current stage. See the section on version.c below for the formatting rules.
+* During the feature implementation phase use the normal compiler (GCC or clang).
+* After the stage's features changes have been implemented and all the tests (old and new) are passing then commit the code.
+* next do a self hosting test
+   Use the bootstrap build settings to use the compiler just generated (C0) to build a new version of itself (C1).
+   Then use C1 to run the the full test suite.
+   if any issues arise prompt for guidence of either fixing the issue or ending the self hosting test 
+   UPdate the self-compile-report.md. then proceed with the output generatation stepes below.
 
 Output Requirements:
 
