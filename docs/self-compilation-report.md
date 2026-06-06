@@ -1,12 +1,18 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-06
-**Stage:** stage-92 (self-compile validation) — achieved via stage 91-01
-**Compiler:** `build/ccompiler` (C0, gcc-built) bootstrapping itself
-**Method:** full bootstrap via `bin/cc99 -Iinclude -o build/ccompiler-c1 src/*.c`
-(`ccompiler` → `nasm -f elf64` → `gcc -no-pie` link), **not** per-module
-`.asm` production alone. Repeated a second time (C1 → C2) to confirm
-fixed-point stability.
+**Stage:** stage-94 (self-host validation and implement-stage skill test)
+**Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
+**Method:** `./build.sh --mode=bootstrap` (stage 93/94 bootstrap driver):
+each source module compiled by `ccompiler` with timeout guard (300 s),
+assembled with `nasm -f elf64`, all objects linked with `gcc -no-pie`.
+Repeated twice (C0→C1, then C1→C2) to confirm fixed-point stability.
+
+**Stage 93 method note:** The original `build.sh --mode=bootstrap` command
+introduced in stage 93 was missing `-I test/include`; the stub system headers
+(`stdio.h`, `stdlib.h`, etc.) live there and are required when compiling the
+compiler's own source. Discovered and fixed in stage 94 (see "Issues found"
+below); all stage-94 bootstrap runs used the corrected script.
 
 ## Status
 
@@ -108,18 +114,26 @@ Stage 92 also added `MAX_CALL_LAYOUT_ITEMS` (`include/constants.h`), an
 non-static file-scope variables (so the bootstrap link resolves cross-module
 symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 
+## Issues found during stage 94 self-hosting test
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | `build.sh --mode=bootstrap` failed immediately: `error: include file not found: <stdio.h>` | Bootstrap script only passed `-I include` (project headers), not `-I test/include` (stub system headers). `bin/cc99` correctly appended `test/include` but `build.sh` did not mirror this. | Added `-I "$SCRIPT_DIR/test/include"` to the `ccompiler` invocation in `do_bootstrap_build` (`build.sh`) |
+
+After fix #1, all modules compiled and all tests passed on both C1 and C2.
+
 ## Result
 
 | Step | Compiler | Built by | Tests |
 |------|----------|----------|-------|
-| C0   | `build/ccompiler` | gcc | 1306/1306 |
-| C1   | self-compiled from C0 | C0 | 1306/1306 |
-| C2   | self-compiled from C1 | C1 | 1306/1306 |
+| C0   | `build/ccompiler` | GCC 13.3.0 (stage-94 normal build) | 1306/1306 |
+| C1   | self-compiled from C0 via `build.sh --mode=bootstrap` | C0 (ClaudeC99_v00_02_00940000) | 1306/1306 |
+| C2   | self-compiled from C1 via `build.sh --mode=bootstrap` | C1 (ClaudeC99_v00_02_00940000) | 1306/1306 |
 
 C0, C1, and C2 each compile successfully with identical test results. The
-compiler is self-hosting and the bootstrap is reproducible. The build can be
-driven through `build.sh --mode=bootstrap` (stage 93), which self-compiles via
-a pre-built ccompiler with a per-file timeout guard.
+compiler is self-hosting and the bootstrap is reproducible. Timeout guards
+(300 s per file) added in stage 93 were exercised in this run and confirmed
+active — all modules compiled well within the limit.
 
 ## Known limitation surfaced by self-compilation
 
