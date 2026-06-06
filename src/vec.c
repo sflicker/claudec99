@@ -26,9 +26,13 @@ void vec_free(Vec *v) {
 int vec_reserve(Vec *v, size_t min_cap) {
     if (v->cap >= min_cap)
         return 1;
-    /* Check for size_t overflow in the realloc size computation. */
-    if (v->elem_size > 0 && min_cap > (size_t)-1 / v->elem_size)
-        vec_fatal("vec_reserve: capacity overflow");
+    /* Overflow check: local copies ensure unsigned division is used. */
+    if (v->elem_size > 0) {
+        size_t esz = v->elem_size;
+        size_t lim = (size_t)-1;
+        if (min_cap > lim / esz)
+            vec_fatal("vec_reserve: capacity overflow");
+    }
     void *p = realloc(v->data, min_cap * v->elem_size);
     if (!p)
         vec_fatal("vec_reserve: out of memory");
