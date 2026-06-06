@@ -54,8 +54,10 @@ SRC_FILES=(
     src/lexer.c
     src/parser.c
     src/preprocessor.c
+    src/strbuf.c
     src/type.c
     src/util.c
+    src/vec.c
     src/version.c
 )
 
