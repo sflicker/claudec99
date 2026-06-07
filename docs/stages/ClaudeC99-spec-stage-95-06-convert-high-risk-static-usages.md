@@ -16,6 +16,11 @@ These converions have taken quite a long time on previous stages for the coding 
 to fix bugs that pop up. There are some patterns to watch out for in the fix-capacity-inventory.md.
 Also look at the last few stages artififacts.
 
+It may also have to do conversions one at a time. Make a checklist of conversions that will be 
+performed in this stage. For each conversions update the primary code and all potential related
+code. Then run either the full test suite a revelvant port of it. once the tests are passing
+commit the changes/update the checklist then repeat.
+
 ## Tests
   - If additional tests are necessary for adequate coverage they should be added
   - If some tests needs to be updated that should be done as well.
