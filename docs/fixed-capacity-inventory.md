@@ -18,7 +18,7 @@ Columns:
 
 | Name | Max | Module | On Overflow | Ext Ptr Refs | Safe Realloc | Priority | Status |
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
-| `MAX_NAME_LEN` | 256 bytes | `include/constants.h`; used in `char name[]`, `char tag[]`, `char label[]`, `char value[]`, `char static_label[]`, `char init_label[]` fields in `ASTNode`, `LocalVar`, `GlobalVar`, `LocalStaticVar`, `FuncSig`, `GlobalObjSig`, `TypedefEntry`, `EnumConst`, `EnumTag`, `StructTag`, `UnionTag`, `StructField`, and `ParsedDeclarator` | `strncpy` silently truncates to 255 bytes; the identifier stored in the struct is silently wrong | No | N/A (embedded `char[]`) | LOW | PENDING |
+| `MAX_NAME_LEN` | 256 bytes | `include/constants.h`; used in `char name[]`, `char tag[]`, `char label[]`, `char value[]`, `char static_label[]`, `char init_label[]` fields in `ASTNode`, `LocalVar`, `GlobalVar`, `LocalStaticVar`, `FuncSig`, `GlobalObjSig`, `TypedefEntry`, `EnumConst`, `EnumTag`, `StructTag`, `UnionTag`, `StructField`, and `ParsedDeclarator`. **`Token.value` was also bounded by this limit before stage 95-08; it is now a `const char *` pointer+length into lexer-owned storage and no longer subject to this limit.** | `strncpy` silently truncates to 255 bytes; the identifier stored in the struct is silently wrong | No | N/A (embedded `char[]`) | LOW | PENDING |
 
 ---
 
@@ -113,9 +113,11 @@ T *s    = *ptr;
 
 ### C0 uses signed division for `(size_t)-1 / expr`
 
-`AST_CAST` codegen sets `result_type` but not `is_unsigned` on the result node. Any expression whose value flows through a cast — including `(size_t)-1` — is treated as signed by the downstream arithmetic, so the division `(size_t)-1 / X` emits `cqo; idiv` instead of `xor edx,edx; div`. The quotient is 0 (signed -1÷X) instead of `SIZE_MAX/X`, turning any overflow guard of the form `if (v->cap > (size_t)-1 / 2)` into `if (v->cap > 0)` — a false positive for every non-empty Vec.
+`AST_CAST` codegen sets `result_type` but not `is_unsigned` on the result node. Any expression whose value flows through a cast — including `(size_t)-1` — is treated as signed by the downstream arithmetic, so the division `(size_t)-1 / X` emits `cqo; idiv` instead of `xor edx,edx; div`. The quotient is 0 (signed -1÷X) instead of `SIZE_MAX/X`, turning any overflow guard of the form `if (cap > (size_t)-1 / 2)` into `if (cap > 0)` — a false positive for every non-empty container.
 
 Arrow-member access (`->`) has the same defect: `is_unsigned` is not propagated to the access result, so `v->cap / 2` is also signed.
+
+This bug has been hit in three places so far: `vec_reserve` (stage 95-04), `vec_push` (stage 95-05), and `strbuf_append_char` / `strbuf_null_terminate` / `strbuf_append_n` (stage 95-08, triggered as soon as any string literal longer than 8 characters was lexed). Any module with a capacity-doubling guard must use the local-variable pattern.
 
 **Fix:** introduce explicit local `size_t` variables for both operands; the parser marks explicitly-declared `size_t` locals as `is_unsigned = 1`, which propagates correctly through `uac_is_unsigned`:
 
@@ -182,7 +184,7 @@ Remaining items require structural changes (embedding dynamic allocation inside 
 | `FUNC_TYPE_MAX_PARAMS` | Embedded `Type *params[16]` in `Type`; converting requires changing to a heap-allocated `Type **` and updating all type construction. NO Safe Realloc. |
 | `MAX_SWITCH_LABELS` | Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc. |
 | `MAX_USER_LABELS` | 2D `char user_labels[64][256]` in CodeGen; converting requires `char **` with per-label allocations. NO Safe Realloc. |
-| `MAX_NAME_LEN` | Embedded `char name[256]` in every node/var/sig struct; widest blast radius; requires all strings to become dynamically allocated. N/A. |
+| `MAX_NAME_LEN` | Embedded `char name[256]` in every AST node/var/sig struct; widest blast radius. `Token.value` was migrated to pointer+length (stage 95-08) and is no longer bounded. Remaining uses in `ASTNode`, `LocalVar`, `GlobalVar`, `FuncSig`, etc. still require per-struct migration. N/A. |
 | `MAX_ARRAY_DIMS` | Local `#define` and stack variable in parser.c; only affects nested array dimensions. N/A (stack). |
 | `MAX_INCLUDE_DEPTH` | Recursion depth counter in preprocessor.c; not an array. N/A. |
 | `MAX_COND_DEPTH` | Local stack variable `CondFrame cond_stack[64]` in preprocessor.c. N/A. |
