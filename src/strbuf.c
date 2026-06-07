@@ -38,9 +38,13 @@ int strbuf_append_char(StrBuf *b, char c) {
         if (b->cap == 0) {
             new_cap = 8;
         } else {
-            if (b->cap > (size_t)-1 / 2)
+            /* Use local size_t variables so the bootstrap compiler emits
+             * unsigned division (same pattern as vec_push). */
+            size_t cap = b->cap;
+            size_t lim = (size_t)-1;
+            if (cap > lim / 2)
                 strbuf_fatal("strbuf_append_char: capacity overflow");
-            new_cap = b->cap * 2;
+            new_cap = cap * 2;
         }
         strbuf_reserve(b, new_cap);
     }
@@ -58,7 +62,8 @@ int strbuf_append_n(StrBuf *b, const char *s, size_t n) {
     if (needed > b->cap) {
         size_t new_cap = b->cap == 0 ? 8 : b->cap;
         while (new_cap < needed) {
-            if (new_cap > (size_t)-1 / 2)
+            size_t lim = (size_t)-1;
+            if (new_cap > lim / 2)
                 strbuf_fatal("strbuf_append_n: capacity overflow");
             new_cap *= 2;
         }
@@ -80,9 +85,11 @@ int strbuf_null_terminate(StrBuf *b) {
         if (b->cap == 0) {
             new_cap = 8;
         } else {
-            if (b->cap > (size_t)-1 / 2)
+            size_t cap = b->cap;
+            size_t lim = (size_t)-1;
+            if (cap > lim / 2)
                 strbuf_fatal("strbuf_null_terminate: capacity overflow");
-            new_cap = b->cap * 2;
+            new_cap = cap * 2;
         }
         strbuf_reserve(b, new_cap);
     }
