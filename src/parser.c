@@ -1368,20 +1368,24 @@ static ASTNode *parse_primary(Parser *parser) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *node = parser_node(parser, AST_STRING_LITERAL, NULL);
-        memcpy(node->value, token.value, token.length);
-        int total_len = token.length;
+        if ((int)token.value_len >= MAX_NAME_LEN) {
+            PARSER_ERROR(parser, "error: string literal too long (max %d bytes)\n",
+                         MAX_NAME_LEN - 1);
+        }
+        memcpy(node->value, token.value, token.value_len);
+        int total_len = (int)token.value_len;
         /* Stage 89: consume any adjacent string literal tokens and
          * concatenate their decoded bytes into the same node. */
         while (parser->current.type == TOKEN_STRING_LITERAL) {
             Token next = parser->current;
-            if (total_len + next.length >= MAX_NAME_LEN) {
+            if (total_len + (int)next.value_len >= MAX_NAME_LEN) {
                 PARSER_ERROR(parser, "error: concatenated string literal too long (max %d bytes)\n",
                              MAX_NAME_LEN - 1);
                 break;
             }
             parser->current = lexer_next_token(parser->lexer);
-            memcpy(node->value + total_len, next.value, next.length);
-            total_len += next.length;
+            memcpy(node->value + total_len, next.value, next.value_len);
+            total_len += (int)next.value_len;
         }
         node->value[total_len] = '\0';
         node->byte_length = total_len;
@@ -2632,11 +2636,11 @@ static ASTNode *parse_statement(Parser *parser) {
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
                     ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
-                    memcpy(str_init->value, str_tok.value, str_tok.length);
-                    str_init->value[str_tok.length] = '\0';
-                    str_init->byte_length = str_tok.length;
+                    memcpy(str_init->value, str_tok.value, str_tok.value_len);
+                    str_init->value[str_tok.value_len] = '\0';
+                    str_init->byte_length = (int)str_tok.value_len;
                     str_init->decl_type = TYPE_ARRAY;
-                    str_init->full_type = type_array(type_char(), str_tok.length + 1);
+                    str_init->full_type = type_array(type_char(), (int)str_tok.value_len + 1);
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {
@@ -3248,9 +3252,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
                     ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
-                    memcpy(str_init->value, str_tok.value, str_tok.length);
-                    str_init->value[str_tok.length] = '\0';
-                    str_init->byte_length = str_tok.length;
+                    memcpy(str_init->value, str_tok.value, str_tok.value_len);
+                    str_init->value[str_tok.value_len] = '\0';
+                    str_init->byte_length = (int)str_tok.value_len;
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {

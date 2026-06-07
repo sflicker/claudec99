@@ -128,7 +128,7 @@ static void print_token_row(int index, int index_width,
     size_t display_len = 0;
     if (tok->type == TOKEN_STRING_LITERAL ||
         tok->type == TOKEN_CHAR_LITERAL) {
-        for (int i = 0; i < tok->length && display_len + 2 < sizeof(display); i++) {
+        for (int i = 0; i < (int)tok->value_len && display_len + 2 < sizeof(display); i++) {
             unsigned char b = (unsigned char)tok->value[i];
             switch (b) {
             case '\n':

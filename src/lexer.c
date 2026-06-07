@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "lexer.h"
+#include "strbuf.h"
 #include "util.h"
 
 /* Look up or create a SourceFile for the given path in the lexer's pool.
@@ -31,6 +32,20 @@ static SourceFile *lexer_intern_file(Lexer *lexer, const char *path) {
     return sf;
 }
 
+/* Stage 95-08: allocate a private copy of `len` bytes from `data` in the
+ * lexer's string pool.  A null sentinel is appended at data[len] so that
+ * callers can safely pass the result to string.h functions.  The returned
+ * pointer is stable for the lifetime of the lexer because each string is
+ * an independent malloc, not part of a relocatable buffer. */
+static const char *lexer_store_bytes(Lexer *lexer, const char *data, size_t len) {
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) { fprintf(stderr, "error: out of memory in lexer\n"); exit(1); }
+    memcpy(copy, data, len);
+    copy[len] = '\0';
+    vec_push(&lexer->str_pool, &copy);
+    return copy;
+}
+
 void lexer_init(Lexer *lexer, const char *source, const char *filename) {
     lexer->source    = source;
     lexer->pos       = 0;
@@ -40,6 +55,7 @@ void lexer_init(Lexer *lexer, const char *source, const char *filename) {
     lexer->n_files   = 0;
     lexer->files_cap = 0;
     lexer->file      = filename ? lexer_intern_file(lexer, filename) : NULL;
+    vec_init(&lexer->str_pool, sizeof(char *));
 }
 
 void lexer_free(Lexer *lexer) {
@@ -51,6 +67,15 @@ void lexer_free(Lexer *lexer) {
     lexer->file_pool = NULL;
     lexer->n_files   = 0;
     lexer->files_cap = 0;
+    /* Free all lexer-owned strings. */
+    {
+        size_t i;
+        for (i = 0; i < lexer->str_pool.len; i++) {
+            char *s = *(char **)vec_get(&lexer->str_pool, i);
+            free(s);
+        }
+    }
+    vec_free(&lexer->str_pool);
 }
 
 /* Advance past one character, updating line/col tracking. */
@@ -108,15 +133,6 @@ static void lexer_skip_whitespace(Lexer *lexer) {
     }
 }
 
-/* Set token.length from token.value (NUL-terminated source-byte text)
- * and return. Used by every non-string-literal branch; string literals
- * set token.length explicitly because their body may eventually contain
- * embedded NUL bytes once escape sequences are supported. */
-static Token finalize(Token token) {
-    token.length = (int)strlen(token.value);
-    return token;
-}
-
 /* Record the current lexer position into a token before consuming chars. */
 static void token_set_pos(Token *token, const Lexer *lexer) {
     token->line = lexer->line;
@@ -125,7 +141,9 @@ static void token_set_pos(Token *token, const Lexer *lexer) {
 }
 
 Token lexer_next_token(Lexer *lexer) {
-    Token token = {TOKEN_EOF, ""};
+    Token token;
+    memset(&token, 0, sizeof(token));
+    token.value = ""; /* safe default so %s printing of TOKEN_EOF works */
 
     lexer_skip_whitespace(lexer);
 
@@ -134,98 +152,103 @@ Token lexer_next_token(Lexer *lexer) {
 
     char c = lexer->source[lexer->pos];
     if (c == '\0') {
-        return finalize(token);
+        token.type = TOKEN_EOF;
+        return token;
     }
 
-    /* Single-character tokens */
-    if (c == '(') { token.type = TOKEN_LPAREN;    token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == ')') { token.type = TOKEN_RPAREN;    token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '{') { token.type = TOKEN_LBRACE;    token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '}') { token.type = TOKEN_RBRACE;    token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '[') { token.type = TOKEN_LBRACKET;  token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == ']') { token.type = TOKEN_RBRACKET;  token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == ';') { token.type = TOKEN_SEMICOLON; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == ':') { token.type = TOKEN_COLON;     token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '?') { token.type = TOKEN_QUESTION;  token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == ',') { token.type = TOKEN_COMMA;     token.value[0] = c; lexer_advance(lexer); return finalize(token); }
+    /* Single-character punctuator tokens. */
+    if (c == '(') { token.type = TOKEN_LPAREN;    token.value = "(";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == ')') { token.type = TOKEN_RPAREN;    token.value = ")";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == '{') { token.type = TOKEN_LBRACE;    token.value = "{";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == '}') { token.type = TOKEN_RBRACE;    token.value = "}";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == '[') { token.type = TOKEN_LBRACKET;  token.value = "[";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == ']') { token.type = TOKEN_RBRACKET;  token.value = "]";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == ';') { token.type = TOKEN_SEMICOLON; token.value = ";";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == ':') { token.type = TOKEN_COLON;     token.value = ":";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == '?') { token.type = TOKEN_QUESTION;  token.value = "?";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+    if (c == ',') { token.type = TOKEN_COMMA;     token.value = ",";  token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
     if (c == '.') {
         if (lexer->source[lexer->pos + 1] == '.' && lexer->source[lexer->pos + 2] == '.') {
-            token.type = TOKEN_ELLIPSIS; strcpy(token.value, "...");
+            token.type = TOKEN_ELLIPSIS; token.value = "..."; token.value_len = 3;
+            token.lexeme = token.value; token.lexeme_len = 3;
             lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer);
-            return finalize(token);
+            return token;
         }
-        token.type = TOKEN_DOT; token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        token.type = TOKEN_DOT; token.value = "."; token.value_len = 1;
+        token.lexeme = token.value; token.lexeme_len = 1;
+        lexer_advance(lexer); return token;
     }
     if (c == '+') {
-        if (lexer->source[lexer->pos + 1] == '+') { token.type = TOKEN_INCREMENT;   strcpy(token.value, "++"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PLUS_ASSIGN; strcpy(token.value, "+="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_PLUS; token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        if (lexer->source[lexer->pos + 1] == '+') { token.type = TOKEN_INCREMENT;   token.value = "++"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PLUS_ASSIGN; token.value = "+="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        token.type = TOKEN_PLUS; token.value = "+"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token;
     }
     if (c == '-') {
-        if (lexer->source[lexer->pos + 1] == '-') { token.type = TOKEN_DECREMENT;    strcpy(token.value, "--"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; strcpy(token.value, "-="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        if (lexer->source[lexer->pos + 1] == '>') { token.type = TOKEN_ARROW;        strcpy(token.value, "->"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_MINUS; token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        if (lexer->source[lexer->pos + 1] == '-') { token.type = TOKEN_DECREMENT;    token.value = "--"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_MINUS_ASSIGN; token.value = "-="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (lexer->source[lexer->pos + 1] == '>') { token.type = TOKEN_ARROW;        token.value = "->"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        token.type = TOKEN_MINUS; token.value = "-"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token;
     }
     if (c == '*') {
-        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_STAR_ASSIGN;  strcpy(token.value, "*="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_STAR;    token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_STAR_ASSIGN;  token.value = "*="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        token.type = TOKEN_STAR;    token.value = "*"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token;
     }
     if (c == '/') {
-        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_SLASH_ASSIGN;  strcpy(token.value, "/="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_SLASH;   token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_SLASH_ASSIGN;  token.value = "/="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        token.type = TOKEN_SLASH;   token.value = "/"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token;
     }
     if (c == '%') {
-        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PERCENT_ASSIGN; strcpy(token.value, "%="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_PERCENT; token.value[0] = c; lexer_advance(lexer); return finalize(token);
+        if (lexer->source[lexer->pos + 1] == '=') { token.type = TOKEN_PERCENT_ASSIGN; token.value = "%="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        token.type = TOKEN_PERCENT; token.value = "%"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token;
     }
-    if (c == '~') { token.type = TOKEN_TILDE; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
+    if (c == '~') { token.type = TOKEN_TILDE; token.value = "~"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
 
     /* Two-character or single-character relational/equality tokens */
-    char n = lexer->source[lexer->pos + 1];
-    if (c == '=' && n == '=') { token.type = TOKEN_EQ; strcpy(token.value, "=="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '=') { token.type = TOKEN_ASSIGN; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '!' && n == '=') { token.type = TOKEN_NE; strcpy(token.value, "!="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '!') { token.type = TOKEN_BANG; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '<' && n == '<') {
-        if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_LEFT_SHIFT_ASSIGN;  strcpy(token.value, "<<="); lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_LEFT_SHIFT;  strcpy(token.value, "<<"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token);
+    {
+        char n = lexer->source[lexer->pos + 1];
+        if (c == '=' && n == '=') { token.type = TOKEN_EQ; token.value = "=="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '=') { token.type = TOKEN_ASSIGN; token.value = "="; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '!' && n == '=') { token.type = TOKEN_NE; token.value = "!="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '!') { token.type = TOKEN_BANG; token.value = "!"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '<' && n == '<') {
+            if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_LEFT_SHIFT_ASSIGN;  token.value = "<<="; token.value_len = 3; token.lexeme = token.value; token.lexeme_len = 3; lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer); return token; }
+            token.type = TOKEN_LEFT_SHIFT;  token.value = "<<"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token;
+        }
+        if (c == '>' && n == '>') {
+            if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_RIGHT_SHIFT_ASSIGN; token.value = ">>="; token.value_len = 3; token.lexeme = token.value; token.lexeme_len = 3; lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer); return token; }
+            token.type = TOKEN_RIGHT_SHIFT; token.value = ">>"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token;
+        }
+        if (c == '<' && n == '=') { token.type = TOKEN_LE; token.value = "<="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '>' && n == '=') { token.type = TOKEN_GE; token.value = ">="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '<') { token.type = TOKEN_LT; token.value = "<"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '>') { token.type = TOKEN_GT; token.value = ">"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '&' && n == '&') { token.type = TOKEN_AND_AND;    token.value = "&&"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '&' && n == '=') { token.type = TOKEN_AMP_ASSIGN; token.value = "&="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '&') { token.type = TOKEN_AMPERSAND; token.value = "&"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;      token.value = "||"; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '|' && n == '=') { token.type = TOKEN_PIPE_ASSIGN; token.value = "|="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '|') { token.type = TOKEN_PIPE;  token.value = "|"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
+        if (c == '^' && n == '=') { token.type = TOKEN_CARET_ASSIGN; token.value = "^="; token.value_len = 2; token.lexeme = token.value; token.lexeme_len = 2; lexer_advance(lexer); lexer_advance(lexer); return token; }
+        if (c == '^') { token.type = TOKEN_CARET; token.value = "^"; token.value_len = 1; token.lexeme = token.value; token.lexeme_len = 1; lexer_advance(lexer); return token; }
     }
-    if (c == '>' && n == '>') {
-        if (lexer->source[lexer->pos + 2] == '=') { token.type = TOKEN_RIGHT_SHIFT_ASSIGN; strcpy(token.value, ">>="); lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-        token.type = TOKEN_RIGHT_SHIFT; strcpy(token.value, ">>"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token);
-    }
-    if (c == '<' && n == '=') { token.type = TOKEN_LE; strcpy(token.value, "<="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '>' && n == '=') { token.type = TOKEN_GE; strcpy(token.value, ">="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '<') { token.type = TOKEN_LT; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '>') { token.type = TOKEN_GT; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '&' && n == '&') { token.type = TOKEN_AND_AND;    strcpy(token.value, "&&"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '&' && n == '=') { token.type = TOKEN_AMP_ASSIGN; strcpy(token.value, "&="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '&') { token.type = TOKEN_AMPERSAND; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '|' && n == '|') { token.type = TOKEN_OR_OR;      strcpy(token.value, "||"); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '|' && n == '=') { token.type = TOKEN_PIPE_ASSIGN; strcpy(token.value, "|="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '|') { token.type = TOKEN_PIPE;  token.value[0] = c; lexer_advance(lexer); return finalize(token); }
-    if (c == '^' && n == '=') { token.type = TOKEN_CARET_ASSIGN; strcpy(token.value, "^="); lexer_advance(lexer); lexer_advance(lexer); return finalize(token); }
-    if (c == '^') { token.type = TOKEN_CARET; token.value[0] = c; lexer_advance(lexer); return finalize(token); }
 
-    /* String literals: double-quoted, with the supported backslash
-     * escape sequences decoded into their byte values. Body bytes
-     * (after decoding) are stored in token.value and token.length
-     * records the decoded byte count. Three rejection cases:
+    /* String literals: double-quoted, with supported backslash escape
+     * sequences decoded into their byte values.  The StrBuf accumulates
+     * the decoded bytes; the final result is copied into a lexer-owned
+     * heap string via lexer_store_bytes, which also appends a null
+     * sentinel (not counted in value_len).
+     *
+     * Three rejection cases:
      *   - newline byte before the closing quote
      *   - end-of-file before the closing quote
      *   - any backslash escape outside the supported set
-     * Body length is capped at 255 decoded bytes to fit
-     * token.value[256].
      *
-     * Stage 14-05: decoded values may contain embedded NUL bytes (from
-     * `\0`), so token.value is no longer NUL-terminated-content; rely
-     * on token.length when iterating. The trailing NUL written below
-     * is purely a defensive sentinel for callers that still pass the
-     * buffer to string.h functions for non-string-literal tokens. */
+     * Embedded NUL bytes (from \0) are preserved; callers must use
+     * value_len rather than strlen(value) to iterate. */
     if (c == '"') {
+        StrBuf decoded;
+        strbuf_init(&decoded);
         lexer_advance(lexer); /* skip opening '"' */
-        int i = 0;
         for (;;) {
             char ch = lexer->source[lexer->pos];
             if (ch == '"') {
@@ -233,29 +256,24 @@ Token lexer_next_token(Lexer *lexer) {
                 break;
             }
             if (ch == '\0') {
-                fprintf(stderr,
-                        "error: unterminated string literal\n");
+                strbuf_free(&decoded);
+                fprintf(stderr, "error: unterminated string literal\n");
                 exit(1);
             }
             if (ch == '\n') {
-                fprintf(stderr,
-                        "error: newline in string literal\n");
-                exit(1);
-            }
-            if (i >= 255) {
-                fprintf(stderr,
-                        "error: string literal too long (max 255 bytes)\n");
+                strbuf_free(&decoded);
+                fprintf(stderr, "error: newline in string literal\n");
                 exit(1);
             }
             if (ch == '\\') {
                 char next = lexer->source[lexer->pos + 1];
-                char decoded;
+                char dc;
                 if (next == 'x') {
                     lexer_advance(lexer); /* skip \ */
                     lexer_advance(lexer); /* skip x */
                     if (!isxdigit((unsigned char)lexer->source[lexer->pos])) {
-                        fprintf(stderr,
-                                "error: invalid hex escape in string literal\n");
+                        strbuf_free(&decoded);
+                        fprintf(stderr, "error: invalid hex escape in string literal\n");
                         exit(1);
                     }
                     unsigned int val = 0;
@@ -268,7 +286,7 @@ Token lexer_next_token(Lexer *lexer) {
                         val = val * 16u + digit;
                         lexer_advance(lexer);
                     }
-                    decoded = (char)(val & 0xFFu);
+                    dc = (char)(val & 0xFFu);
                 } else if (next >= '0' && next <= '7') {
                     lexer_advance(lexer); /* skip \ */
                     unsigned int val = 0;
@@ -279,64 +297,60 @@ Token lexer_next_token(Lexer *lexer) {
                         lexer_advance(lexer);
                         count++;
                     }
-                    decoded = (char)(val & 0xFFu);
+                    dc = (char)(val & 0xFFu);
                 } else {
                     switch (next) {
-                    case 'n':  decoded = '\n'; break;
-                    case 't':  decoded = '\t'; break;
-                    case 'r':  decoded = '\r'; break;
-                    case '\\': decoded = '\\'; break;
-                    case '"':  decoded = '"';  break;
+                    case 'n':  dc = '\n'; break;
+                    case 't':  dc = '\t'; break;
+                    case 'r':  dc = '\r'; break;
+                    case '\\': dc = '\\'; break;
+                    case '"':  dc = '"';  break;
                     default:
+                        strbuf_free(&decoded);
                         fprintf(stderr,
                                 "error: invalid escape sequence in string literal\n");
                         exit(1);
                     }
-                    lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
+                    lexer_advance(lexer); lexer_advance(lexer); /* skip \ + escape char */
                 }
-                token.value[i++] = decoded;
+                strbuf_append_char(&decoded, dc);
                 continue;
             }
-            token.value[i++] = ch;
+            strbuf_append_char(&decoded, ch);
             lexer_advance(lexer);
         }
-        token.value[i] = '\0';
-        token.length = i;
         token.type = TOKEN_STRING_LITERAL;
+        token.value     = lexer_store_bytes(lexer, decoded.data, decoded.len);
+        token.value_len = decoded.len;
+        token.lexeme    = token.value;
+        token.lexeme_len = token.value_len;
+        strbuf_free(&decoded);
         return token;
     }
 
-    /* Character literals: single-quoted single character or one of
-     * the supported backslash escapes. Decoded byte is placed in
-     * token.value[0] (length 1, NUL sentinel at value[1]); the
-     * evaluated integer value is also recorded in token.long_value
-     * with literal_type = TYPE_INT (per C, character constants have
-     * type int). Rejected forms:
-     *   - empty `''`
-     *   - EOF before the closing quote (unterminated literal)
-     *   - raw newline before the closing quote
-     *   - more than one byte before the closing quote (multi-char
-     *     constant, e.g. 'ab')
-     *   - any unsupported backslash escape */
+    /* Character literals: single-quoted single character or one of the
+     * supported backslash escapes.  The decoded byte is stored via
+     * lexer_store_bytes (1 byte + null sentinel); the integer value is
+     * also in long_value with literal_type = TYPE_INT.
+     *
+     * Rejected forms: empty '', EOF/newline before close, multi-char
+     * constants, and any unsupported backslash escape. */
     if (c == '\'') {
         lexer_advance(lexer); /* skip opening '\'' */
         char ch = lexer->source[lexer->pos];
         if (ch == '\0') {
-            fprintf(stderr,
-                    "error: unterminated character literal\n");
+            fprintf(stderr, "error: unterminated character literal\n");
             exit(1);
         }
         if (ch == '\n') {
-            fprintf(stderr,
-                    "error: newline in character literal\n");
+            fprintf(stderr, "error: newline in character literal\n");
             exit(1);
         }
         if (ch == '\'') {
-            fprintf(stderr,
-                    "error: empty character literal\n");
+            fprintf(stderr, "error: empty character literal\n");
             exit(1);
         }
-        char decoded;
+        char dc;
         if (ch == '\\') {
             char next = lexer->source[lexer->pos + 1];
             if (next == 'x') {
@@ -357,7 +371,7 @@ Token lexer_next_token(Lexer *lexer) {
                     val = val * 16u + digit;
                     lexer_advance(lexer);
                 }
-                decoded = (char)(val & 0xFFu);
+                dc = (char)(val & 0xFFu);
             } else if (next >= '0' && next <= '7') {
                 lexer_advance(lexer); /* skip \ */
                 unsigned int val = 0;
@@ -368,36 +382,32 @@ Token lexer_next_token(Lexer *lexer) {
                     lexer_advance(lexer);
                     count++;
                 }
-                decoded = (char)(val & 0xFFu);
+                dc = (char)(val & 0xFFu);
             } else {
                 switch (next) {
-                case 'a':  decoded = 7;    break;
-                case 'b':  decoded = 8;    break;
-                case 'f':  decoded = 12;   break;
-                case 'n':  decoded = 10;   break;
-                case 'r':  decoded = 13;   break;
-                case 't':  decoded = 9;    break;
-                case 'v':  decoded = 11;   break;
-                case '\\': decoded = '\\'; break;
-                case '\'': decoded = '\''; break;
-                case '"':  decoded = '"';  break;
-                case '?':  decoded = '?';  break;
+                case 'a':  dc = 7;    break;
+                case 'b':  dc = 8;    break;
+                case 'f':  dc = 12;   break;
+                case 'n':  dc = 10;   break;
+                case 'r':  dc = 13;   break;
+                case 't':  dc = 9;    break;
+                case 'v':  dc = 11;   break;
+                case '\\': dc = '\\'; break;
+                case '\'': dc = '\''; break;
+                case '"':  dc = '"';  break;
+                case '?':  dc = '?';  break;
                 default:
                     fprintf(stderr,
                             "error: invalid escape sequence in character literal\n");
                     exit(1);
                 }
-                lexer_advance(lexer); lexer_advance(lexer); /* skip backslash + escape char */
+                lexer_advance(lexer); lexer_advance(lexer); /* skip \ + escape char */
             }
         } else {
-            decoded = ch;
+            dc = ch;
             lexer_advance(lexer);
         }
         if (lexer->source[lexer->pos] != '\'') {
-            /* Disambiguate: scan ahead. If a closing quote exists
-             * before \n/\0, the literal contained more than one
-             * source byte and is a multi-character constant;
-             * otherwise it is unterminated. */
             int p = lexer->pos;
             while (lexer->source[p] != '\0' &&
                    lexer->source[p] != '\n' &&
@@ -405,19 +415,18 @@ Token lexer_next_token(Lexer *lexer) {
                 p++;
             }
             if (lexer->source[p] == '\'') {
-                fprintf(stderr,
-                        "error: multi character constant\n");
+                fprintf(stderr, "error: multi character constant\n");
             } else {
-                fprintf(stderr,
-                        "error: unterminated character literal\n");
+                fprintf(stderr, "error: unterminated character literal\n");
             }
             exit(1);
         }
         lexer_advance(lexer); /* skip closing '\'' */
-        token.value[0] = decoded;
-        token.value[1] = '\0';
-        token.length = 1;
-        token.long_value = (long)(unsigned char)decoded;
+        token.value      = lexer_store_bytes(lexer, &dc, 1);
+        token.value_len  = 1;
+        token.lexeme     = token.value;
+        token.lexeme_len = 1;
+        token.long_value   = (long)(unsigned char)dc;
         token.literal_type = TYPE_INT;
         token.type = TOKEN_CHAR_LITERAL;
         return token;
@@ -428,8 +437,7 @@ Token lexer_next_token(Lexer *lexer) {
      * identifier branch below. */
     if ((c == 'L' || c == 'U' || c == 'u') &&
         lexer->source[lexer->pos + 1] == '\'') {
-        fprintf(stderr,
-                "error: wide character literal not supported\n");
+        fprintf(stderr, "error: wide character literal not supported\n");
         exit(1);
     }
 
@@ -437,6 +445,7 @@ Token lexer_next_token(Lexer *lexer) {
      * Optional U/u and L/l suffixes set unsigned and size.
      * Without a suffix, type is int when value fits signed 32-bit, else long. */
     if (isdigit(c)) {
+        char num_buf[64];
         int i = 0;
         int is_hex = 0;
 
@@ -444,30 +453,28 @@ Token lexer_next_token(Lexer *lexer) {
         if (c == '0' && (lexer->source[lexer->pos + 1] == 'x' ||
                          lexer->source[lexer->pos + 1] == 'X')) {
             is_hex = 1;
-            token.value[i++] = '0';
+            num_buf[i++] = '0';
             lexer_advance(lexer);
-            token.value[i++] = lexer->source[lexer->pos]; /* 'x' or 'X' */
+            num_buf[i++] = lexer->source[lexer->pos]; /* 'x' or 'X' */
             lexer_advance(lexer);
             if (!isxdigit((unsigned char)lexer->source[lexer->pos])) {
                 fprintf(stderr, "error: invalid hexadecimal integer literal\n");
                 exit(1);
             }
-            while (isxdigit((unsigned char)lexer->source[lexer->pos]) && i < 255) {
-                token.value[i++] = lexer->source[lexer->pos];
+            while (isxdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
+                num_buf[i++] = lexer->source[lexer->pos];
                 lexer_advance(lexer);
             }
         } else {
-            while (isdigit(lexer->source[lexer->pos]) && i < 255) {
-                token.value[i++] = lexer->source[lexer->pos];
+            while (isdigit(lexer->source[lexer->pos]) && i < 62) {
+                num_buf[i++] = lexer->source[lexer->pos];
                 lexer_advance(lexer);
             }
         }
-        token.value[i] = '\0';
+        num_buf[i] = '\0';
 
         int l_count = 0;
         int has_unsigned_suffix = 0;
-        /* Consume U/u and L/l suffixes in any order.
-         * Count L/l chars to detect LL suffix (long long). */
         while (lexer->source[lexer->pos] == 'U' || lexer->source[lexer->pos] == 'u' ||
                lexer->source[lexer->pos] == 'L' || lexer->source[lexer->pos] == 'l') {
             char sc = lexer->source[lexer->pos];
@@ -483,115 +490,101 @@ Token lexer_next_token(Lexer *lexer) {
         int has_long_suffix = (l_count == 1);
         errno = 0;
         char *end = NULL;
-        unsigned long parsed = strtoul(token.value, &end, is_hex ? 16 : 10);
-        /* Unsigned literals (U suffix) may hold values up to ULONG_MAX
-         * without overflow.  Plain or L-only literals are capped at
-         * LONG_MAX since they live in the signed long domain. */
+        unsigned long parsed = strtoul(num_buf, &end, is_hex ? 16 : 10);
         int too_large = (errno == ERANGE) ||
                         (!has_unsigned_suffix && !has_ll_suffix && parsed > (unsigned long)LONG_MAX);
         if (too_large) {
             fprintf(stderr,
                     "error: integer literal '%s' too large for supported integer types\n",
-                    token.value);
+                    num_buf);
             exit(1);
         }
         token.long_value = (long)parsed;
         token.is_unsigned = has_unsigned_suffix;
         if (has_ll_suffix) {
-            /* LL suffix: long long or unsigned long long. */
             token.literal_type = has_unsigned_suffix ? TYPE_UNSIGNED_LONG_LONG : TYPE_LONG_LONG;
         } else if (has_long_suffix) {
             token.literal_type = TYPE_LONG;
         } else if (has_unsigned_suffix) {
-            /* U without L: unsigned int if fits in uint32, else unsigned long. */
             token.literal_type = (parsed <= 0xFFFFFFFFUL) ? TYPE_INT : TYPE_LONG;
         } else if (parsed <= (unsigned long)INT_MAX) {
             token.literal_type = TYPE_INT;
         } else {
             token.literal_type = TYPE_LONG;
         }
+        token.value      = lexer_store_bytes(lexer, num_buf, (size_t)i);
+        token.value_len  = (size_t)i;
+        token.lexeme     = token.value;
+        token.lexeme_len = token.value_len;
         token.type = TOKEN_INT_LITERAL;
-        return finalize(token);
+        return token;
     }
 
-    /* Keywords and identifiers */
+    /* Keywords and identifiers.  Build the identifier in a local buffer,
+     * match against the keyword table, then either assign the matching
+     * static string literal (for keywords) or intern a heap copy (for
+     * user identifiers). */
     if (isalpha(c) || c == '_') {
+        char ident_buf[MAX_NAME_LEN];
         int i = 0;
-        while ((isalnum(lexer->source[lexer->pos]) || lexer->source[lexer->pos] == '_') && i < 255) {
-            token.value[i++] = lexer->source[lexer->pos];
+        while ((isalnum(lexer->source[lexer->pos]) || lexer->source[lexer->pos] == '_') &&
+               i < (int)sizeof(ident_buf) - 1) {
+            ident_buf[i++] = lexer->source[lexer->pos];
             lexer_advance(lexer);
         }
-        token.value[i] = '\0';
+        ident_buf[i] = '\0';
 
-        if (strcmp(token.value, "int") == 0) {
-            token.type = TOKEN_INT;
-        } else if (strcmp(token.value, "char") == 0) {
-            token.type = TOKEN_CHAR;
-        } else if (strcmp(token.value, "short") == 0) {
-            token.type = TOKEN_SHORT;
-        } else if (strcmp(token.value, "long") == 0) {
-            token.type = TOKEN_LONG;
-        } else if (strcmp(token.value, "return") == 0) {
-            token.type = TOKEN_RETURN;
-        } else if (strcmp(token.value, "if") == 0) {
-            token.type = TOKEN_IF;
-        } else if (strcmp(token.value, "else") == 0) {
-            token.type = TOKEN_ELSE;
-        } else if (strcmp(token.value, "while") == 0) {
-            token.type = TOKEN_WHILE;
-        } else if (strcmp(token.value, "do") == 0) {
-            token.type = TOKEN_DO;
-        } else if (strcmp(token.value, "for") == 0) {
-            token.type = TOKEN_FOR;
-        } else if (strcmp(token.value, "break") == 0) {
-            token.type = TOKEN_BREAK;
-        } else if (strcmp(token.value, "continue") == 0) {
-            token.type = TOKEN_CONTINUE;
-        } else if (strcmp(token.value, "switch") == 0) {
-            token.type = TOKEN_SWITCH;
-        } else if (strcmp(token.value, "default") == 0) {
-            token.type = TOKEN_DEFAULT;
-        } else if (strcmp(token.value, "case") == 0) {
-            token.type = TOKEN_CASE;
-        } else if (strcmp(token.value, "goto") == 0) {
-            token.type = TOKEN_GOTO;
-        } else if (strcmp(token.value, "sizeof") == 0) {
-            token.type = TOKEN_SIZEOF;
-        } else if (strcmp(token.value, "extern") == 0) {
-            token.type = TOKEN_EXTERN;
-        } else if (strcmp(token.value, "static") == 0) {
-            token.type = TOKEN_STATIC;
-        } else if (strcmp(token.value, "typedef") == 0) {
-            token.type = TOKEN_TYPEDEF;
-        } else if (strcmp(token.value, "enum") == 0) {
-            token.type = TOKEN_ENUM;
-        } else if (strcmp(token.value, "struct") == 0) {
-            token.type = TOKEN_STRUCT;
-        } else if (strcmp(token.value, "union") == 0) {
-            token.type = TOKEN_UNION;
-        } else if (strcmp(token.value, "void") == 0) {
-            token.type = TOKEN_VOID;
-        } else if (strcmp(token.value, "const") == 0) {
-            token.type = TOKEN_CONST;
-        } else if (strcmp(token.value, "volatile") == 0) {
-            token.type = TOKEN_VOLATILE;
-        } else if (strcmp(token.value, "signed") == 0) {
-            token.type = TOKEN_SIGNED;
-        } else if (strcmp(token.value, "unsigned") == 0) {
-            token.type = TOKEN_UNSIGNED;
-        } else if (strcmp(token.value, "_Bool") == 0) {
-            token.type = TOKEN_BOOL;
-        } else {
+        if      (strcmp(ident_buf, "int")      == 0) { token.type = TOKEN_INT;      token.value = "int";      token.value_len = 3; }
+        else if (strcmp(ident_buf, "char")     == 0) { token.type = TOKEN_CHAR;     token.value = "char";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "short")    == 0) { token.type = TOKEN_SHORT;    token.value = "short";    token.value_len = 5; }
+        else if (strcmp(ident_buf, "long")     == 0) { token.type = TOKEN_LONG;     token.value = "long";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "return")   == 0) { token.type = TOKEN_RETURN;   token.value = "return";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "if")       == 0) { token.type = TOKEN_IF;       token.value = "if";       token.value_len = 2; }
+        else if (strcmp(ident_buf, "else")     == 0) { token.type = TOKEN_ELSE;     token.value = "else";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "while")    == 0) { token.type = TOKEN_WHILE;    token.value = "while";    token.value_len = 5; }
+        else if (strcmp(ident_buf, "do")       == 0) { token.type = TOKEN_DO;       token.value = "do";       token.value_len = 2; }
+        else if (strcmp(ident_buf, "for")      == 0) { token.type = TOKEN_FOR;      token.value = "for";      token.value_len = 3; }
+        else if (strcmp(ident_buf, "break")    == 0) { token.type = TOKEN_BREAK;    token.value = "break";    token.value_len = 5; }
+        else if (strcmp(ident_buf, "continue") == 0) { token.type = TOKEN_CONTINUE; token.value = "continue"; token.value_len = 8; }
+        else if (strcmp(ident_buf, "switch")   == 0) { token.type = TOKEN_SWITCH;   token.value = "switch";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "default")  == 0) { token.type = TOKEN_DEFAULT;  token.value = "default";  token.value_len = 7; }
+        else if (strcmp(ident_buf, "case")     == 0) { token.type = TOKEN_CASE;     token.value = "case";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "goto")     == 0) { token.type = TOKEN_GOTO;     token.value = "goto";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "sizeof")   == 0) { token.type = TOKEN_SIZEOF;   token.value = "sizeof";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "extern")   == 0) { token.type = TOKEN_EXTERN;   token.value = "extern";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "static")   == 0) { token.type = TOKEN_STATIC;   token.value = "static";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "typedef")  == 0) { token.type = TOKEN_TYPEDEF;  token.value = "typedef";  token.value_len = 7; }
+        else if (strcmp(ident_buf, "enum")     == 0) { token.type = TOKEN_ENUM;     token.value = "enum";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "struct")   == 0) { token.type = TOKEN_STRUCT;   token.value = "struct";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "union")    == 0) { token.type = TOKEN_UNION;    token.value = "union";    token.value_len = 5; }
+        else if (strcmp(ident_buf, "void")     == 0) { token.type = TOKEN_VOID;     token.value = "void";     token.value_len = 4; }
+        else if (strcmp(ident_buf, "const")    == 0) { token.type = TOKEN_CONST;    token.value = "const";    token.value_len = 5; }
+        else if (strcmp(ident_buf, "volatile") == 0) { token.type = TOKEN_VOLATILE; token.value = "volatile"; token.value_len = 8; }
+        else if (strcmp(ident_buf, "signed")   == 0) { token.type = TOKEN_SIGNED;   token.value = "signed";   token.value_len = 6; }
+        else if (strcmp(ident_buf, "unsigned") == 0) { token.type = TOKEN_UNSIGNED; token.value = "unsigned"; token.value_len = 8; }
+        else if (strcmp(ident_buf, "_Bool")    == 0) { token.type = TOKEN_BOOL;     token.value = "_Bool";    token.value_len = 5; }
+        else {
             token.type = TOKEN_IDENTIFIER;
+            token.value     = lexer_store_bytes(lexer, ident_buf, (size_t)i);
+            token.value_len = (size_t)i;
         }
-        return finalize(token);
+        token.lexeme     = token.value;
+        token.lexeme_len = token.value_len;
+        return token;
     }
 
-    /* Unknown token */
-    token.type = TOKEN_UNKNOWN;
-    token.value[0] = c;
-    lexer_advance(lexer);
-    return finalize(token);
+    /* Unknown token: store the single character in the lexer's string pool. */
+    {
+        char unk[1];
+        unk[0] = c;
+        token.type      = TOKEN_UNKNOWN;
+        token.value     = lexer_store_bytes(lexer, unk, 1);
+        token.value_len = 1;
+        token.lexeme    = token.value;
+        token.lexeme_len = 1;
+        lexer_advance(lexer);
+        return token;
+    }
 }
 
 const char *token_display_name(TokenType type) {

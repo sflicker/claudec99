@@ -5,8 +5,10 @@
  * overridden from the command line with -D (e.g. -DPARSER_MAX_FUNCTIONS=256)
  * without triggering a "macro redefined" diagnostic. */
 
-/* Maximum length of any identifier, tag name, assembly label, or value
- * string stored in a fixed-size character array throughout the compiler. */
+/* Maximum byte length of identifiers, tag names, assembly labels, and
+ * string literal payload stored in fixed-size char arrays throughout the
+ * compiler.  Token no longer uses this limit (Token.value is now a
+ * pointer); it still applies to ASTNode.value and struct name fields. */
 #ifndef MAX_NAME_LEN
 #define MAX_NAME_LEN 256
 #endif

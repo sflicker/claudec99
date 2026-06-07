@@ -1,6 +1,7 @@
 #ifndef CCOMPILER_TOKEN_H
 #define CCOMPILER_TOKEN_H
 
+#include <stddef.h>
 #include "type.h"
 
 typedef struct SourceFile {
@@ -93,8 +94,16 @@ typedef enum {
 
 typedef struct {
     TokenType type;
-    char value[MAX_NAME_LEN];
-    int length;
+    /* Stage 95-08: raw source spelling (owned by lexer). */
+    const char *lexeme;
+    size_t lexeme_len;
+    /* Stage 95-08: decoded/cooked value (owned by lexer). For string
+     * literals this is the decoded byte sequence; for other tokens it
+     * is the same text as the source spelling. value is always
+     * null-terminated as a convenience sentinel; use value_len for the
+     * true byte count (required for embedded-NUL string literals). */
+    const char *value;
+    size_t value_len;
     long long_value;
     TypeKind literal_type;
     /* Stage 00-98: set when the integer literal has a U/u suffix. */
