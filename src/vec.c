@@ -47,9 +47,13 @@ int vec_push(Vec *v, const void *elem) {
         if (v->cap == 0) {
             new_cap = 8;
         } else {
-            if (v->cap > (size_t)-1 / 2)
+            /* Copy to local size_t so the bootstrap compiler uses unsigned
+             * division (same pattern as vec_reserve's overflow check). */
+            size_t cap = v->cap;
+            size_t lim = (size_t)-1;
+            if (cap > lim / 2)
                 vec_fatal("vec_push: capacity overflow");
-            new_cap = v->cap * 2;
+            new_cap = cap * 2;
         }
         vec_reserve(v, new_cap);
     }
