@@ -108,7 +108,6 @@ raise a limit.
 |----------|---------|-------------|
 | `MAX_LOCALS` | 256 | Maximum number of local variables per function. |
 | `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
-| `MAX_SWITCH_DEPTH` | 16 | Maximum nesting depth of `switch` statements. |
 | `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
 | `MAX_USER_LABELS` | 64 | Maximum number of user-defined `goto` labels per function. |
 | `MAX_STRING_LITERALS` | 2048 | Maximum number of string literal occurrences in a translation unit. |
@@ -221,6 +220,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 95-07 (convert remaining static usages):
+
+> Stage 95-07 converts two LOW-priority fixed-capacity items in the code generator. `MAX_SWITCH_DEPTH`: `CodeGen.switch_stack[16]` (a `SwitchCtx` array) is replaced with `Vec switch_stack; /* SwitchCtx */`, eliminating the hard nesting-depth cap on `switch` statements. `MAX_SWITCH_DEPTH` removed from `include/constants.h`. `MAX_CALL_LAYOUT_ITEMS`: a `compile_error` guard is added to `compute_call_layout`, fixing a previously unchecked silent overflow risk if a call had >24 arguments. No language features were added. All 1471 tests pass at C0, C1, and C2 (165 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-06 (convert high-risk static usages):
 
@@ -578,7 +581,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-03 all tests pass (165 unit, 823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1471 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-07 all tests pass (165 unit, 823 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1471 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

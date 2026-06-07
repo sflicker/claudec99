@@ -62,12 +62,12 @@ Columns:
 | `MAX_LOCALS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.locals[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many local variables"~~ | ~~`LocalVar *lv = codegen_find_var(...)` — returned and used locally; never stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_GLOBALS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.globals[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many global variables (max %d)"~~ | ~~`GlobalVar *gv = codegen_find_global(...)` — returned and used locally; never stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_BREAK_DEPTH` | 32 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.break_stack[]`); `src/codegen.c`~~ | ~~**No check** — `break_stack` is written at `cg->break_depth` without a bounds test before any of the four write sites (while, do-while, for, switch). Exceeding 32 nesting levels silently corrupts adjacent `CodeGen` fields.~~ | ~~No — accessed only by index `cg->break_depth`; no pointers into slots~~ | ~~YES~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
-| `MAX_SWITCH_DEPTH` | 16 | `include/constants.h`; `include/codegen.h` (`CodeGen.switch_stack[]`); `src/codegen.c` | `compile_error` — "switch nesting exceeds max depth %d" (checked before writing) | `SwitchCtx *ctx = &cg->switch_stack[...]` — local, used immediately | YES | LOW | PENDING |
+| `MAX_SWITCH_DEPTH` | 16 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.switch_stack[]`); `src/codegen.c`~~ | ~~`compile_error` — "switch nesting exceeds max depth %d" (checked before writing)~~ | ~~`SwitchCtx *ctx = &cg->switch_stack[...]` — local, used immediately~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-07) |
 | `MAX_SWITCH_LABELS` | 256 | `include/constants.h`; `include/codegen.h` (`SwitchCtx.nodes[]` and `SwitchCtx.labels[]` embedded in `SwitchCtx`); `src/codegen.c` | `compile_error` — "too many case/default labels in switch (max %d)" | `SwitchCtx.nodes[]` stores `ASTNode *` from the AST (not aliases into the array itself) | NO (arrays are embedded in `SwitchCtx` which is embedded in `CodeGen.switch_stack[]`; making them dynamic requires heap allocation inside `SwitchCtx`) | LOW | PENDING |
 | `MAX_USER_LABELS` | 64 | `include/constants.h`; `include/codegen.h` (`CodeGen.user_labels[][MAX_NAME_LEN]`); `src/codegen.c` | `compile_error` — "too many labels in function (max %d)" | No — 2D `char` array; accessed by index only | NO (2D `char` array; dynamic form requires `char **` and separate allocations) | LOW | PENDING |
 | `MAX_STRING_LITERALS` | 2048 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.string_pool[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many string literals (max %d)". **Note:** raised from 256 → 2048 in stage 92 because the compiler itself uses ~750 string-literal occurrences.~~ | ~~`CodeGen.string_pool[]` stores `ASTNode *` pointers from the AST; no pointers into the pool array itself escape~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_LOCAL_STATICS` | 128 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.local_statics[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many local static variables (max %d)"~~ | ~~No — accessed by index only; no escaping pointers~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-04) |
-| `MAX_CALL_LAYOUT_ITEMS` | 24 | `include/constants.h`; `src/codegen.c` (`CallLayout.items[]` — local variable at call sites) | **No check** — `compute_call_layout` indexes `L->items[i]` for i in 0..nargs-1 without a bounds test. Exceeding 24 arguments silently overflows the stack-local `CallLayout`. | No — local stack variable at each call site; no aliases | N/A (stack variable) | LOW | PENDING |
+| `MAX_CALL_LAYOUT_ITEMS` | 24 | `include/constants.h`; `src/codegen.c` (`CallLayout.items[]` — local variable at call sites) | `compile_error` — "call has %d arguments; max supported is %d" (bounds check added in stage 95-07 at top of `compute_call_layout`). `CallLayout` remains a local stack struct; no Vec conversion (N/A). | No — local stack variable at each call site; no aliases | N/A (stack variable) | LOW | ✓ DONE (stage 95-07) |
 
 ---
 
@@ -159,17 +159,32 @@ All HIGH-priority items have been converted. ✓ (stages 95-06)
 
 ### MEDIUM — raise or make dynamic before tackling large codebases
 
+All MEDIUM-priority items have been converted. ✓ (stages 95-05 and 95-06)
+
 | Item | Risk |
 |------|------|
-| `PARSER_MAX_GLOBALS` | 256 slots; manageable but a hard error |
-| `MAX_LOCALS` | 256 per function; generates a hard error |
-| `MAX_GLOBALS` | 256 per translation unit (codegen side); hard error |
-| `PARSER_MAX_STRUCT_TAGS` | 32 slots; medium-complexity headers can hit this |
-| `MAX_STRING_LITERALS` | 2048 already high but pool is not deduplicated; large units can exhaust it |
-| `PARSER_MAX_ENUM_CONSTS` | 256 slots; generous but hard error |
+| ~~`PARSER_MAX_GLOBALS`~~ | ~~256 slots; manageable but a hard error~~ ✓ DONE stage 95-05 |
+| ~~`MAX_LOCALS`~~ | ~~256 per function; generates a hard error~~ ✓ DONE stage 95-05 |
+| ~~`MAX_GLOBALS`~~ | ~~256 per translation unit (codegen side); hard error~~ ✓ DONE stage 95-05 |
+| ~~`PARSER_MAX_STRUCT_TAGS`~~ | ~~32 slots; medium-complexity headers can hit this~~ ✓ DONE stage 95-05 |
+| ~~`MAX_STRING_LITERALS`~~ | ~~2048 already high but pool is not deduplicated; large units can exhaust it~~ ✓ DONE stage 95-05 |
+| ~~`PARSER_MAX_ENUM_CONSTS`~~ | ~~256 slots; generous but hard error~~ ✓ DONE stage 95-05 |
 
-### LOW — can remain fixed for now
+### LOW — remaining items require structural refactoring
 
-| Items |
-|-------|
-| `MAX_NAME_LEN`, `FUNC_TYPE_MAX_PARAMS`, `FUNC_MAX_PARAMS`, `MAX_CALL_LAYOUT_ITEMS`, `PARSER_MAX_ENUM_TAGS`, `PARSER_MAX_UNION_TAGS`, `MAX_SWITCH_DEPTH`, `MAX_SWITCH_LABELS`, `MAX_USER_LABELS`, `MAX_LOCAL_STATICS`, `MAX_INCLUDE_DEPTH`, `MAX_COND_DEPTH`, `MAX_ARRAY_DIMS` |
+All LOW-priority items with Safe Realloc = YES and all stack/no-check items have been converted or had bounds checks added. ✓ (stages 95-04, 95-07)
+
+Remaining items require structural changes (embedding dynamic allocation inside existing struct fields) and have been intentionally deferred for future stages:
+
+| Item | Why Deferred |
+|------|-------------|
+| `FUNC_MAX_PARAMS` | Embedded `TypeKind param_types[16]` in `FuncSig`; converting requires changing to a heap-allocated `TypeKind *` and updating all callers. NO Safe Realloc. |
+| `FUNC_TYPE_MAX_PARAMS` | Embedded `Type *params[16]` in `Type`; converting requires changing to a heap-allocated `Type **` and updating all type construction. NO Safe Realloc. |
+| `MAX_SWITCH_LABELS` | Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc. |
+| `MAX_USER_LABELS` | 2D `char user_labels[64][256]` in CodeGen; converting requires `char **` with per-label allocations. NO Safe Realloc. |
+| `MAX_NAME_LEN` | Embedded `char name[256]` in every node/var/sig struct; widest blast radius; requires all strings to become dynamically allocated. N/A. |
+| `MAX_ARRAY_DIMS` | Local `#define` and stack variable in parser.c; only affects nested array dimensions. N/A (stack). |
+| `MAX_INCLUDE_DEPTH` | Recursion depth counter in preprocessor.c; not an array. N/A. |
+| `MAX_COND_DEPTH` | Local stack variable `CondFrame cond_stack[64]` in preprocessor.c. N/A. |
+
+Previously completed LOW items: ~~`PARSER_MAX_ENUM_TAGS`~~ ✓ DONE stage 95-04, ~~`PARSER_MAX_UNION_TAGS`~~ ✓ DONE stage 95-04, ~~`MAX_LOCAL_STATICS`~~ ✓ DONE stage 95-04, ~~`MAX_SWITCH_DEPTH`~~ ✓ DONE stage 95-07, ~~`MAX_CALL_LAYOUT_ITEMS`~~ ✓ DONE stage 95-07 (bounds check added).
