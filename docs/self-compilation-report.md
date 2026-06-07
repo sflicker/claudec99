@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-07
-**Stage:** stage-95-05 (convert medium-risk static arrays to Vec)
+**Stage:** stage-95-06 (convert high-risk static arrays to Vec)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -124,6 +124,26 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
+
+## Issues found during stage 95-06 self-hosting test
+
+None. All four Vec conversions (PARSER_MAX_STRUCT_FIELDS, MAX_BREAK_DEPTH,
+PARSER_MAX_TYPEDEFS, PARSER_MAX_FUNCTIONS) produced no bootstrap failures.
+The C0 bootstrap patterns used (local BreakFrame/FuncSig/TypedefEntry/StructField
+variables with vec_push, and single-star vec_get casts) are well within what C0
+can parse. All 1471 tests passed at each stage.
+
+## Result (stage 95-06)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950600.00711` | `GNU_13_3_0` | 1471/1471 |
+| C1 | `build/ccompiler-c1` | `00.02.00950600.00712` | `ClaudeC99_v00_02_00950600_00711` | 1471/1471 |
+| C2 | `build/ccompiler-c2` | `00.02.00950600.00713` | `ClaudeC99_v00_02_00950600_00712` | 1471/1471 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
 
 ## Issues found during stage 95-05 self-hosting test
 

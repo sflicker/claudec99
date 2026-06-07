@@ -42,14 +42,14 @@ Columns:
 
 | Name | Max | Module | On Overflow | Ext Ptr Refs | Safe Realloc | Priority | Status |
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
-| `PARSER_MAX_FUNCTIONS` | 256 | `include/constants.h`; `include/parser.h` (`Parser.funcs[]`); `src/parser.c` | `PARSER_ERROR` — "too many functions (max %d)" | `FuncSig *` returned from `parser_find_function` / `parser_register_function` — used only locally within the calling function; never stored in another struct | YES | HIGH | PENDING |
+| `PARSER_MAX_FUNCTIONS` | 256 | ~~`include/constants.h`; `include/parser.h` (`Parser.funcs[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many functions (max %d)"~~ | ~~`FuncSig *` returned from `parser_find_function` / `parser_register_function` — used only locally within the calling function; never stored in another struct~~ | ~~YES~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
 | `PARSER_MAX_GLOBALS` | 256 | ~~`include/constants.h`; `include/parser.h` (`Parser.globals[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many global objects (max %d)"~~ | ~~`GlobalObjSig *` returned from `parser_find_global` — used only locally~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
-| `PARSER_MAX_TYPEDEFS` | 64 | `include/constants.h`; `include/parser.h` (`Parser.typedefs[]`); `src/parser.c` | `PARSER_ERROR` — "too many typedefs (max %d)" | `TypedefEntry *` returned from `parser_find_typedef` — used only locally | YES | HIGH | PENDING |
+| `PARSER_MAX_TYPEDEFS` | 64 | ~~`include/constants.h`; `include/parser.h` (`Parser.typedefs[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many typedefs (max %d)"~~ | ~~`TypedefEntry *` returned from `parser_find_typedef` — used only locally~~ | ~~YES~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
 | `PARSER_MAX_ENUM_CONSTS` | 256 | ~~`include/constants.h`; `include/parser.h` (`Parser.enum_consts[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` (enum_const overflow); no check for enum_tag overflow after registration~~ | ~~`EnumConst *ec` used only locally~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `PARSER_MAX_ENUM_TAGS` | 32 | ~~`include/constants.h`; `include/parser.h` (`Parser.enum_tags[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many enum tags (max %d)"~~ | ~~`EnumTag *et` used only locally~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-04) |
 | `PARSER_MAX_STRUCT_TAGS` | 32 | ~~`include/constants.h`; `include/parser.h` (`Parser.struct_tags[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many struct tags (max %d)"~~ | ~~`StructTag *st` returned from `parser_find_struct_tag` and `parser_register_struct_tag`; only used locally; `st->type` is updated in-place but the pointer itself is not stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `PARSER_MAX_UNION_TAGS` | 32 | ~~`include/constants.h`; `include/parser.h` (`Parser.union_tags[]`); `src/parser.c`~~ | ~~`PARSER_ERROR` — "too many union tags (max %d)"~~ | ~~`UnionTag *ut` used only locally~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-04) |
-| `PARSER_MAX_STRUCT_FIELDS` | 64 | `include/constants.h`; `src/parser.c` lines 397, 590 — local stack array `StructField tmp_fields[]` inside struct/union body parsing | **Silent data loss** — fields beyond 64 are silently dropped (check is `if (n_fields < 64)` using a hardcoded literal instead of `PARSER_MAX_STRUCT_FIELDS`); `n_fields` still increments so struct size and alignment are also wrong. **Bug: check uses literal `64` not the constant.** | No — local stack array; contents are `memcpy`'d to a calloc'd `StructField` array after parsing | N/A (stack variable) | HIGH | PENDING |
+| `PARSER_MAX_STRUCT_FIELDS` | 64 | ~~`include/constants.h`; `src/parser.c` lines 397, 590 — local stack array `StructField tmp_fields[]` inside struct/union body parsing~~ | ~~**Silent data loss** — fields beyond 64 are silently dropped (check is `if (n_fields < 64)` using a hardcoded literal instead of `PARSER_MAX_STRUCT_FIELDS`); `n_fields` still increments so struct size and alignment are also wrong. **Bug: check uses literal `64` not the constant.**~~ | ~~No — local stack array; contents are `memcpy`'d to a calloc'd `StructField` array after parsing~~ | ~~N/A (stack variable)~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
 | `FUNC_MAX_PARAMS` | 16 | `include/constants.h`; `include/parser.h` (`FuncSig.param_types[]`); `src/parser.c` | `PARSER_ERROR` — "function has %d parameters; max supported is %d" | `TypeKind` values (enum scalars), not pointers; no aliasing | NO (embedded in `FuncSig` which is embedded in `Parser.funcs[]`) | LOW | PENDING |
 | `MAX_ARRAY_DIMS` | 8 | `src/parser.c` (local `#define`, not in `constants.h`) — `ParsedDeclarator.array_dims[]` and local `int dims[]` arrays | `PARSER_ERROR` — "too many array dimensions (max %d)" | No — local stack variables in `parse_declarator` and `parse_subscript_type` | N/A (stack variable) | LOW | PENDING |
 
@@ -61,7 +61,7 @@ Columns:
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
 | `MAX_LOCALS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.locals[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many local variables"~~ | ~~`LocalVar *lv = codegen_find_var(...)` — returned and used locally; never stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_GLOBALS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.globals[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many global variables (max %d)"~~ | ~~`GlobalVar *gv = codegen_find_global(...)` — returned and used locally; never stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
-| `MAX_BREAK_DEPTH` | 32 | `include/constants.h`; `include/codegen.h` (`CodeGen.break_stack[]`); `src/codegen.c` | **No check** — `break_stack` is written at `cg->break_depth` without a bounds test before any of the four write sites (while, do-while, for, switch). Exceeding 32 nesting levels silently corrupts adjacent `CodeGen` fields. | No — accessed only by index `cg->break_depth`; no pointers into slots | YES | HIGH | PENDING |
+| `MAX_BREAK_DEPTH` | 32 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.break_stack[]`); `src/codegen.c`~~ | ~~**No check** — `break_stack` is written at `cg->break_depth` without a bounds test before any of the four write sites (while, do-while, for, switch). Exceeding 32 nesting levels silently corrupts adjacent `CodeGen` fields.~~ | ~~No — accessed only by index `cg->break_depth`; no pointers into slots~~ | ~~YES~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
 | `MAX_SWITCH_DEPTH` | 16 | `include/constants.h`; `include/codegen.h` (`CodeGen.switch_stack[]`); `src/codegen.c` | `compile_error` — "switch nesting exceeds max depth %d" (checked before writing) | `SwitchCtx *ctx = &cg->switch_stack[...]` — local, used immediately | YES | LOW | PENDING |
 | `MAX_SWITCH_LABELS` | 256 | `include/constants.h`; `include/codegen.h` (`SwitchCtx.nodes[]` and `SwitchCtx.labels[]` embedded in `SwitchCtx`); `src/codegen.c` | `compile_error` — "too many case/default labels in switch (max %d)" | `SwitchCtx.nodes[]` stores `ASTNode *` from the AST (not aliases into the array itself) | NO (arrays are embedded in `SwitchCtx` which is embedded in `CodeGen.switch_stack[]`; making them dynamic requires heap allocation inside `SwitchCtx`) | LOW | PENDING |
 | `MAX_USER_LABELS` | 64 | `include/constants.h`; `include/codegen.h` (`CodeGen.user_labels[][MAX_NAME_LEN]`); `src/codegen.c` | `compile_error` — "too many labels in function (max %d)" | No — 2D `char` array; accessed by index only | NO (2D `char` array; dynamic form requires `char **` and separate allocations) | LOW | PENDING |
@@ -148,12 +148,14 @@ This iterates in seconds instead of waiting for a full `./build.sh --mode=self-h
 
 ### HIGH — fix before compiling larger programs
 
+All HIGH-priority items have been converted. ✓ (stages 95-06)
+
 | Item | Risk |
 |------|------|
-| `MAX_BREAK_DEPTH` | Silent buffer overflow — no bounds check before writing `break_stack` entries |
-| `PARSER_MAX_STRUCT_FIELDS` | Silent data loss — overflow check uses hardcoded `64` not the constant; fields beyond 64 are dropped silently |
-| `PARSER_MAX_TYPEDEFS` | Only 64 slots; header-heavy code saturates this quickly |
-| `PARSER_MAX_FUNCTIONS` | 256 slots; large translation units can exceed this |
+| ~~`MAX_BREAK_DEPTH`~~ | ~~Silent buffer overflow — no bounds check before writing `break_stack` entries~~ ✓ DONE stage 95-06 |
+| ~~`PARSER_MAX_STRUCT_FIELDS`~~ | ~~Silent data loss — overflow check uses hardcoded `64` not the constant; fields beyond 64 are dropped silently~~ ✓ DONE stage 95-06 |
+| ~~`PARSER_MAX_TYPEDEFS`~~ | ~~Only 64 slots; header-heavy code saturates this quickly~~ ✓ DONE stage 95-06 |
+| ~~`PARSER_MAX_FUNCTIONS`~~ | ~~256 slots; large translation units can exceed this~~ ✓ DONE stage 95-06 |
 
 ### MEDIUM — raise or make dynamic before tackling large codebases
 
