@@ -74,14 +74,14 @@ void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
     parser->func_count = 0;
-    parser->global_count = 0;
+    vec_init(&parser->globals, sizeof(GlobalObjSig));
     parser->loop_depth = 0;
     parser->switch_depth = 0;
     parser->typedef_count = 0;
     parser->scope_depth = 0;
-    parser->enum_const_count = 0;
+    vec_init(&parser->enum_consts, sizeof(EnumConst));
     vec_init(&parser->enum_tags, sizeof(EnumTag));
-    parser->struct_tag_count = 0;
+    vec_init(&parser->struct_tags, sizeof(StructTag));
     vec_init(&parser->union_tags, sizeof(UnionTag));
 }
 
@@ -136,9 +136,10 @@ static FuncSig *parser_find_function(Parser *parser, const char *name) {
 
 /* Stage 22-02: file-scope object tracking. */
 static GlobalObjSig *parser_find_global(Parser *parser, const char *name) {
-    for (int i = 0; i < parser->global_count; i++) {
-        if (strcmp(parser->globals[i].name, name) == 0)
-            return &parser->globals[i];
+    for (size_t i = 0; i < parser->globals.len; i++) {
+        GlobalObjSig *g = (GlobalObjSig *)vec_get(&parser->globals, i);
+        if (strcmp(g->name, name) == 0)
+            return g;
     }
     return NULL;
 }
@@ -210,15 +211,13 @@ static void parser_register_global(Parser *parser, const char *name,
         }
         return;
     }
-    if (parser->global_count >= PARSER_MAX_GLOBALS) {
-        PARSER_ERROR(parser, "error: too many global objects (max %d)\n", PARSER_MAX_GLOBALS);
-    }
-    GlobalObjSig *g = &parser->globals[parser->global_count++];
-    strncpy(g->name, name, 255);
-    g->name[255] = '\0';
-    g->kind = kind;
-    g->storage_class = sc;
-    g->full_type = full_type;
+    GlobalObjSig new_g;
+    strncpy(new_g.name, name, 255);
+    new_g.name[255] = '\0';
+    new_g.kind = kind;
+    new_g.storage_class = sc;
+    new_g.full_type = full_type;
+    vec_push(&parser->globals, &new_g);
 }
 
 /*
@@ -320,9 +319,10 @@ static ParsedDeclarator parse_declarator(Parser *parser);
 
 /* Stage 30: struct tag table helpers. */
 static StructTag *parser_find_struct_tag(Parser *parser, const char *tag) {
-    for (int i = 0; i < parser->struct_tag_count; i++) {
-        if (strcmp(parser->struct_tags[i].tag, tag) == 0)
-            return &parser->struct_tags[i];
+    for (size_t i = 0; i < parser->struct_tags.len; i++) {
+        StructTag *st = (StructTag *)vec_get(&parser->struct_tags, i);
+        if (strcmp(st->tag, tag) == 0)
+            return st;
     }
     return NULL;
 }
@@ -330,15 +330,12 @@ static StructTag *parser_find_struct_tag(Parser *parser, const char *tag) {
 static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
     StructTag *st = parser_find_struct_tag(parser, tag);
     if (st) return st;
-    if (parser->struct_tag_count >= PARSER_MAX_STRUCT_TAGS) {
-        PARSER_ERROR(parser, "error: too many struct tags (max %d)\n",
-                PARSER_MAX_STRUCT_TAGS);
-    }
-    st = &parser->struct_tags[parser->struct_tag_count++];
-    strncpy(st->tag, tag, sizeof(st->tag) - 1);
-    st->tag[sizeof(st->tag) - 1] = '\0';
-    st->type = NULL;
-    return st;
+    StructTag new_st;
+    new_st.type = NULL;
+    strncpy(new_st.tag, tag, sizeof(new_st.tag) - 1);
+    new_st.tag[sizeof(new_st.tag) - 1] = '\0';
+    vec_push(&parser->struct_tags, &new_st);
+    return (StructTag *)vec_get(&parser->struct_tags, parser->struct_tags.len - 1);
 }
 
 /*
@@ -495,6 +492,10 @@ static Type *parse_struct_specifier(Parser *parser) {
 
         Type *result;
         if (has_tag) {
+            /* Re-fetch st: parsing nested type specifiers in the body may have
+             * reallocated struct_tags, invalidating the pointer obtained before
+             * the body was entered. */
+            st = parser_find_struct_tag(parser, tag);
             /* Stage 37: if a placeholder was created by a forward declaration,
              * update it in-place so any existing Type* references (e.g. typedef
              * entries) automatically reflect the completed layout. */
@@ -680,6 +681,10 @@ static Type *parse_union_specifier(Parser *parser) {
 
         Type *result;
         if (has_tag) {
+            /* Re-fetch ut: parsing nested type specifiers in the body may have
+             * reallocated union_tags, invalidating the pointer obtained before
+             * the body was entered. */
+            ut = parser_find_union_tag(parser, tag);
             if (ut->type && ut->type->size == 0) {
                 ut->type->size      = total_size;
                 ut->type->alignment = max_align;
@@ -773,8 +778,9 @@ static Type *parse_enum_specifier(Parser *parser) {
             ename[sizeof(ename) - 1] = '\0';
             parser->current = lexer_next_token(parser->lexer);
 
-            for (int i = 0; i < parser->enum_const_count; i++) {
-                if (strcmp(parser->enum_consts[i].name, ename) == 0) {
+            for (size_t i = 0; i < parser->enum_consts.len; i++) {
+                EnumConst *ec = (EnumConst *)vec_get(&parser->enum_consts, i);
+                if (strcmp(ec->name, ename) == 0) {
                     PARSER_ERROR(parser, "error: duplicate enumerator '%s'\n", ename);
                 }
             }
@@ -799,14 +805,11 @@ static Type *parse_enum_specifier(Parser *parser) {
                 }
             }
 
-            if (parser->enum_const_count >= PARSER_MAX_ENUM_CONSTS) {
-                PARSER_ERROR(parser, "error: too many enum constants (max %d)\n",
-                        PARSER_MAX_ENUM_CONSTS);
-            }
-            EnumConst *ec = &parser->enum_consts[parser->enum_const_count++];
-            strncpy(ec->name, ename, sizeof(ec->name) - 1);
-            ec->name[sizeof(ec->name) - 1] = '\0';
-            ec->value = next_val++;
+            EnumConst new_ec;
+            strncpy(new_ec.name, ename, sizeof(new_ec.name) - 1);
+            new_ec.name[sizeof(new_ec.name) - 1] = '\0';
+            new_ec.value = next_val++;
+            vec_push(&parser->enum_consts, &new_ec);
 
             if (parser->current.type == TOKEN_COMMA) {
                 parser->current = lexer_next_token(parser->lexer);
@@ -1432,10 +1435,11 @@ static ASTNode *parse_primary(Parser *parser) {
         }
         /* Stage 29: fold enum constants to integer literals before any other
          * identifier resolution. */
-        for (int i = 0; i < parser->enum_const_count; i++) {
-            if (strcmp(parser->enum_consts[i].name, parser->current.value) == 0) {
+        for (size_t i = 0; i < parser->enum_consts.len; i++) {
+            EnumConst *ec = (EnumConst *)vec_get(&parser->enum_consts, i);
+            if (strcmp(ec->name, parser->current.value) == 0) {
                 char buf[32];
-                snprintf(buf, sizeof(buf), "%ld", parser->enum_consts[i].value);
+                snprintf(buf, sizeof(buf), "%ld", ec->value);
                 parser->current = lexer_next_token(parser->lexer);
                 ASTNode *node = parser_node(parser, AST_INT_LITERAL, buf);
                 node->decl_type = TYPE_INT;
@@ -2323,9 +2327,10 @@ static long eval_case_const_primary(Parser *parser) {
         return v;
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
-        for (int i = 0; i < parser->enum_const_count; i++) {
-            if (strcmp(parser->enum_consts[i].name, parser->current.value) == 0) {
-                long v = parser->enum_consts[i].value;
+        for (size_t i = 0; i < parser->enum_consts.len; i++) {
+            EnumConst *ec = (EnumConst *)vec_get(&parser->enum_consts, i);
+            if (strcmp(ec->name, parser->current.value) == 0) {
+                long v = ec->value;
                 parser->current = lexer_next_token(parser->lexer);
                 return v;
             }

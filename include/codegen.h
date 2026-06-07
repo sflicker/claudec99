@@ -97,11 +97,11 @@ typedef struct {
 typedef struct {
     FILE *output;
     int label_count;
-    LocalVar locals[MAX_LOCALS];
-    int local_count;
-    /* Stage 22-01: file-scope globals, registered before function codegen. */
-    GlobalVar globals[MAX_GLOBALS];
-    int global_count;
+    /* Stage 95-05: local variable table is now dynamic. */
+    Vec locals;  /* LocalVar */
+    /* Stage 22-01: file-scope globals, registered before function codegen.
+     * Stage 95-05: dynamic. */
+    Vec globals;  /* GlobalVar */
     int stack_offset;
     int scope_start;
     int push_depth;
@@ -132,13 +132,13 @@ typedef struct {
     ASTNode *tu_root;
     /* Stage 14-03: per-translation-unit pool of string literals.
      * Each AST_STRING_LITERAL encountered during expression emission
-     * is appended here and assigned the index `string_pool_count`
+     * is appended here and assigned the index == pool length before push
      * (used as the suffix in `Lstr<N>`). After all functions are
      * emitted, the pool is walked once to write the `.rodata`
      * section. Storing AST node pointers is safe because the AST
-     * outlives `codegen_translation_unit`. */
-    ASTNode *string_pool[MAX_STRING_LITERALS];
-    int string_pool_count;
+     * outlives `codegen_translation_unit`.
+     * Stage 95-05: dynamic. */
+    Vec string_pool;  /* ASTNode * */
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
     /* Stage 71: block-scope static variable pool — accumulated across all

@@ -355,8 +355,8 @@ static void emit_store_local(CodeGen *cg, int offset, int size, int src_is_long)
 void codegen_init(CodeGen *cg, FILE *output) {
     cg->output = output;
     cg->label_count = 0;
-    cg->local_count = 0;
-    cg->global_count = 0;
+    vec_init(&cg->locals, sizeof(LocalVar));
+    vec_init(&cg->globals, sizeof(GlobalVar));
     cg->stack_offset = 0;
     cg->scope_start = 0;
     cg->push_depth = 0;
@@ -368,7 +368,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_return_type = TYPE_INT;
     cg->current_return_full_type = NULL;
     cg->tu_root = NULL;
-    cg->string_pool_count = 0;
+    vec_init(&cg->string_pool, sizeof(ASTNode *));
     cg->warnings_are_errors = 0;
     vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
@@ -479,9 +479,10 @@ static int switch_lookup_label(SwitchCtx *ctx, ASTNode *node) {
 
 static LocalVar *codegen_find_var(CodeGen *cg, const char *name) {
     /* Walk backward so the innermost (most recently declared) shadow wins. */
-    for (int i = cg->local_count - 1; i >= 0; i--) {
-        if (strcmp(cg->locals[i].name, name) == 0)
-            return &cg->locals[i];
+    for (int i = (int)cg->locals.len - 1; i >= 0; i--) {
+        LocalVar *lv = (LocalVar *)vec_get(&cg->locals, (size_t)i);
+        if (strcmp(lv->name, name) == 0)
+            return lv;
     }
     return NULL;
 }
@@ -505,18 +506,21 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
                            TypeKind kind, Type *full_type) {
     cg->stack_offset += size;
     cg->stack_offset = (cg->stack_offset + align - 1) & ~(align - 1);
-    strncpy(cg->locals[cg->local_count].name, name, 255);
-    cg->locals[cg->local_count].name[255] = '\0';
-    cg->locals[cg->local_count].offset = cg->stack_offset;
-    cg->locals[cg->local_count].size = size;
-    cg->locals[cg->local_count].kind = kind;
-    cg->locals[cg->local_count].full_type = full_type;
-    cg->locals[cg->local_count].is_const = 0;
+    LocalVar new_lv;
+    strncpy(new_lv.name, name, 255);
+    new_lv.name[255] = '\0';
+    new_lv.offset = cg->stack_offset;
+    new_lv.size = size;
+    new_lv.kind = kind;
+    new_lv.full_type = full_type;
+    new_lv.is_const = 0;
+    new_lv.is_unsigned = 0;
     /* Stage 91-01: clear is_static so a slot reused from a prior function's
      * block-scope static local is not misread as static (&var / member access
      * consult this flag). Static locals are registered via a separate path. */
-    cg->locals[cg->local_count].is_static = 0;
-    cg->local_count++;
+    new_lv.is_static = 0;
+    new_lv.static_label[0] = '\0';
+    vec_push(&cg->locals, &new_lv);
     return cg->stack_offset;
 }
 
@@ -546,9 +550,10 @@ static Type *local_var_type(LocalVar *lv) {
 
 /* Stage 22-01: global variable helpers. */
 static GlobalVar *codegen_find_global(CodeGen *cg, const char *name) {
-    for (int i = 0; i < cg->global_count; i++) {
-        if (strcmp(cg->globals[i].name, name) == 0)
-            return &cg->globals[i];
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gv = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
+        if (strcmp(gv->name, name) == 0)
+            return gv;
     }
     return NULL;
 }
@@ -1901,14 +1906,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * needed by the `.rodata` emitter is recovered from
          * `strlen(node->value)` since `full_type` no longer carries
          * the array length. */
-        if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-            compile_error(
-                    "error: too many string literals (max %d)\n",
-                    MAX_STRING_LITERALS);
-        }
-        int idx = cg->string_pool_count;
-        cg->string_pool[idx] = node;
-        cg->string_pool_count++;
+        int idx = (int)cg->string_pool.len;
+        vec_push(&cg->string_pool, &node);
         fprintf(cg->output, "    lea rax, [rel Lstr%d]\n", idx);
         node->result_type = TYPE_POINTER;
         node->full_type = type_pointer(type_char());
@@ -3954,8 +3953,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
     cg_mark(node);
     if (node->type == AST_DECLARATION) {
         /* Duplicate check limited to the current scope only — shadowing is allowed. */
-        for (int i = cg->scope_start; i < cg->local_count; i++) {
-            if (strcmp(cg->locals[i].name, node->value) == 0) {
+        for (int i = cg->scope_start; i < (int)cg->locals.len; i++) {
+            LocalVar *lv = (LocalVar *)vec_get(&cg->locals, (size_t)i);
+            if (strcmp(lv->name, node->value) == 0) {
                 compile_error( "error: duplicate declaration of variable '%s'\n", node->value);
             }
         }
@@ -3995,22 +3995,19 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                      cg->current_func, cg->label_count++);
             /* Register in the local variable table so scope and shadowing work.
              * Don't advance stack_offset — statics are not stack-allocated. */
-            if (cg->local_count >= MAX_LOCALS) {
-                compile_error("error: too many local variables\n");
-            }
-            LocalVar *lv = &cg->locals[cg->local_count];
-            strncpy(lv->name, node->value, 255);
-            lv->name[255] = '\0';
-            lv->offset = 0;
-            lv->size = type_kind_bytes(node->decl_type);
-            lv->kind = node->decl_type;
-            lv->full_type = node->full_type;
-            lv->is_const = node->is_const;
-            lv->is_unsigned = node->is_unsigned;
-            lv->is_static = 1;
-            strncpy(lv->static_label, label, 255);
-            lv->static_label[255] = '\0';
-            cg->local_count++;
+            LocalVar new_static_lv;
+            strncpy(new_static_lv.name, node->value, 255);
+            new_static_lv.name[255] = '\0';
+            new_static_lv.offset = 0;
+            new_static_lv.size = type_kind_bytes(node->decl_type);
+            new_static_lv.kind = node->decl_type;
+            new_static_lv.full_type = node->full_type;
+            new_static_lv.is_const = node->is_const;
+            new_static_lv.is_unsigned = node->is_unsigned;
+            new_static_lv.is_static = 1;
+            strncpy(new_static_lv.static_label, label, 255);
+            new_static_lv.static_label[255] = '\0';
+            vec_push(&cg->locals, &new_static_lv);
             /* Add to the deferred emission pool (.data or .bss). */
             LocalStaticVar new_sv;
             new_sv.label[0] = '\0';
@@ -4056,7 +4053,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int align = node->full_type->alignment;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
-            cg->locals[cg->local_count - 1].is_const = node->is_const;
+            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Zero-fill the entire slot first, then store provided values.
@@ -4127,7 +4124,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int length = node->full_type->length;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
-            cg->locals[cg->local_count - 1].is_const = node->is_const;
+            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Stage 32: brace-initializer list. Evaluate each element and
@@ -4184,8 +4181,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         int size = type_kind_bytes(node->decl_type);
         int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
-        cg->locals[cg->local_count - 1].is_const = node->is_const;
-        cg->locals[cg->local_count - 1].is_unsigned = node->is_unsigned;
+        ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
+        ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = node->is_unsigned;
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
             TypeKind init_kind = node->children[0]->result_type;
@@ -4414,8 +4411,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         cg->break_depth++;
         /* Save scope: variables declared in the for-init are scoped to the loop. */
         int saved_scope_start = cg->scope_start;
-        int saved_local_count = cg->local_count;
-        cg->scope_start = cg->local_count;
+        int saved_local_count = (int)cg->locals.len;
+        cg->scope_start = (int)cg->locals.len;
         if (node->children[0]) {
             /* Stage 76: init may be a declaration or an expression. */
             if (node->children[0]->type == AST_DECLARATION ||
@@ -4441,7 +4438,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, ".L_break_%d:\n", label_id);
         cg->break_depth--;
         /* Pop for-scope variables. */
-        cg->local_count = saved_local_count;
+        cg->locals.len = (size_t)saved_local_count;
         cg->scope_start = saved_scope_start;
     } else if (node->type == AST_SWITCH_STATEMENT) {
         /* children: [0]=controlling expression, [1]=body statement.
@@ -4545,13 +4542,13 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    jmp .L_continue_%d\n", id);
     } else if (node->type == AST_BLOCK) {
         int saved_scope_start = cg->scope_start;
-        int saved_local_count = cg->local_count;
-        cg->scope_start = cg->local_count;
+        int saved_local_count = (int)cg->locals.len;
+        cg->scope_start = (int)cg->locals.len;
         for (int i = 0; i < node->child_count; i++) {
             codegen_statement(cg, node->children[i], is_main);
         }
         /* Pop variables declared in this scope — they are no longer visible. */
-        cg->local_count = saved_local_count;
+        cg->locals.len = (size_t)saved_local_count;
         cg->scope_start = saved_scope_start;
     } else if (node->type == AST_EXPRESSION_STMT) {
         codegen_expression(cg, node->children[0]);
@@ -4578,7 +4575,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         ASTNode *body = node->children[num_params];
 
         /* Reset per-function symbol table */
-        cg->local_count = 0;
+        cg->locals.len = 0;
         cg->stack_offset = 0;
         cg->scope_start = 0;
         cg->push_depth = 0;
@@ -4700,7 +4697,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
-            cg->locals[cg->local_count - 1].is_unsigned = node->children[i]->is_unsigned;
+            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned =
+                node->children[i]->is_unsigned;
             const char *reg;
             switch (sz) {
             case 1: reg = param_regs_8[i];  break;
@@ -4721,7 +4719,8 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
-            cg->locals[cg->local_count - 1].is_unsigned = node->children[i]->is_unsigned;
+            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned =
+                node->children[i]->is_unsigned;
             int src = 16 + (i - 6) * 8;
             switch (sz) {
             case 1:
@@ -4763,7 +4762,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
                     int off = codegen_add_var(cg, p->value, slot, align,
                                               p->decl_type, p->full_type);
-                    cg->locals[cg->local_count - 1].is_unsigned = 0;
+                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = 0;
                     fprintf(cg->output, "    mov [rbp - %d], %s\n", off, arg_regs[s->gp_start]);
                     if (s->gp_count == 2)
                         fprintf(cg->output, "    mov [rbp - %d], %s\n", off - 8,
@@ -4771,7 +4770,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
-                    cg->locals[cg->local_count - 1].is_unsigned = p->is_unsigned;
+                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = p->is_unsigned;
                     const char *reg;
                     int gi = s->gp_start;
                     switch (sz) {
@@ -4798,14 +4797,14 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
                     int off = codegen_add_var(cg, p->value, slot, align,
                                               p->decl_type, p->full_type);
-                    cg->locals[cg->local_count - 1].is_unsigned = 0;
+                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = 0;
                     fprintf(cg->output, "    lea rsi, [rbp + %d]\n", src);
                     fprintf(cg->output, "    lea rdi, [rbp - %d]\n", off);
                     emit_struct_copy(cg, sz);
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
-                    cg->locals[cg->local_count - 1].is_unsigned = p->is_unsigned;
+                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = p->is_unsigned;
                     switch (sz) {
                     case 1:
                         if (p->is_unsigned)
@@ -4856,10 +4855,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
  * skipped entirely when no literals were collected.
  */
 static void codegen_emit_string_pool(CodeGen *cg) {
-    if (cg->string_pool_count == 0) return;
+    if (cg->string_pool.len == 0) return;
     fprintf(cg->output, "section .rodata\n");
-    for (int i = 0; i < cg->string_pool_count; i++) {
-        ASTNode *s = cg->string_pool[i];
+    for (int i = 0; i < (int)cg->string_pool.len; i++) {
+        ASTNode *s = *(ASTNode **)vec_get(&cg->string_pool, (size_t)i);
         /* Stage 14-05: byte count is taken from the AST node's
          * byte_length, which the parser stamps from the lexer's
          * decoded count. This is required because the decoded payload
@@ -4941,20 +4940,22 @@ static void codegen_emit_externs(CodeGen *cg, ASTNode *tu) {
      * `extern int g`, the .c defines `int g = 0;`). Emitting both an
      * `extern` and a label definition makes NASM reject the symbol as
      * "inconsistently redefined". Collapse repeated externs to one line. */
-    for (int i = 0; i < cg->global_count; i++) {
-        if (!cg->globals[i].is_extern) continue;
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gi = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
+        if (!gi->is_extern) continue;
         int suppress = 0;
-        for (int k = 0; k < cg->global_count; k++) {
+        for (int k = 0; k < (int)cg->globals.len; k++) {
+            GlobalVar *gk = (GlobalVar *)vec_get(&cg->globals, (size_t)k);
             if (k == i) continue;
-            if (strcmp(cg->globals[k].name, cg->globals[i].name) != 0) continue;
+            if (strcmp(gk->name, gi->name) != 0) continue;
             /* a definition elsewhere, or an already-emitted earlier extern */
-            if (!cg->globals[k].is_extern || k < i) {
+            if (!gk->is_extern || k < i) {
                 suppress = 1;
                 break;
             }
         }
         if (suppress) continue;
-        fprintf(cg->output, "extern %s\n", cg->globals[i].name);
+        fprintf(cg->output, "extern %s\n", gi->name);
     }
 }
 
@@ -4983,10 +4984,8 @@ static const char *bss_res_directive(TypeKind kind) {
  * (→ .data).  Uninitialized globals (→ .bss) have is_initialized == 0.
  */
 static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
-    if (cg->global_count >= MAX_GLOBALS) {
-        compile_error( "error: too many global variables (max %d)\n", MAX_GLOBALS);
-    }
-    GlobalVar *gv = &cg->globals[cg->global_count];
+    GlobalVar new_gv;
+    GlobalVar *gv = &new_gv;
     strncpy(gv->name, decl->value, 255);
     gv->name[255] = '\0';
     gv->kind = decl->decl_type;
@@ -5032,13 +5031,8 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             /* Stage 43: char *s = "abc" — pointer initialized from string
              * literal.  Add the literal to the string pool now so its label
              * is assigned before codegen_emit_data runs. */
-            if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                compile_error( "error: too many string literals (max %d)\n",
-                        MAX_STRING_LITERALS);
-            }
-            int idx = cg->string_pool_count;
-            cg->string_pool[idx] = init;
-            cg->string_pool_count++;
+            int idx = (int)cg->string_pool.len;
+            vec_push(&cg->string_pool, &init);
             snprintf(gv->init_label, sizeof(gv->init_label), "Lstr%d", idx);
             gv->is_label_init = 1;
             gv->is_initialized = 1;
@@ -5053,7 +5047,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             gv->is_initialized = 1;
         }
     }
-    cg->global_count++;
+    vec_push(&cg->globals, gv);
 }
 
 /*
@@ -5098,13 +5092,8 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
                 emit_global_struct(cg, f->full_type, elem);
             } else if (f->kind == TYPE_POINTER &&
                        elem->type == AST_STRING_LITERAL) {
-                if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                    compile_error( "error: too many string literals (max %d)\n",
-                            MAX_STRING_LITERALS);
-                }
-                int idx = cg->string_pool_count;
-                cg->string_pool[idx] = elem;
-                cg->string_pool_count++;
+                int idx = (int)cg->string_pool.len;
+                vec_push(&cg->string_pool, &elem);
                 fprintf(cg->output, "    dq Lstr%d\n", idx);
             } else if (elem->type == AST_INT_LITERAL) {
                 long v = strtol(elem->value, NULL, 10);
@@ -5139,13 +5128,14 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
  */
 static void codegen_emit_data(CodeGen *cg) {
     int has_data = 0;
-    for (int i = 0; i < cg->global_count; i++) {
-        if (cg->globals[i].is_initialized && !cg->globals[i].is_extern) { has_data = 1; break; }
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gv_chk = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
+        if (gv_chk->is_initialized && !gv_chk->is_extern) { has_data = 1; break; }
     }
     if (!has_data) return;
     fprintf(cg->output, "section .data\n");
-    for (int i = 0; i < cg->global_count; i++) {
-        GlobalVar *gv = &cg->globals[i];
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gv = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
         if (!gv->is_initialized || gv->is_extern) continue;
         if (!gv->is_static_linkage)
             fprintf(cg->output, "global %s\n", gv->name);
@@ -5221,13 +5211,8 @@ static void codegen_emit_data(CodeGen *cg) {
                         emit_global_struct(cg, elem_type, elem);
                     } else if (elem->type == AST_STRING_LITERAL) {
                         /* char *names[] element — add to pool, emit dq Lstr<N>. */
-                        if (cg->string_pool_count >= MAX_STRING_LITERALS) {
-                            compile_error( "error: too many string literals (max %d)\n",
-                                    MAX_STRING_LITERALS);
-                        }
-                        int idx = cg->string_pool_count;
-                        cg->string_pool[idx] = elem;
-                        cg->string_pool_count++;
+                        int idx = (int)cg->string_pool.len;
+                        vec_push(&cg->string_pool, &elem);
                         fprintf(cg->output, "    dq Lstr%d\n", idx);
                     } else if (elem->type == AST_INT_LITERAL) {
                         long v = strtol(elem->value, NULL, 10);
@@ -5263,14 +5248,15 @@ static void codegen_emit_data(CodeGen *cg) {
 
 static void codegen_emit_bss(CodeGen *cg) {
     int has_bss = 0;
-    for (int i = 0; i < cg->global_count; i++) {
-        if (!cg->globals[i].is_initialized && !cg->globals[i].is_extern) { has_bss = 1; break; }
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gv_chk = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
+        if (!gv_chk->is_initialized && !gv_chk->is_extern) { has_bss = 1; break; }
     }
     if (!has_bss) return;
 
     fprintf(cg->output, "section .bss\n");
-    for (int i = 0; i < cg->global_count; i++) {
-        GlobalVar *gv = &cg->globals[i];
+    for (int i = 0; i < (int)cg->globals.len; i++) {
+        GlobalVar *gv = (GlobalVar *)vec_get(&cg->globals, (size_t)i);
         if (gv->is_initialized || gv->is_extern) continue;
         if (!gv->is_static_linkage)
             fprintf(cg->output, "global %s\n", gv->name);

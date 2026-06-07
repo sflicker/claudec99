@@ -68,24 +68,22 @@ typedef struct {
     Token current;
     FuncSig funcs[PARSER_MAX_FUNCTIONS];
     int func_count;
-    /* Stage 22-02: file-scope object table. */
-    GlobalObjSig globals[PARSER_MAX_GLOBALS];
-    int global_count;
+    /* Stage 22-02: file-scope object table.  Stage 95-05: dynamic. */
+    Vec globals;  /* GlobalObjSig */
     int loop_depth;
     int switch_depth;
     /* Stage 28-01: typedef name table with scope tracking. */
     TypedefEntry typedefs[PARSER_MAX_TYPEDEFS];
     int typedef_count;
     int scope_depth; /* 0 = file scope, incremented by each parse_block */
-    /* Stage 29: enum constant and tag tables (flat, global scope). */
-    EnumConst enum_consts[PARSER_MAX_ENUM_CONSTS];
-    int enum_const_count;
-    Vec enum_tags;  /* EnumTag; dynamic — stage 95-04 */
-    /* Stage 30: struct tag table (flat, global scope). */
-    StructTag struct_tags[PARSER_MAX_STRUCT_TAGS];
-    int struct_tag_count;
+    /* Stage 29: enum constant and tag tables (flat, global scope).
+     * Stage 95-05: enum_consts converted to Vec. */
+    Vec enum_consts;  /* EnumConst; dynamic — stage 95-05 */
+    Vec enum_tags;    /* EnumTag; dynamic — stage 95-04 */
+    /* Stage 30: struct tag table (flat, global scope).  Stage 95-05: dynamic. */
+    Vec struct_tags;  /* StructTag; dynamic — stage 95-05 */
     /* Stage 72: union tag table (flat, global scope). */
-    Vec union_tags;  /* UnionTag; dynamic — stage 95-04 */
+    Vec union_tags;   /* UnionTag; dynamic — stage 95-04 */
     /* Stage 75-03: set while parsing the body of a variadic function
      * definition so __builtin_va_start can verify its context. */
     int current_func_is_variadic;
