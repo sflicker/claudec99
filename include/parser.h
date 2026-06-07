@@ -66,7 +66,8 @@ typedef struct {
 typedef struct {
     Lexer *lexer;
     Token current;
-    FuncSig funcs[PARSER_MAX_FUNCTIONS];
+    /* Stage 95-06: function table is now dynamic. */
+    Vec funcs;  /* FuncSig */
     int func_count;
     /* Stage 22-02: file-scope object table.  Stage 95-05: dynamic. */
     Vec globals;  /* GlobalObjSig */

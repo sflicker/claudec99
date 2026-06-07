@@ -73,6 +73,7 @@ typedef struct {
 void parser_init(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     parser->current = lexer_next_token(lexer);
+    vec_init(&parser->funcs, sizeof(FuncSig));
     parser->func_count = 0;
     vec_init(&parser->globals, sizeof(GlobalObjSig));
     parser->loop_depth = 0;
@@ -139,8 +140,9 @@ static void parser_leave_scope(Parser *parser) {
 
 static FuncSig *parser_find_function(Parser *parser, const char *name) {
     for (int i = 0; i < parser->func_count; i++) {
-        if (strcmp(parser->funcs[i].name, name) == 0) {
-            return &parser->funcs[i];
+        FuncSig *sig = (FuncSig *)vec_get(&parser->funcs, (size_t)i);
+        if (strcmp(sig->name, name) == 0) {
+            return sig;
         }
     }
     return NULL;
@@ -291,24 +293,25 @@ static void parser_register_function(Parser *parser, const char *name,
         }
         return;
     }
-    if (parser->func_count >= PARSER_MAX_FUNCTIONS) {
-        PARSER_ERROR(parser, "error: too many functions (max %d)\n", PARSER_MAX_FUNCTIONS);
-    }
     if (param_count > FUNC_MAX_PARAMS) {
-        PARSER_ERROR(parser, 
+        PARSER_ERROR(parser,
                 "error: function '%s' has %d parameters; max supported is %d\n",
                 name, param_count, FUNC_MAX_PARAMS);
     }
-    FuncSig *sig = &parser->funcs[parser->func_count];
-    strncpy(sig->name, name, 255);
-    sig->name[255] = '\0';
-    sig->param_count = param_count;
-    sig->has_definition = is_definition;
-    sig->return_type = return_type;
-    sig->storage_class = sc;
-    sig->is_variadic = is_variadic;
-    for (int i = 0; i < param_count; i++) {
-        sig->param_types[i] = param_types[i];
+    {
+        FuncSig sig;
+        memset(&sig, 0, sizeof(sig));
+        strncpy(sig.name, name, sizeof(sig.name) - 1);
+        sig.name[sizeof(sig.name) - 1] = '\0';
+        sig.param_count = param_count;
+        sig.has_definition = is_definition;
+        sig.return_type = return_type;
+        sig.storage_class = sc;
+        sig.is_variadic = is_variadic;
+        for (int i = 0; i < param_count; i++) {
+            sig.param_types[i] = param_types[i];
+        }
+        vec_push(&parser->funcs, &sig);
     }
     parser->func_count++;
 }

@@ -27,9 +27,6 @@
 
 /* ---- Parser limits ---- */
 
-#ifndef PARSER_MAX_FUNCTIONS
-#define PARSER_MAX_FUNCTIONS     256
-#endif
 #ifndef PARSER_MAX_GLOBALS
 #define PARSER_MAX_GLOBALS       256
 #endif
