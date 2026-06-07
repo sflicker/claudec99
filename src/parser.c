@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "parser.h"
+#include "strbuf.h"
 #include "util.h"
 
 /* Stage 70-03: report a parser error at the current token's source position. */
@@ -51,7 +52,7 @@ static ASTNode *parser_node(Parser *parser, ASTNodeType type, const char *value)
 #define MAX_ARRAY_DIMS 8
 
 typedef struct {
-    char name[256];
+    const char *name;
     int  pointer_count;
     int  is_array;
     int  has_size;
@@ -1185,8 +1186,7 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
             parser->current = lexer_next_token(parser->lexer);
         }
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-        strncpy(d.name, name.value, sizeof(d.name) - 1);
-        d.name[sizeof(d.name) - 1] = '\0';
+        d.name = name.value;
         /* A function suffix on the inner identifier means "function returning
          * function pointer" (e.g. int (*fp())(int)) — not yet supported. */
         if (parser->current.type == TOKEN_LPAREN) {
@@ -1271,8 +1271,7 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
     /* Non-parenthesized declarator: stars before the identifier. */
     d.pointer_count = outer_stars;
     Token name = parser_expect(parser, TOKEN_IDENTIFIER);
-    strncpy(d.name, name.value, sizeof(d.name) - 1);
-    d.name[sizeof(d.name) - 1] = '\0';
+    d.name = name.value;
     if (parser->current.type == TOKEN_LBRACKET) {
         d.is_array = 1;
         /* Stage 86: parse first dimension (may be empty for initializer inference). */
@@ -1354,40 +1353,41 @@ static ASTNode *parse_primary(Parser *parser) {
     /* Stage 14-02: a string literal is a primary expression whose
      * logical type is char[N+1], where N is the literal's byte
      * length and the trailing slot holds the implicit NUL. The
-     * payload bytes ride on node->value (copied below) and the
-     * length is preserved on full_type->length.
+     * payload bytes are referenced via node->value (a pointer into
+     * lexer-owned storage) and the length is preserved on full_type->length.
      *
      * Stage 14-05: the decoded payload may contain embedded NUL
-     * bytes (from `\0`), so the value is copied with memcpy bounded
-     * by token.length rather than via ast_new's strncpy, and the
-     * count is also stashed on byte_length for downstream consumers
-     * (notably codegen, where full_type is rewritten to `char *`
-     * during the array-to-pointer decay and the length on full_type
-     * is no longer reachable). */
+     * bytes (from `\0`), so the count is stashed on byte_length for
+     * downstream consumers (notably codegen, where full_type is
+     * rewritten to `char *` during the array-to-pointer decay and
+     * the length on full_type is no longer reachable).
+     *
+     * Stage 95-09: node->value is now a const char * into lexer
+     * storage. For a single literal, point directly to token.value.
+     * For adjacent (concatenated) literals, collect bytes in a StrBuf
+     * and store the result via lexer_store_bytes. */
     if (parser->current.type == TOKEN_STRING_LITERAL) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *node = parser_node(parser, AST_STRING_LITERAL, NULL);
-        if ((int)token.value_len >= MAX_NAME_LEN) {
-            PARSER_ERROR(parser, "error: string literal too long (max %d bytes)\n",
-                         MAX_NAME_LEN - 1);
-        }
-        memcpy(node->value, token.value, token.value_len);
         int total_len = (int)token.value_len;
         /* Stage 89: consume any adjacent string literal tokens and
          * concatenate their decoded bytes into the same node. */
-        while (parser->current.type == TOKEN_STRING_LITERAL) {
-            Token next = parser->current;
-            if (total_len + (int)next.value_len >= MAX_NAME_LEN) {
-                PARSER_ERROR(parser, "error: concatenated string literal too long (max %d bytes)\n",
-                             MAX_NAME_LEN - 1);
-                break;
+        if (parser->current.type == TOKEN_STRING_LITERAL) {
+            StrBuf sb;
+            strbuf_init(&sb);
+            strbuf_append_n(&sb, token.value, token.value_len);
+            while (parser->current.type == TOKEN_STRING_LITERAL) {
+                Token next = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                strbuf_append_n(&sb, next.value, next.value_len);
+                total_len += (int)next.value_len;
             }
-            parser->current = lexer_next_token(parser->lexer);
-            memcpy(node->value + total_len, next.value, next.value_len);
-            total_len += (int)next.value_len;
+            node->value = lexer_store_bytes(parser->lexer, sb.data, (size_t)total_len);
+            strbuf_free(&sb);
+        } else {
+            node->value = token.value;
         }
-        node->value[total_len] = '\0';
         node->byte_length = total_len;
         node->decl_type = TYPE_ARRAY;
         node->full_type = type_array(type_char(), total_len + 1);
@@ -1395,16 +1395,16 @@ static ASTNode *parse_primary(Parser *parser) {
     }
     /* Stage 15-02: a character literal is a primary expression of type
      * int. The token already carries the decoded byte at value[0] and
-     * the evaluated integer at long_value; mirror the string-literal
-     * convention by storing the decoded byte at node->value[0]. The
-     * integer value used by codegen is recovered as
-     * (unsigned char)node->value[0]. */
+     * the evaluated integer at long_value. The integer value used by
+     * codegen is recovered as (unsigned char)node->value[0].
+     *
+     * Stage 95-09: node->value points directly to lexer-owned storage
+     * (token.value is a 1-byte null-terminated string in the lexer pool). */
     if (parser->current.type == TOKEN_CHAR_LITERAL) {
         Token token = parser->current;
         parser->current = lexer_next_token(parser->lexer);
         ASTNode *node = parser_node(parser, AST_CHAR_LITERAL, NULL);
-        node->value[0] = token.value[0];
-        node->value[1] = '\0';
+        node->value = token.value;
         node->byte_length = 1;
         node->decl_type = TYPE_INT;
         return node;
@@ -1458,8 +1458,7 @@ static ASTNode *parse_primary(Parser *parser) {
             Type *arg_type = parse_type_name(parser);
             node->decl_type = arg_type->kind;
             node->full_type = arg_type;
-            snprintf(node->value, sizeof(node->value), "%s",
-                     type_kind_name(arg_type->kind));
+            node->value = type_kind_name(arg_type->kind);
             parser_expect(parser, TOKEN_RPAREN);
             return node;
         }
@@ -1471,7 +1470,8 @@ static ASTNode *parse_primary(Parser *parser) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "%ld", ec->value);
                 parser->current = lexer_next_token(parser->lexer);
-                ASTNode *node = parser_node(parser, AST_INT_LITERAL, buf);
+                ASTNode *node = parser_node(parser, AST_INT_LITERAL,
+                    lexer_store_bytes(parser->lexer, buf, strlen(buf)));
                 node->decl_type = TYPE_INT;
                 return node;
             }
@@ -2636,15 +2636,14 @@ static ASTNode *parse_statement(Parser *parser) {
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
                     ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
-                    memcpy(str_init->value, str_tok.value, str_tok.value_len);
-                    str_init->value[str_tok.value_len] = '\0';
+                    str_init->value = str_tok.value;
                     str_init->byte_length = (int)str_tok.value_len;
                     str_init->decl_type = TYPE_ARRAY;
                     str_init->full_type = type_array(type_char(), (int)str_tok.value_len + 1);
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {
-                            PARSER_ERROR(parser, 
+                            PARSER_ERROR(parser,
                                     "error: array too small for string literal initializer\n");
                         }
                     } else {
@@ -2799,7 +2798,8 @@ static ASTNode *parse_statement(Parser *parser) {
         char case_buf[32];
         snprintf(case_buf, sizeof(case_buf), "%ld", case_val);
         ASTNode *node = parser_node(parser, AST_CASE_SECTION, NULL);
-        ast_add_child(node, parser_node(parser, AST_INT_LITERAL, case_buf));
+        ast_add_child(node, parser_node(parser, AST_INT_LITERAL,
+            lexer_store_bytes(parser->lexer, case_buf, strlen(case_buf))));
         ast_add_child(node, parse_statement(parser));
         return node;
     }
@@ -3252,13 +3252,12 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     Token str_tok = parser->current;
                     parser->current = lexer_next_token(parser->lexer);
                     ASTNode *str_init = parser_node(parser, AST_STRING_LITERAL, NULL);
-                    memcpy(str_init->value, str_tok.value, str_tok.value_len);
-                    str_init->value[str_tok.value_len] = '\0';
+                    str_init->value = str_tok.value;
                     str_init->byte_length = (int)str_tok.value_len;
                     int needed = str_init->byte_length + 1;
                     if (has_size) {
                         if (length < needed) {
-                            PARSER_ERROR(parser, 
+                            PARSER_ERROR(parser,
                                     "error: array too small for string literal initializer\n");
                         }
                     } else {

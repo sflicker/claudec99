@@ -25,5 +25,10 @@ typedef struct {
 void lexer_init(Lexer *lexer, const char *source, const char *filename);
 void lexer_free(Lexer *lexer);
 Token lexer_next_token(Lexer *lexer);
+/* Stage 95-09: allocate a null-terminated copy of `data[0..len-1]` in the
+ * lexer's string pool and return a stable pointer. ASTNode.value uses this
+ * to store content that cannot be pointed to directly in an existing token
+ * (e.g. concatenated string literals, formatted integer values). */
+const char *lexer_store_bytes(Lexer *lexer, const char *data, size_t len);
 
 #endif

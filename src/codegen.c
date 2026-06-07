@@ -1495,7 +1495,7 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
     case AST_POSTFIX_INC_DEC:
         return sizeof_type_of_expr(cg, node->children[0]);
     case AST_ASSIGNMENT: {
-        if (node->value[0] != '\0') {
+        if (node->value && node->value[0] != '\0') {
             LocalVar *lv = codegen_find_var(cg, node->value);
             if (lv) return lv->kind;
             GlobalVar *gv = codegen_find_global(cg, node->value);

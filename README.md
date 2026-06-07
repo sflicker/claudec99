@@ -77,7 +77,7 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. Applies to `ASTNode.value` and struct name/tag fields. `Token.value` is no longer bounded by this limit (it is a pointer+length into lexer-owned storage since Stage 95-08). |
+| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. Applies to struct name/tag fields (`StructField.name`, `FuncSig.name`, etc.). `Token.value` (since Stage 95-08) and `ASTNode.value` (since Stage 95-09) are no longer bounded by this limit — both are pointers into lexer-owned storage. |
 
 ### AST
 
@@ -221,9 +221,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 95-08 (updates to string handling in token):
+Through stage 95-09 (remove static char array from ASTNode and parser):
 
-> Stage 95-08 eliminates the fixed-size `char value[MAX_NAME_LEN]` buffer from the `Token` struct, replacing it with pointer-plus-length fields (`const char *value`, `size_t value_len`, `const char *lexeme`, `size_t lexeme_len`) that reference lexer-owned storage. This removes the arbitrary 255-byte limitation on token text and string literals. The lexer implements a string pool (`Vec str_pool`) with a `lexer_store_bytes()` helper that allocates individual string copies and tracks them for cleanup. String literals are decoded through a temporary `StrBuf`, enabling strings beyond 255 bytes and supporting embedded NUL bytes via `value_len`. Two bootstrap defects were found and fixed: (1) C0 parser inability to parse `*(T**)expr` cast-dereference patterns (split into two statements); (2) signed division bug in `strbuf_append_char` overflow checks (same as stage 95-05's `vec_push` fix, rewritten using local `size_t` variables). All 1478 tests pass at C0, C1, and C2 (165 unit, 827 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 95-09 changes `ASTNode.value` from `char value[MAX_NAME_LEN]` (a fixed 256-byte embedded buffer) to `const char *value` (a pointer into lexer-owned storage). All parser sites that previously memcpy'd token bytes into the node's value buffer are replaced with simple pointer assignments. String literal concatenation uses a StrBuf scratch buffer plus `lexer_store_bytes`. The `ParsedDeclarator.name` field is also changed to `const char *` to avoid dangling pointers when identifier names are stored in AST nodes. Two bug fixes: case label values and enum-constant integer literals were formatted into local `char[32]` buffers and passed directly to `parser_node`; these are now stored in the lexer pool via `lexer_store_bytes` first. The `MAX_NAME_LEN` limit on `ASTNode.value` is removed; string literals longer than 255 bytes are now handled correctly. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-07 (convert remaining static usages):
 
@@ -585,7 +585,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-08 all tests pass (165 unit, 827 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1478 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-09 all tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1479 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

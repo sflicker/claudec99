@@ -61,7 +61,7 @@ typedef enum {
 
 typedef struct ASTNode {
     ASTNodeType type;
-    char value[MAX_NAME_LEN];
+    const char *value;
     /* Stage 92: children is a dynamically grown array (lazily allocated on
      * first ast_add_child, initial capacity AST_MAX_CHILDREN, doubled on
      * overflow) rather than a fixed-size array. The previous fixed cap

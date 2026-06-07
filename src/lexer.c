@@ -37,7 +37,7 @@ static SourceFile *lexer_intern_file(Lexer *lexer, const char *path) {
  * callers can safely pass the result to string.h functions.  The returned
  * pointer is stable for the lifetime of the lexer because each string is
  * an independent malloc, not part of a relocatable buffer. */
-static const char *lexer_store_bytes(Lexer *lexer, const char *data, size_t len) {
+const char *lexer_store_bytes(Lexer *lexer, const char *data, size_t len) {
     char *copy = (char *)malloc(len + 1);
     if (!copy) { fprintf(stderr, "error: out of memory in lexer\n"); exit(1); }
     memcpy(copy, data, len);

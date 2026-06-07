@@ -10,9 +10,7 @@ ASTNode *ast_new(ASTNodeType type, const char *value) {
         exit(1);
     }
     node->type = type;
-    if (value) {
-        strncpy(node->value, value, sizeof(node->value) - 1);
-    }
+    node->value = value;
     return node;
 }
 

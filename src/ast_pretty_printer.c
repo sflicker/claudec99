@@ -171,7 +171,7 @@ void ast_pretty_print(ASTNode *node, int depth) {
         printf("Unary: %s\n", operator_name(node->value));
         break;
     case AST_ASSIGNMENT:
-        if (node->value[0] == '\0') {
+        if (!node->value || node->value[0] == '\0') {
             /* Stage 12-03: deref-LHS assignment has no variable
              * name — children carry [LHS, RHS]. */
             printf("Assignment:\n");
