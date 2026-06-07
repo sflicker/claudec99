@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-07
-**Stage:** stage-95-07 (convert MAX_SWITCH_DEPTH to Vec; add MAX_CALL_LAYOUT_ITEMS bounds check)
+**Stage:** stage-95-08 (replace Token.value fixed buffer with pointer+length fields; lexer string arena)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -124,6 +124,29 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
+
+## Issues found during stage 95-08 self-hosting test
+
+Two bootstrap failures were surfaced and fixed.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | C0→C1 bootstrap compilation of `lexer.c` failed: `error: expected expression, got 'char'` | `lexer_free` contained `char *s = *(char **)vec_get(&lexer->str_pool, i);` — C0 cannot parse the combined dereference-of-cast pattern `*(T **)expr` in a single initializer (same class of bug as stage 95-05 `*(ASTNode **)` fix). | Split into two statements: `char **pp = (char **)vec_get(...); free(*pp);` (`src/lexer.c`) |
+| 2 | C1 crashed: `internal error: strbuf_append_char: capacity overflow` for any string literal of 9 or more characters | `strbuf_append_char` checked `b->cap > (size_t)-1 / 2` to guard the doubling. C0 emits `cqo; idiv` (signed division) for `(size_t)-1 / 2` — the `is_unsigned` flag is not propagated through cast expressions — giving `(-1)/2 = 0`, so any non-zero `b->cap` (e.g. 8 after the first reallocation) triggered the false overflow. The identical pattern was fixed in `vec_push` during stage 95-05. | Rewrote all three affected checks (`strbuf_append_char`, `strbuf_null_terminate`, `strbuf_append_n`) to copy `b->cap` and `(size_t)-1` to local `size_t` variables before the division — matching the vec.c pattern that correctly generates unsigned `div`. (`src/strbuf.c`) |
+
+After both fixes all 1478 tests passed at C0, C1, and C2.
+
+## Result (stage 95-08)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950800.00731` | `gcc_Ubuntu_13_3_0` | 1478/1478 |
+| C1 | `build/ccompiler-c1` | `00.02.00950800.00732` | `ClaudeC99_v00_02_00950800_00731` | 1478/1478 |
+| C2 | `build/ccompiler-c2` | `00.02.00950800.00733` | `ClaudeC99_v00_02_00950800_00732` | 1478/1478 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
 
 ## Issues found during stage 95-07 self-hosting test
 
