@@ -390,9 +390,10 @@ static Type *parse_struct_specifier(Parser *parser) {
         int current_offset = 0;
         int max_align = 1;
 
-        /* Stage 31: collect field descriptors while parsing. */
-        StructField tmp_fields[PARSER_MAX_STRUCT_FIELDS];
-        int n_fields = 0;
+        /* Stage 31: collect field descriptors while parsing.
+         * Stage 95-06: converted from fixed stack array to Vec. */
+        Vec tmp_fields_vec;
+        vec_init(&tmp_fields_vec, sizeof(StructField));
 
         while (parser->current.type != TOKEN_RBRACE) {
             /* Stage 82-01: consume optional leading const qualifier.
@@ -458,25 +459,26 @@ static Type *parse_struct_specifier(Parser *parser) {
                 /* Advance offset to satisfy field alignment. */
                 current_offset = (current_offset + falign - 1) & ~(falign - 1);
 
-                if (n_fields < 64) {
-                    strncpy(tmp_fields[n_fields].name, d.name,
-                            sizeof(tmp_fields[n_fields].name) - 1);
-                    tmp_fields[n_fields].name[sizeof(tmp_fields[n_fields].name) - 1] = '\0';
-                    tmp_fields[n_fields].offset    = current_offset;
-                    tmp_fields[n_fields].kind      = field_type->kind;
-                    tmp_fields[n_fields].full_type = (field_type->kind == TYPE_POINTER ||
-                                                     field_type->kind == TYPE_ARRAY   ||
-                                                     field_type->kind == TYPE_STRUCT  ||
-                                                     field_type->kind == TYPE_UNION)
-                                                     ? field_type : NULL;
+                {
+                    StructField sf;
+                    memset(&sf, 0, sizeof(sf));
+                    strncpy(sf.name, d.name, sizeof(sf.name) - 1);
+                    sf.name[sizeof(sf.name) - 1] = '\0';
+                    sf.offset    = current_offset;
+                    sf.kind      = field_type->kind;
+                    sf.full_type = (field_type->kind == TYPE_POINTER ||
+                                   field_type->kind == TYPE_ARRAY   ||
+                                   field_type->kind == TYPE_STRUCT  ||
+                                   field_type->kind == TYPE_UNION)
+                                   ? field_type : NULL;
                     /* Stage 82-01: const scalar member or const-pointer member. */
-                    tmp_fields[n_fields].is_const  =
+                    sf.is_const  =
                         ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
                          d.pointer_is_const) ? 1 : 0;
                     /* Stage 82-04: volatile scalar member. */
-                    tmp_fields[n_fields].is_volatile =
+                    sf.is_volatile =
                         (field_is_volatile && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
-                    n_fields++;
+                    vec_push(&tmp_fields_vec, &sf);
                 }
                 current_offset += fsz;
 
@@ -512,12 +514,16 @@ static Type *parse_struct_specifier(Parser *parser) {
             result = type_struct(total_size, max_align);
         }
 
-        /* Stage 31: copy collected fields into the Type. */
-        if (n_fields > 0) {
-            result->fields = calloc(n_fields, sizeof(StructField));
-            memcpy(result->fields, tmp_fields, n_fields * sizeof(StructField));
-            result->field_count = n_fields;
+        /* Stage 31: copy collected fields into the Type.
+         * Stage 95-06: copy from Vec backing store. */
+        if (tmp_fields_vec.len > 0) {
+            int n = (int)tmp_fields_vec.len;
+            result->fields = calloc((size_t)n, sizeof(StructField));
+            memcpy(result->fields, tmp_fields_vec.data,
+                   (size_t)n * sizeof(StructField));
+            result->field_count = n;
         }
+        vec_free(&tmp_fields_vec);
 
         return result;
 
@@ -589,8 +595,9 @@ static Type *parse_union_specifier(Parser *parser) {
         int max_size  = 0;
         int max_align = 1;
 
-        StructField tmp_fields[PARSER_MAX_STRUCT_FIELDS];
-        int n_fields = 0;
+        /* Stage 95-06: converted from fixed stack array to Vec. */
+        Vec tmp_fields_vec;
+        vec_init(&tmp_fields_vec, sizeof(StructField));
 
         while (parser->current.type != TOKEN_RBRACE) {
             /* Stage 82-01: consume optional leading const qualifier.
@@ -648,25 +655,26 @@ static Type *parse_union_specifier(Parser *parser) {
                 if (falign > max_align) max_align = falign;
                 if (fsz > max_size)     max_size  = fsz;
 
-                if (n_fields < 64) {
-                    strncpy(tmp_fields[n_fields].name, d.name,
-                            sizeof(tmp_fields[n_fields].name) - 1);
-                    tmp_fields[n_fields].name[sizeof(tmp_fields[n_fields].name) - 1] = '\0';
-                    tmp_fields[n_fields].offset    = 0; /* all union members at offset 0 */
-                    tmp_fields[n_fields].kind      = field_type->kind;
-                    tmp_fields[n_fields].full_type = (field_type->kind == TYPE_POINTER ||
-                                                     field_type->kind == TYPE_ARRAY   ||
-                                                     field_type->kind == TYPE_STRUCT  ||
-                                                     field_type->kind == TYPE_UNION)
-                                                     ? field_type : NULL;
+                {
+                    StructField sf;
+                    memset(&sf, 0, sizeof(sf));
+                    strncpy(sf.name, d.name, sizeof(sf.name) - 1);
+                    sf.name[sizeof(sf.name) - 1] = '\0';
+                    sf.offset    = 0; /* all union members at offset 0 */
+                    sf.kind      = field_type->kind;
+                    sf.full_type = (field_type->kind == TYPE_POINTER ||
+                                   field_type->kind == TYPE_ARRAY   ||
+                                   field_type->kind == TYPE_STRUCT  ||
+                                   field_type->kind == TYPE_UNION)
+                                   ? field_type : NULL;
                     /* Stage 82-01: const scalar member or const-pointer member. */
-                    tmp_fields[n_fields].is_const  =
+                    sf.is_const  =
                         ((field_is_const && d.pointer_count == 0 && !d.is_array) ||
                          d.pointer_is_const) ? 1 : 0;
                     /* Stage 82-04: volatile scalar member. */
-                    tmp_fields[n_fields].is_volatile =
+                    sf.is_volatile =
                         (field_is_volatile && d.pointer_count == 0 && !d.is_array) ? 1 : 0;
-                    n_fields++;
+                    vec_push(&tmp_fields_vec, &sf);
                 }
 
             } while (parser->current.type == TOKEN_COMMA);
@@ -698,11 +706,14 @@ static Type *parse_union_specifier(Parser *parser) {
             result = type_union(total_size, max_align);
         }
 
-        if (n_fields > 0) {
-            result->fields = calloc(n_fields, sizeof(StructField));
-            memcpy(result->fields, tmp_fields, n_fields * sizeof(StructField));
-            result->field_count = n_fields;
+        if (tmp_fields_vec.len > 0) {
+            int n = (int)tmp_fields_vec.len;
+            result->fields = calloc((size_t)n, sizeof(StructField));
+            memcpy(result->fields, tmp_fields_vec.data,
+                   (size_t)n * sizeof(StructField));
+            result->field_count = n;
         }
+        vec_free(&tmp_fields_vec);
 
         return result;
 

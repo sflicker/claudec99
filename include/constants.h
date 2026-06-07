@@ -48,11 +48,6 @@
 #ifndef PARSER_MAX_UNION_TAGS
 #define PARSER_MAX_UNION_TAGS    32
 #endif
-/* Maximum number of fields in a single struct or union definition. */
-#ifndef PARSER_MAX_STRUCT_FIELDS
-#define PARSER_MAX_STRUCT_FIELDS 64
-#endif
-
 /* Maximum number of parameters in a function declaration or definition. */
 #ifndef FUNC_MAX_PARAMS
 #define FUNC_MAX_PARAMS 16
