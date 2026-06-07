@@ -136,6 +136,25 @@ Two bootstrap failures were surfaced and fixed.
 
 After both fixes all 1478 tests passed at C0, C1, and C2.
 
+## Issues found during stage 95-09 self-hosting test
+
+None. The `ASTNode.value` pointer migration produced no bootstrap failures.
+All 1479 tests passed at C0, C1, and C2.
+
+## Result (stage 95-09)
+
+**Date:** 2026-06-07
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950900.00741` | `gcc_Ubuntu_13_3_0` | 1479/1479 |
+| C1 | `build/ccompiler-c1` | `00.02.00950900.00742` | `ClaudeC99_v00_02_00950900_00741` | 1479/1479 |
+| C2 | `build/ccompiler-c2` | `00.02.00950900.00743` | `ClaudeC99_v00_02_00950900_00742` | 1479/1479 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
+
 ## Result (stage 95-08)
 
 | Step | Binary | Version | BuiltBy | Tests |
