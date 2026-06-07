@@ -33,9 +33,6 @@
 #ifndef PARSER_MAX_GLOBALS
 #define PARSER_MAX_GLOBALS       256
 #endif
-#ifndef PARSER_MAX_TYPEDEFS
-#define PARSER_MAX_TYPEDEFS      64
-#endif
 #ifndef PARSER_MAX_ENUM_CONSTS
 #define PARSER_MAX_ENUM_CONSTS   256
 #endif

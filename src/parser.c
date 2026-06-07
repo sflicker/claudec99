@@ -77,6 +77,7 @@ void parser_init(Parser *parser, Lexer *lexer) {
     vec_init(&parser->globals, sizeof(GlobalObjSig));
     parser->loop_depth = 0;
     parser->switch_depth = 0;
+    vec_init(&parser->typedefs, sizeof(TypedefEntry));
     parser->typedef_count = 0;
     parser->scope_depth = 0;
     vec_init(&parser->enum_consts, sizeof(EnumConst));
@@ -88,8 +89,9 @@ void parser_init(Parser *parser, Lexer *lexer) {
 /* Stage 28-01: typedef name table helpers. */
 static TypedefEntry *parser_find_typedef(Parser *parser, const char *name) {
     for (int i = parser->typedef_count - 1; i >= 0; i--) {
-        if (strcmp(parser->typedefs[i].name, name) == 0)
-            return &parser->typedefs[i];
+        TypedefEntry *e = (TypedefEntry *)vec_get(&parser->typedefs, (size_t)i);
+        if (strcmp(e->name, name) == 0)
+            return e;
     }
     return NULL;
 }
@@ -97,30 +99,40 @@ static TypedefEntry *parser_find_typedef(Parser *parser, const char *name) {
 static void parser_register_typedef(Parser *parser, const char *name,
                                     TypeKind kind, Type *full_type) {
     for (int i = 0; i < parser->typedef_count; i++) {
-        if (parser->typedefs[i].scope_depth == parser->scope_depth &&
-            strcmp(parser->typedefs[i].name, name) == 0) {
+        TypedefEntry *e = (TypedefEntry *)vec_get(&parser->typedefs, (size_t)i);
+        if (e->scope_depth == parser->scope_depth &&
+            strcmp(e->name, name) == 0) {
             PARSER_ERROR(parser, "error: duplicate typedef '%s' in this scope\n",
                     name);
         }
     }
-    if (parser->typedef_count >= PARSER_MAX_TYPEDEFS) {
-        PARSER_ERROR(parser, "error: too many typedefs (max %d)\n",
-                PARSER_MAX_TYPEDEFS);
+    {
+        TypedefEntry entry;
+        memset(&entry, 0, sizeof(entry));
+        strncpy(entry.name, name, sizeof(entry.name) - 1);
+        entry.name[sizeof(entry.name) - 1] = '\0';
+        entry.kind = kind;
+        entry.full_type = full_type;
+        entry.scope_depth = parser->scope_depth;
+        vec_push(&parser->typedefs, &entry);
     }
-    TypedefEntry *e = &parser->typedefs[parser->typedef_count++];
-    strncpy(e->name, name, sizeof(e->name) - 1);
-    e->name[sizeof(e->name) - 1] = '\0';
-    e->kind = kind;
-    e->full_type = full_type;
-    e->scope_depth = parser->scope_depth;
+    parser->typedef_count++;
 }
 
 static void parser_leave_scope(Parser *parser) {
     int new_count = 0;
     for (int i = 0; i < parser->typedef_count; i++) {
-        if (parser->typedefs[i].scope_depth < parser->scope_depth)
-            parser->typedefs[new_count++] = parser->typedefs[i];
+        TypedefEntry *e = (TypedefEntry *)vec_get(&parser->typedefs, (size_t)i);
+        if (e->scope_depth < parser->scope_depth) {
+            if (new_count != i) {
+                TypedefEntry *dst = (TypedefEntry *)vec_get(&parser->typedefs,
+                                                            (size_t)new_count);
+                *dst = *e;
+            }
+            new_count++;
+        }
     }
+    parser->typedefs.len = (size_t)new_count;
     parser->typedef_count = new_count;
     parser->scope_depth--;
 }

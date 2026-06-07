@@ -72,8 +72,9 @@ typedef struct {
     Vec globals;  /* GlobalObjSig */
     int loop_depth;
     int switch_depth;
-    /* Stage 28-01: typedef name table with scope tracking. */
-    TypedefEntry typedefs[PARSER_MAX_TYPEDEFS];
+    /* Stage 28-01: typedef name table with scope tracking.
+     * Stage 95-06: converted from fixed array to Vec. */
+    Vec typedefs;  /* TypedefEntry */
     int typedef_count;
     int scope_depth; /* 0 = file scope, incremented by each parse_block */
     /* Stage 29: enum constant and tag tables (flat, global scope).
