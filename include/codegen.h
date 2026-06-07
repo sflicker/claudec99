@@ -109,7 +109,8 @@ typedef struct {
     /* Stage 95-06: break stack is now dynamic. */
     Vec break_stack;  /* BreakFrame */
     int break_depth;
-    SwitchCtx switch_stack[MAX_SWITCH_DEPTH];
+    /* Stage 95-07: switch stack is now dynamic. */
+    Vec switch_stack;  /* SwitchCtx */
     int switch_depth;
     /* Per-function user label table (populated by a pre-walk before
      * body emission; used to reject duplicates and missing goto

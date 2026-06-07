@@ -62,9 +62,6 @@
 #ifndef MAX_GLOBALS
 #define MAX_GLOBALS         256
 #endif
-#ifndef MAX_SWITCH_DEPTH
-#define MAX_SWITCH_DEPTH    16
-#endif
 #ifndef MAX_SWITCH_LABELS
 /* Stage 92: raised from 64 so the compiler can self-compile. token_type_name()
  * in compiler.c switches over ~83 token kinds in a single switch. */

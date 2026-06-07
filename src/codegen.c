@@ -107,6 +107,10 @@ typedef struct {
  * declared parameters (variadic extras) are treated as scalar GP eightbytes.
  */
 static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
+    if (nargs > MAX_CALL_LAYOUT_ITEMS) {
+        compile_error("error: call has %d arguments; max supported is %d\n",
+                nargs, MAX_CALL_LAYOUT_ITEMS);
+    }
     int num_params = count_params(fn_decl);
     L->sret = return_is_memory_struct(fn_decl);
     L->count = nargs;
@@ -363,6 +367,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->has_frame = 0;
     vec_init(&cg->break_stack, sizeof(BreakFrame));
     cg->break_depth = 0;
+    vec_init(&cg->switch_stack, sizeof(SwitchCtx));
     cg->switch_depth = 0;
     cg->user_label_count = 0;
     cg->current_func = NULL;
@@ -4474,14 +4479,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * case/default node is visited during emission it looks up its
          * pre-assigned label via the innermost SwitchCtx. `break`
          * targets the switch-end label. */
-        if (cg->switch_depth >= MAX_SWITCH_DEPTH) {
-            compile_error( "error: switch nesting exceeds max depth %d\n",
-                    MAX_SWITCH_DEPTH);
-        }
         int label_id = cg->label_count++;
-        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth];
-        ctx->count = 0;
-        ctx->default_label = -1;
+        {
+            SwitchCtx new_ctx;
+            new_ctx.count = 0;
+            new_ctx.default_label = -1;
+            vec_push(&cg->switch_stack, &new_ctx);
+        }
+        cg->switch_depth++;
+        SwitchCtx *ctx = (SwitchCtx *)vec_get(&cg->switch_stack, cg->switch_depth - 1);
         ASTNode *body = node->children[1];
         collect_switch_labels(cg, body, ctx);
 
@@ -4512,11 +4518,11 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             vec_push(&cg->break_stack, &bf);
         }
         cg->break_depth++;
-        cg->switch_depth++;
 
         codegen_statement(cg, body, is_main);
 
         cg->switch_depth--;
+        vec_pop(&cg->switch_stack);
         vec_pop(&cg->break_stack);
         cg->break_depth--;
 
@@ -4529,7 +4535,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * was pre-assigned by collect_switch_labels when the
          * enclosing switch was emitted; look it up and emit, then
          * fall through to the inner statement. */
-        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth - 1];
+        SwitchCtx *ctx = (SwitchCtx *)vec_get(&cg->switch_stack, cg->switch_depth - 1);
         int lbl = switch_lookup_label(ctx, node);
         fprintf(cg->output, ".L_switch_sec_%d:\n", lbl);
         if (node->child_count > 1) {
@@ -4537,7 +4543,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
     } else if (node->type == AST_DEFAULT_SECTION) {
         /* children: [0]=inner statement. */
-        SwitchCtx *ctx = &cg->switch_stack[cg->switch_depth - 1];
+        SwitchCtx *ctx = (SwitchCtx *)vec_get(&cg->switch_stack, cg->switch_depth - 1);
         int lbl = switch_lookup_label(ctx, node);
         fprintf(cg->output, ".L_switch_sec_%d:\n", lbl);
         if (node->child_count > 0) {
