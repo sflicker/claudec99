@@ -68,9 +68,6 @@
 #ifndef MAX_GLOBALS
 #define MAX_GLOBALS         256
 #endif
-#ifndef MAX_BREAK_DEPTH
-#define MAX_BREAK_DEPTH     32
-#endif
 #ifndef MAX_SWITCH_DEPTH
 #define MAX_SWITCH_DEPTH    16
 #endif

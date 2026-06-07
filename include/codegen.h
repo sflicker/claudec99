@@ -106,7 +106,8 @@ typedef struct {
     int scope_start;
     int push_depth;
     int has_frame;
-    BreakFrame break_stack[MAX_BREAK_DEPTH];
+    /* Stage 95-06: break stack is now dynamic. */
+    Vec break_stack;  /* BreakFrame */
     int break_depth;
     SwitchCtx switch_stack[MAX_SWITCH_DEPTH];
     int switch_depth;
