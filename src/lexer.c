@@ -71,8 +71,8 @@ void lexer_free(Lexer *lexer) {
     {
         size_t i;
         for (i = 0; i < lexer->str_pool.len; i++) {
-            char *s = *(char **)vec_get(&lexer->str_pool, i);
-            free(s);
+            char **pp = (char **)vec_get(&lexer->str_pool, i);
+            free(*pp);
         }
     }
     vec_free(&lexer->str_pool);
