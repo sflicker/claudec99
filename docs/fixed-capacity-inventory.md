@@ -90,6 +90,60 @@ Columns:
 
 ---
 
+## Bootstrap Compatibility Notes
+
+These patterns were discovered during Vec-conversion self-hosting cycles. Apply them whenever converting a fixed-capacity array to Vec to avoid bootstrap failures.
+
+### C0 cannot parse `*(T **)vec_get(...)`
+
+When a Vec stores pointer elements (e.g. `ASTNode *`, `Type *`), retrieval requires a cast-of-dereference: `*(T **)vec_get(&v, i)`. C0's `parse_unary` consumes the outer `*`, then `parse_primary` sees `(` and calls `parse_expression`, which can't recognise a cast expression starting with a typedef name. This produces a bogus "expected expression, got ')'" error at a misleading source position.
+
+**Detection:**
+
+```bash
+grep -n '\*(.*\*\*)vec_get' src/*.c
+```
+
+**Fix:** split into two statements:
+
+```c
+T **ptr = (T **)vec_get(&v, i);
+T *s    = *ptr;
+```
+
+### C0 uses signed division for `(size_t)-1 / expr`
+
+`AST_CAST` codegen sets `result_type` but not `is_unsigned` on the result node. Any expression whose value flows through a cast — including `(size_t)-1` — is treated as signed by the downstream arithmetic, so the division `(size_t)-1 / X` emits `cqo; idiv` instead of `xor edx,edx; div`. The quotient is 0 (signed -1÷X) instead of `SIZE_MAX/X`, turning any overflow guard of the form `if (v->cap > (size_t)-1 / 2)` into `if (v->cap > 0)` — a false positive for every non-empty Vec.
+
+Arrow-member access (`->`) has the same defect: `is_unsigned` is not propagated to the access result, so `v->cap / 2` is also signed.
+
+**Fix:** introduce explicit local `size_t` variables for both operands; the parser marks explicitly-declared `size_t` locals as `is_unsigned = 1`, which propagates correctly through `uac_is_unsigned`:
+
+```c
+size_t lim = (size_t)-1;
+size_t cap = v->cap;
+if (cap > lim / 2)
+    vec_fatal("capacity overflow");
+```
+
+### Error positions are always wrong during a bootstrap failure
+
+C0's `parse_cast` and `parse_assignment_expression` restore `lexer->pos` and `parser->current` on backtrack but do **not** restore `lexer->line` / `lexer->col`. Each failed speculative parse leaves accumulated line-drift, so the reported error position is always earlier in the file than the actual failure.
+
+**Strategy:** ignore the reported position. Binary-search by commenting out the second half of the failing function body; if the error disappears, the construct is in the commented half. Bisect until the minimal failing expression is isolated.
+
+### Reproduction test before full self-host
+
+Extract the suspicious pattern into a 20–50 line file and compile directly with C0:
+
+```bash
+build/ccompiler-c0 -I include -I test/include /tmp/repro.c
+```
+
+This iterates in seconds instead of waiting for a full `./build.sh --mode=self-host` cycle.
+
+---
+
 ## Summary by Priority
 
 ### HIGH — fix before compiling larger programs
