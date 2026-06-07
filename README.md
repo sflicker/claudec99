@@ -226,6 +226,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 95-05 (convert medium-risk static usages):
+
+> Stage 95-05 converts six medium-risk fixed-capacity static arrays in the parser and code generator to use the `Vec` dynamic growable-array module: `Parser.globals` (was `GlobalObjSig[256]`), `Parser.enum_consts` (was `EnumConst[256]`), `Parser.struct_tags` (was `StructTag[32]`), `CodeGen.locals` (was `LocalVar[256]`), `CodeGen.globals` (was `GlobalVar[256]`), and `CodeGen.string_pool` (was `ASTNode*[2048]`). All six had Safe Realloc = YES and MEDIUM priority in the fixed-capacity inventory; the six corresponding constants were removed from `include/constants.h`. Two latent bootstrap defects were found and fixed: the C0 parser mishandled `*(T**)expr` cast-of-dereference patterns (split into two statements), and `vec_push`'s capacity overflow check emitted signed division — rewritten using local `size_t` variables (same root cause as the `vec_reserve` fix in stage 95-04). No language features were added. All 1471 tests pass at C0, C1, and C2 (165 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+
 Through stage 95-04 (convert low-risk static usages):
 
 > Stage 95-04 converts three lowest-risk fixed-capacity static arrays in the parser and code generator to use the `Vec` dynamic growable-array module: `Parser.enum_tags` (was `EnumTag[32]`), `Parser.union_tags` (was `UnionTag[32]`), and `CodeGen.local_statics` (was `LocalStaticVar[128]`). All three had Safe Realloc = YES and LOW priority in the fixed-capacity inventory. Two latent bootstrap defects were also found and fixed: `src/vec.c` and `src/strbuf.c` were missing from `build.sh`'s SRC_FILES, and `vec_reserve`'s overflow check emitted signed division (`idiv`) for struct-member operands — rewritten using local `size_t` copies to guarantee unsigned `div`. No language features were added. All 1471 tests pass at C0, C1, and C2 (165 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
