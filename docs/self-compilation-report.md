@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-06-06
-**Stage:** stage-95-04 (convert low-risk static arrays to Vec)
+**Date:** 2026-06-07
+**Stage:** stage-95-05 (convert medium-risk static arrays to Vec)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -124,6 +124,29 @@ symbols), and fixed `sizeof` of a string literal to return `strlen+1`.
 After fixes 1–5, all modules compiled, all tests passed, and C0/C1/C2 each
 carry a distinct version string and a BuiltBy token that names the exact
 compiler version (including build number) that produced them.
+
+## Issues found during stage 95-05 self-hosting test
+
+Two latent bugs were surfaced and fixed during this bootstrap run.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | C0→C1 bootstrap compilation of `src/codegen.c` failed: `error: expected expression, got ')'` at a bogus line number | The pattern `*(ASTNode **)vec_get(...)` causes a parse error in C0. When `parse_unary` consumes the outer `*`, the inner `parse_primary` sees `(` and consumes it, calling `parse_expression` with `ASTNode` as the current token. Since `ASTNode` is a typedef-name (not starting `(`), `parse_cast` cannot recognize the cast and `parse_expression` treats `ASTNode * *` as a multiplication followed by a dereference-of-`)`, yielding "expected expression, got ')'". (The bogus line number is a known lexer-position drift in the save/restore paths of `parse_cast` and `parse_assignment_expression`.) | Split `*(ASTNode **)vec_get(...)` into two statements: `ASTNode **s_ptr = (ASTNode **)vec_get(...); ASTNode *s = *s_ptr;` (`src/codegen.c`) |
+| 2 | C1 crashed with `vec_push: capacity overflow` when compiling functions with ≥ 9 parameters | `vec_push` checked `v->cap > (size_t)-1 / 2` to detect capacity near overflow before doubling. Our compiler emits `cqo; idiv` (signed division) for this expression because the `is_unsigned` flag is not propagated through cast expressions (`AST_CAST` codegen sets `result_type` but not `is_unsigned`). Signed division of `-1 / 2 = 0`, so any non-zero `cap` value triggered the false overflow. The identical bug was fixed in `vec_reserve` during stage 95-04. | Copy `v->cap` and `(size_t)-1` to local `size_t` variables before the comparison and doubling — local `size_t` declarations correctly generate unsigned division. (`src/vec.c`) |
+
+After both fixes all 1471 tests passed at C0, C1, and C2.
+
+## Result (stage 95-05)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00950500.00698` | `GNU_13_3_0` | 1471/1471 |
+| C1 | `build/ccompiler-c1` | `00.02.00950500.00699` | `ClaudeC99_v00_02_00950500_00698` | 1471/1471 |
+| C2 | `build/ccompiler-c2` | `00.02.00950500.00700` | `ClaudeC99_v00_02_00950500_00699` | 1471/1471 |
+
+C0, C1, and C2 each compile successfully with distinct version strings and
+full build provenance. The compiler is self-hosting and the bootstrap is
+reproducible.
 
 ## Issues found during stage 95-04 self-hosting test
 
