@@ -70,7 +70,7 @@ The standard self-hosting workflow is:
 
 All hard-coded capacity limits live in `include/constants.h` as object-like
 macros. Redefine any of them on the compiler command line (e.g.
-`-DPARSER_MAX_FUNCTIONS=256`) or edit the file directly before building to
+`-DFUNC_MAX_PARAMS=32`) or edit the file directly before building to
 raise a limit.
 
 ### String buffers
@@ -95,14 +95,11 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `PARSER_MAX_FUNCTIONS` | 256 | Maximum number of function declarations/definitions in a translation unit. |
 | `PARSER_MAX_GLOBALS` | 256 | Maximum number of file-scope object declarations in a translation unit. |
-| `PARSER_MAX_TYPEDEFS` | 64 | Maximum number of typedef entries visible at any point during parsing. |
 | `PARSER_MAX_ENUM_CONSTS` | 256 | Maximum number of enum constants across all enum declarations in a translation unit. |
 | `PARSER_MAX_ENUM_TAGS` | 32 | Maximum number of distinct named enum tags. |
 | `PARSER_MAX_STRUCT_TAGS` | 32 | Maximum number of distinct named struct tags. |
 | `PARSER_MAX_UNION_TAGS` | 32 | Maximum number of distinct named union tags. |
-| `PARSER_MAX_STRUCT_FIELDS` | 64 | Maximum number of fields in a single struct or union definition. |
 | `FUNC_MAX_PARAMS` | 16 | Maximum number of parameters in a function declaration or definition. |
 
 ### Code generator
@@ -111,7 +108,6 @@ raise a limit.
 |----------|---------|-------------|
 | `MAX_LOCALS` | 256 | Maximum number of local variables per function. |
 | `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
-| `MAX_BREAK_DEPTH` | 32 | Maximum nesting depth of breakable constructs (loops and switches). |
 | `MAX_SWITCH_DEPTH` | 16 | Maximum nesting depth of `switch` statements. |
 | `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
 | `MAX_USER_LABELS` | 64 | Maximum number of user-defined `goto` labels per function. |
@@ -225,6 +221,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 95-06 (convert high-risk static usages):
+
+> Stage 95-06 converts four HIGH-priority fixed-capacity static arrays in the parser and code generator to use the `Vec` dynamic growable-array module: `PARSER_MAX_STRUCT_FIELDS` (two local stack arrays in struct/union body parsing with a silent data-loss bug where fields beyond 64 were silently dropped due to hardcoded overflow check), `MAX_BREAK_DEPTH` (CodeGen.break_stack with no bounds check, silent buffer overflow risk), `PARSER_MAX_TYPEDEFS`, and `PARSER_MAX_FUNCTIONS`. All four had HIGH priority in the fixed-capacity inventory. Two latent bugs were fixed: the struct field overflow check used hardcoded `64` instead of the constant, and break-stack tracking had no bounds checking. All four corresponding constants were removed from `include/constants.h`. No language features were added. All 1471 tests pass at C0, C1, and C2 (165 unit, 823 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-05 (convert medium-risk static usages):
 
