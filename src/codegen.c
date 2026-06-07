@@ -4053,7 +4053,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int align = node->full_type->alignment;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
-            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
+            {
+                LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                last_lv->is_const = node->is_const;
+            }
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Zero-fill the entire slot first, then store provided values.
@@ -4124,7 +4127,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             int length = node->full_type->length;
             int offset = codegen_add_var(cg, node->value, size, align,
                                          node->decl_type, node->full_type);
-            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
+            {
+                LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                last_lv->is_const = node->is_const;
+            }
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
                 /* Stage 32: brace-initializer list. Evaluate each element and
@@ -4181,8 +4187,11 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         int size = type_kind_bytes(node->decl_type);
         int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
-        ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_const = node->is_const;
-        ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = node->is_unsigned;
+        {
+            LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+            last_lv->is_const = node->is_const;
+            last_lv->is_unsigned = node->is_unsigned;
+        }
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);
             TypeKind init_kind = node->children[0]->result_type;
@@ -4697,8 +4706,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
-            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned =
-                node->children[i]->is_unsigned;
+            {
+                LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                last_lv->is_unsigned = node->children[i]->is_unsigned;
+            }
             const char *reg;
             switch (sz) {
             case 1: reg = param_regs_8[i];  break;
@@ -4719,8 +4730,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             int sz = type_kind_bytes(pt);
             int offset = codegen_add_var(cg, node->children[i]->value, sz, sz,
                                          pt, node->children[i]->full_type);
-            ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned =
-                node->children[i]->is_unsigned;
+            {
+                LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                last_lv->is_unsigned = node->children[i]->is_unsigned;
+            }
             int src = 16 + (i - 6) * 8;
             switch (sz) {
             case 1:
@@ -4762,7 +4775,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
                     int off = codegen_add_var(cg, p->value, slot, align,
                                               p->decl_type, p->full_type);
-                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = 0;
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = 0;
+                    }
                     fprintf(cg->output, "    mov [rbp - %d], %s\n", off, arg_regs[s->gp_start]);
                     if (s->gp_count == 2)
                         fprintf(cg->output, "    mov [rbp - %d], %s\n", off - 8,
@@ -4770,7 +4786,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
-                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = p->is_unsigned;
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = p->is_unsigned;
+                    }
                     const char *reg;
                     int gi = s->gp_start;
                     switch (sz) {
@@ -4797,14 +4816,20 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     int align = p->full_type->alignment < 8 ? 8 : p->full_type->alignment;
                     int off = codegen_add_var(cg, p->value, slot, align,
                                               p->decl_type, p->full_type);
-                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = 0;
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = 0;
+                    }
                     fprintf(cg->output, "    lea rsi, [rbp + %d]\n", src);
                     fprintf(cg->output, "    lea rdi, [rbp - %d]\n", off);
                     emit_struct_copy(cg, sz);
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
-                    ((LocalVar *)vec_get(&cg->locals, cg->locals.len - 1))->is_unsigned = p->is_unsigned;
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = p->is_unsigned;
+                    }
                     switch (sz) {
                     case 1:
                         if (p->is_unsigned)
