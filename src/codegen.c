@@ -4830,26 +4830,20 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                         LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
                         last_lv->is_unsigned = p->is_unsigned;
                     }
-                    switch (sz) {
-                    case 1:
+                    if (sz == 1) {
                         if (p->is_unsigned)
                             fprintf(cg->output, "    movzx eax, byte [rbp + %d]\n", src);
                         else
                             fprintf(cg->output, "    movsx eax, byte [rbp + %d]\n", src);
-                        break;
-                    case 2:
+                    } else if (sz == 2) {
                         if (p->is_unsigned)
                             fprintf(cg->output, "    movzx eax, word [rbp + %d]\n", src);
                         else
                             fprintf(cg->output, "    movsx eax, word [rbp + %d]\n", src);
-                        break;
-                    case 8:
+                    } else if (sz == 8) {
                         fprintf(cg->output, "    mov rax, [rbp + %d]\n", src);
-                        break;
-                    case 4:
-                    default:
+                    } else {
                         fprintf(cg->output, "    mov eax, [rbp + %d]\n", src);
-                        break;
                     }
                     emit_store_local(cg, off, sz, sz == 8 ? 1 : 0);
                 }
@@ -4883,7 +4877,8 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     if (cg->string_pool.len == 0) return;
     fprintf(cg->output, "section .rodata\n");
     for (int i = 0; i < (int)cg->string_pool.len; i++) {
-        ASTNode *s = *(ASTNode **)vec_get(&cg->string_pool, (size_t)i);
+        ASTNode **s_ptr = (ASTNode **)vec_get(&cg->string_pool, (size_t)i);
+        ASTNode *s = *s_ptr;
         /* Stage 14-05: byte count is taken from the AST node's
          * byte_length, which the parser stamps from the lexer's
          * decoded count. This is required because the decoded payload
