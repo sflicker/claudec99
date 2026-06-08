@@ -18,7 +18,7 @@ Columns:
 
 | Name | Max | Module | On Overflow | Ext Ptr Refs | Safe Realloc | Priority | Status |
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
-| `MAX_NAME_LEN` | 256 bytes | `include/constants.h`; remaining application: `StructField.name` (type.h). **`Token.value` migrated stage 95-08. `ASTNode.value` migrated stage 95-09. All parser.h struct name/tag fields migrated stage 95-10. All codegen struct name/label fields (`LocalVar.name`, `LocalVar.static_label`, `GlobalVar.name`, `GlobalVar.init_label`, `LocalStaticVar.label`) migrated to `const char *` stage 95-11.** | `strncpy` silently truncates to 255 bytes; the identifier stored in the struct is silently wrong | No | N/A (embedded `char[]`) | LOW | PENDING (codegen fields ✓ DONE stage 95-11; parser.h structs ✓ DONE stage 95-10; ASTNode.value ✓ DONE stage 95-09) |
+| ~~`MAX_NAME_LEN`~~ | ~~256 bytes~~ | ~~`include/constants.h`~~ — **constant removed.** Migration path: `Token.value` (95-08), `ASTNode.value` (95-09), all parser.h struct name/tag fields (95-10), all codegen struct name/label fields (95-11), and finally `StructField.name` in `type.h` (commit `ebf178b`). | ~~`strncpy` silently truncates to 255 bytes~~ — all sites now store `const char *` into a lexer-owned string pool; no truncation | No | N/A | LOW | ✓ DONE — every field migrated to `const char *`; the now-dead `MAX_NAME_LEN` macro was removed from `include/constants.h` in commit `9fda93c` |
 
 ---
 
@@ -77,6 +77,36 @@ Columns:
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
 | `MAX_INCLUDE_DEPTH` | 64 | `include/constants.h`; `src/preprocessor.c` (recursion depth counter) | `fprintf(stderr, …); exit(1)` — "maximum include depth exceeded" | N/A — recursion depth, not an array | N/A | LOW | PENDING |
 | `MAX_COND_DEPTH` | 64 | `include/constants.h`; `src/preprocessor.c` — `CondFrame cond_stack[MAX_COND_DEPTH]` local variable inside `preprocess_internal` | `PARSER_ERROR`-style message with `exit(1)` | No — local stack array; `CondFrame *top` points in, but only within the same scope | N/A (stack variable) | LOW | PENDING |
+
+---
+
+## Fixed-Size Scratch / Formatting Buffers
+
+_Added 2026-06-08 (commit `be5cbca`). These are **not** part of the original
+Stage 95-01 table inventory — they are fixed-size local `char` buffers used for
+one-shot formatting (label generation, number→string, path/marker assembly,
+diagnostics), not growable collections, so none is a `Vec`/`StrBuf` conversion
+candidate. With one exception every site is bounded by `snprintf`, an explicit
+index guard, or a `memcpy` length clamp — so it cannot overflow, though several
+silently **truncate** on pathological input. The exception (`ops[]`) has no
+bound and is a real overflow._
+
+| Buffer | Size | Location | Formats | Bound | Note |
+|--------|------|----------|---------|-------|------|
+| `ops` | 32 | `src/preprocessor.c` `eval_cond_unary` | chained `#if` unary ops `! - + ~` | **NONE** — `ops[nops++]` with no `nops` check | **⚠ Stack buffer overflow.** A `#if` with >32 leading unary operators overruns the buffer; ~200k operators SIGSEGVs the compiler. Only unchecked fixed-capacity write left in the tree. **PENDING — needs a bounds check (or fold operators without storing them).** |
+| `label` | 256 | `src/codegen.c` (block-static emit) | `Lstatic_<func>_<n>` | `snprintf` | Truncates a function name > ~240 bytes (names are unbounded since 95-08); a truncated label could collide. Low risk. |
+| `tmp` | 64 | `src/codegen.c` (global ptr init) | `Lstr<idx>` | `snprintf` | Safe — `idx` is an `int`. |
+| `num_buf` | 64 | `src/lexer.c` | integer-literal digits | index guard `i < 62` | Truncates an integer literal > 62 chars. |
+| `path_buf` | 512 | `src/lexer.c` (location marker) | `__FILE__` path | `memcpy` clamp | Truncates a path > 511 bytes. |
+| `output_path` | 512 | `src/compiler.c` | `<name>.asm` output path | `make_output_path` size arg | Truncates a source path > 511 bytes. |
+| `display` / `value_buf` | 512 / 19 | `src/compiler.c` | `--print-tokens` token text | clamp | Safe — display-only; value intentionally elided to 15 chars + `...`. |
+| `fname_buf` | 256 | `src/preprocessor.c` | include-not-found message | `memcpy` clamp | Safe — error text only. |
+| `loc_marker` | 512 | `src/preprocessor.c` | `\x01`1:`<path>` enter-file marker | `snprintf` + length check | Marker silently dropped if include path > ~509 bytes (line/file tracking lost for that file). |
+| `tmp` | 256 | `src/preprocessor.c` | incompatible-redefinition message | `memcpy` clamp | Safe — error text only. |
+| `buf` / `case_buf` | 32 / 32 | `src/parser.c` | enum-const / case-label `%ld` | `snprintf` | Safe — a `long` is ≤ 21 chars. |
+| `lbuf` | 32 | `src/preprocessor.c` | `__LINE__` `%d` | `snprintf` | Safe. |
+| `date_buf` / `time_buf` | 16 / 12 | `src/preprocessor.c` | `__DATE__` / `__TIME__` | `snprintf` | Safe — fixed-format. |
+| `spill_regs` | 8 | `src/codegen.c` | gp-reg indices per spilled eightbyte | ABI bound (≤ 2 eightbytes for a register-class struct) | Safe. |
 
 ---
 
@@ -148,6 +178,13 @@ This iterates in seconds instead of waiting for a full `./build.sh --mode=self-h
 
 ## Summary by Priority
 
+> **Open issue (found 2026-06-08):** the `ops[32]` buffer in
+> `eval_cond_unary` (`src/preprocessor.c`) is an **unchecked** fixed-capacity
+> write — a `#if` with >32 chained unary operators (`!`/`-`/`+`/`~`) overflows
+> the stack and crashes the compiler. It is the last unbounded fixed-capacity
+> write in the tree; see the *Fixed-Size Scratch / Formatting Buffers* section.
+> All other constant-backed table items below are resolved.
+
 ### HIGH — fix before compiling larger programs
 
 All HIGH-priority items have been converted. ✓ (stages 95-06)
@@ -184,7 +221,7 @@ Remaining items require structural changes (embedding dynamic allocation inside 
 | `FUNC_TYPE_MAX_PARAMS` | Embedded `Type *params[16]` in `Type`; converting requires changing to a heap-allocated `Type **` and updating all type construction. NO Safe Realloc. |
 | `MAX_SWITCH_LABELS` | Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc. |
 | ~~`MAX_USER_LABELS`~~ | ~~2D `char user_labels[64][256]` in CodeGen; converting requires `char **` with per-label allocations. NO Safe Realloc.~~ ✓ DONE stage 95-11 |
-| `MAX_NAME_LEN` | Remaining application: `StructField.name` in `type.h`. `Token.value` migrated (95-08), `ASTNode.value` migrated (95-09), parser.h struct name/tag fields migrated (95-10), codegen struct name/label fields migrated (95-11). N/A. |
+| ~~`MAX_NAME_LEN`~~ | ~~Remaining application: `StructField.name` in `type.h`.~~ ✓ DONE — `StructField.name` converted to `const char *` (commit `ebf178b`); all earlier fields migrated in 95-08…95-11; the dead macro was removed from `include/constants.h` in commit `9fda93c`. |
 | `MAX_ARRAY_DIMS` | Local `#define` and stack variable in parser.c; only affects nested array dimensions. N/A (stack). |
 | `MAX_INCLUDE_DEPTH` | Recursion depth counter in preprocessor.c; not an array. N/A. |
 | `MAX_COND_DEPTH` | Local stack variable `CondFrame cond_stack[64]` in preprocessor.c. N/A. |

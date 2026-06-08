@@ -82,6 +82,16 @@ lexer-owned storage (so identifier, tag, and label lengths are no longer
 bounded by `MAX_NAME_LEN`, which has been removed). The macros documented
 below are the only ones still in effect.
 
+A small set of these are **intentionally kept fixed** — they are not slated for
+dynamic conversion. Each one sizes an array that is embedded inside another
+struct (or is a recursion-depth guard), so making it dynamic would mean a
+structural refactor for limits that are generous in practice and overflow
+cleanly (a diagnostic, never silent corruption). These permanent limits are
+`FUNC_MAX_PARAMS` (16), `FUNC_TYPE_MAX_PARAMS` (16), `MAX_ARRAY_DIMS` (8),
+`MAX_INCLUDE_DEPTH` (64), and `MAX_COND_DEPTH` (64); they are flagged
+_(permanent)_ in the tables below. The remaining tabled limits are still
+candidates for conversion.
+
 ### AST
 
 | Constant | Default | Description |
@@ -92,27 +102,28 @@ below are the only ones still in effect.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `FUNC_TYPE_MAX_PARAMS` | 16 | Maximum number of parameter types stored on a `TYPE_FUNCTION` type node (used for function-pointer types). |
+| `FUNC_TYPE_MAX_PARAMS` | 16 | _(permanent)_ Maximum number of parameter types stored on a `TYPE_FUNCTION` type node (used for function-pointer types). Embedded `Type.params[]`. |
 
 ### Parser
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `FUNC_MAX_PARAMS` | 16 | Maximum number of parameters in a function declaration or definition. |
-| `MAX_CALL_LAYOUT_ITEMS` | 24 | Maximum `ArgSlot` entries in a single call's argument layout (`FUNC_MAX_PARAMS` plus headroom for a hidden `sret` slot and variadic overhead). |
+| `FUNC_MAX_PARAMS` | 16 | _(permanent)_ Maximum number of parameters in a function declaration or definition. Embedded `FuncSig.param_types[]`. |
+| `MAX_ARRAY_DIMS` | 8 | _(permanent)_ Maximum number of array dimensions in a declarator (e.g. `int a[2][3][4]` is 3). Defined in `src/parser.c` rather than `constants.h`; sizes a local/embedded `array_dims[]`. |
+| `MAX_CALL_LAYOUT_ITEMS` | 24 | Maximum `ArgSlot` entries in a single call's argument layout (`FUNC_MAX_PARAMS` plus headroom for a hidden `sret` slot and variadic overhead). Local stack struct with a bounds-check guard. |
 
 ### Code generator
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
+| `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. (Slated for dynamic conversion in stage 95-12; see `docs/stages/`.) |
 
 ### Preprocessor
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_INCLUDE_DEPTH` | 64 | Maximum `#include` nesting depth. |
-| `MAX_COND_DEPTH` | 64 | Maximum nesting depth of `#if`/`#ifdef`/`#ifndef` conditional blocks. |
+| `MAX_INCLUDE_DEPTH` | 64 | _(permanent)_ Maximum `#include` nesting depth (recursion-depth guard). |
+| `MAX_COND_DEPTH` | 64 | _(permanent)_ Maximum nesting depth of `#if`/`#ifdef`/`#ifndef` conditional blocks. Embedded `cond_stack[]`. |
 
 ## Usage
 
