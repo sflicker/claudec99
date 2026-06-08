@@ -2,19 +2,14 @@
 #define CCOMPILER_CONSTANTS_H
 
 /* All limits below are wrapped in #ifndef guards so they can be cleanly
- * overridden from the command line with -D (e.g. -DPARSER_MAX_FUNCTIONS=256)
- * without triggering a "macro redefined" diagnostic. */
-
-/* Maximum byte length of identifiers, tag names, assembly labels, and
- * string literal payload stored in fixed-size char arrays throughout the
- * compiler.  Token no longer uses this limit (Token.value is a pointer;
- * stage 95-08). ASTNode.value (stage 95-09), all parser.h struct name/tag
- * fields (stage 95-10), and all codegen struct name/label fields (LocalVar,
- * GlobalVar, LocalStaticVar — stage 95-11) are also now pointers.
- * Remaining applications: StructField.name (type.h). */
-#ifndef MAX_NAME_LEN
-#define MAX_NAME_LEN 256
-#endif
+ * overridden from the command line with -D (e.g. -DFUNC_MAX_PARAMS=32)
+ * without triggering a "macro redefined" diagnostic.
+ *
+ * Many former fixed-capacity limits no longer appear here: as of the 95-xx
+ * cleanup stages the parser and code-generator tables that they bounded were
+ * converted to dynamic `Vec`/`StrBuf` storage, and the name/tag/label buffers
+ * they sized were converted to `const char *` pointers into lexer-owned
+ * storage. The macros below are the ones still in effect. */
 
 /* ---- AST limits ---- */
 
@@ -32,21 +27,6 @@
 
 /* ---- Parser limits ---- */
 
-#ifndef PARSER_MAX_GLOBALS
-#define PARSER_MAX_GLOBALS       256
-#endif
-#ifndef PARSER_MAX_ENUM_CONSTS
-#define PARSER_MAX_ENUM_CONSTS   256
-#endif
-#ifndef PARSER_MAX_ENUM_TAGS
-#define PARSER_MAX_ENUM_TAGS     32
-#endif
-#ifndef PARSER_MAX_STRUCT_TAGS
-#define PARSER_MAX_STRUCT_TAGS   32
-#endif
-#ifndef PARSER_MAX_UNION_TAGS
-#define PARSER_MAX_UNION_TAGS    32
-#endif
 /* Maximum number of parameters in a function declaration or definition. */
 #ifndef FUNC_MAX_PARAMS
 #define FUNC_MAX_PARAMS 16
@@ -61,24 +41,10 @@
 
 /* ---- Codegen limits ---- */
 
-#ifndef MAX_LOCALS
-#define MAX_LOCALS          256
-#endif
-#ifndef MAX_GLOBALS
-#define MAX_GLOBALS         256
-#endif
 #ifndef MAX_SWITCH_LABELS
 /* Stage 92: raised from 64 so the compiler can self-compile. token_type_name()
  * in compiler.c switches over ~83 token kinds in a single switch. */
 #define MAX_SWITCH_LABELS   256
-#endif
-#ifndef MAX_STRING_LITERALS
-/* Stage 92: raised from 256 so the compiler can self-compile. codegen.c alone
- * uses ~750 string-literal occurrences (the pool does not deduplicate). */
-#define MAX_STRING_LITERALS 2048
-#endif
-#ifndef MAX_LOCAL_STATICS
-#define MAX_LOCAL_STATICS   128
 #endif
 
 /* ---- Preprocessor limits ---- */

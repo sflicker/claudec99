@@ -68,16 +68,19 @@ The standard self-hosting workflow is:
 
 ## Compiler limits
 
-All hard-coded capacity limits live in `include/constants.h` as object-like
-macros. Redefine any of them on the compiler command line (e.g.
+The remaining hard-coded capacity limits live in `include/constants.h` as
+object-like macros. Redefine any of them on the compiler command line (e.g.
 `-DFUNC_MAX_PARAMS=32`) or edit the file directly before building to
 raise a limit.
 
-### String buffers
-
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. `Token.value` (since Stage 95-08), `ASTNode.value` (since Stage 95-09), all parser.h struct name/tag fields (`EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, `GlobalObjSig.name`) (since Stage 95-10), and all codegen struct name/label fields (`LocalVar.name`, `LocalVar.static_label`, `GlobalVar.name`, `GlobalVar.init_label`, `LocalStaticVar.label`) (since Stage 95-11) are no longer bounded by this limit — all are pointers into lexer-owned or `util_strdup`'d storage. Remaining application: `StructField.name` (type.h). |
+Most former limits no longer exist: through the 95-xx cleanup stages the
+parser and code-generator tables they bounded were converted to dynamic
+`Vec`/`StrBuf` storage that grows on demand (so global, enum-constant, struct
+tag, local, string-literal, etc. counts are no longer capped), and the
+name/tag/label buffers they sized became `const char *` pointers into
+lexer-owned storage (so identifier, tag, and label lengths are no longer
+bounded by `MAX_NAME_LEN`, which has been removed). The macros documented
+below are the only ones still in effect.
 
 ### AST
 
@@ -95,22 +98,14 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `PARSER_MAX_GLOBALS` | 256 | Maximum number of file-scope object declarations in a translation unit. |
-| `PARSER_MAX_ENUM_CONSTS` | 256 | Maximum number of enum constants across all enum declarations in a translation unit. |
-| `PARSER_MAX_ENUM_TAGS` | 32 | Maximum number of distinct named enum tags. |
-| `PARSER_MAX_STRUCT_TAGS` | 32 | Maximum number of distinct named struct tags. |
-| `PARSER_MAX_UNION_TAGS` | 32 | Maximum number of distinct named union tags. |
 | `FUNC_MAX_PARAMS` | 16 | Maximum number of parameters in a function declaration or definition. |
+| `MAX_CALL_LAYOUT_ITEMS` | 24 | Maximum `ArgSlot` entries in a single call's argument layout (`FUNC_MAX_PARAMS` plus headroom for a hidden `sret` slot and variadic overhead). |
 
 ### Code generator
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_LOCALS` | 256 | Maximum number of local variables per function. |
-| `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
 | `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
-| `MAX_STRING_LITERALS` | 2048 | Maximum number of string literal occurrences in a translation unit. |
-| `MAX_LOCAL_STATICS` | 128 | Maximum number of block-scope `static` variables across all functions in a translation unit. |
 
 ### Preprocessor
 
@@ -222,15 +217,15 @@ int main() {
 
 Through stage 95-11 (remove static char arrays from codegen.h):
 
-> Stage 95-11 converts the remaining `char[MAX_NAME_LEN]` name/label buffers in codegen.h structs to `const char *` pointers: `LocalVar.name`, `LocalVar.static_label`, `LocalStaticVar.label`, `GlobalVar.name`, and `GlobalVar.init_label`. Names from AST/lexer-owned storage assign the pointer directly; generated labels (`Lstatic_*` and `Lstr*`) use `util_strdup`. The 2D array `char user_labels[MAX_USER_LABELS][MAX_NAME_LEN]` in `CodeGen` (plus `user_label_count`) is replaced with `Vec user_labels; /* const char * */`, removing the 64-label-per-function cap entirely. `MAX_USER_LABELS` is removed from `include/constants.h`. The only remaining `MAX_NAME_LEN` application is `StructField.name` in `type.h`. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 95-11 converts the remaining `char[MAX_NAME_LEN]` name/label buffers in codegen.h structs to `const char *` pointers: `LocalVar.name`, `LocalVar.static_label`, `LocalStaticVar.label`, `GlobalVar.name`, and `GlobalVar.init_label`. Names from AST/lexer-owned storage assign the pointer directly; generated labels (`Lstatic_*` and `Lstr*`) use `util_strdup`. The 2D array `char user_labels[MAX_USER_LABELS][MAX_NAME_LEN]` in `CodeGen` (plus `user_label_count`) is replaced with `Vec user_labels; /* const char * */`, removing the 64-label-per-function cap entirely. `MAX_USER_LABELS` is removed from `include/constants.h`. The only remaining `MAX_NAME_LEN` application is `StructField.name` in `type.h`. All 1479 tests pass (165 unit, 831 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-10 (remove static char arrays from parser.h):
 
-> Stage 95-10 converts seven `char field[MAX_NAME_LEN]` embedded arrays in parser.h structs to `const char *` pointers: `EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, and `GlobalObjSig.name`. All `strncpy` copy operations are replaced with direct pointer assignments. Three local `char[256]` temporary buffers (used during struct, union, and enum specifier parsing) are simplified to `const char *` pointers into the lexer string pool. The `MAX_NAME_LEN` limit is removed from all parser.h struct name/tag fields. All name and tag values derive from `parser->current.value` (a persistent pointer into lexer-owned storage since stage 95-08), making direct pointer assignment safe. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 95-10 converts seven `char field[MAX_NAME_LEN]` embedded arrays in parser.h structs to `const char *` pointers: `EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, and `GlobalObjSig.name`. All `strncpy` copy operations are replaced with direct pointer assignments. Three local `char[256]` temporary buffers (used during struct, union, and enum specifier parsing) are simplified to `const char *` pointers into the lexer string pool. The `MAX_NAME_LEN` limit is removed from all parser.h struct name/tag fields. All name and tag values derive from `parser->current.value` (a persistent pointer into lexer-owned storage since stage 95-08), making direct pointer assignment safe. All 1479 tests pass (165 unit, 831 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-09 (remove static char array from ASTNode and parser):
 
-> Stage 95-09 changes `ASTNode.value` from `char value[MAX_NAME_LEN]` (a fixed 256-byte embedded buffer) to `const char *value` (a pointer into lexer-owned storage). All parser sites that previously memcpy'd token bytes into the node's value buffer are replaced with simple pointer assignments. String literal concatenation uses a StrBuf scratch buffer plus `lexer_store_bytes`. The `ParsedDeclarator.name` field is also changed to `const char *` to avoid dangling pointers when identifier names are stored in AST nodes. Two bug fixes: case label values and enum-constant integer literals were formatted into local `char[32]` buffers and passed directly to `parser_node`; these are now stored in the lexer pool via `lexer_store_bytes` first. The `MAX_NAME_LEN` limit on `ASTNode.value` is removed; string literals longer than 255 bytes are now handled correctly. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 95-09 changes `ASTNode.value` from `char value[MAX_NAME_LEN]` (a fixed 256-byte embedded buffer) to `const char *value` (a pointer into lexer-owned storage). All parser sites that previously memcpy'd token bytes into the node's value buffer are replaced with simple pointer assignments. String literal concatenation uses a StrBuf scratch buffer plus `lexer_store_bytes`. The `ParsedDeclarator.name` field is also changed to `const char *` to avoid dangling pointers when identifier names are stored in AST nodes. Two bug fixes: case label values and enum-constant integer literals were formatted into local `char[32]` buffers and passed directly to `parser_node`; these are now stored in the lexer pool via `lexer_store_bytes` first. The `MAX_NAME_LEN` limit on `ASTNode.value` is removed; string literals longer than 255 bytes are now handled correctly. All 1479 tests pass (165 unit, 831 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-07 (convert remaining static usages):
 
@@ -554,7 +549,9 @@ Through stage 91 (address-of member lvalues):
   `sizeof(A)` where `A` is a declared array returns the total byte size
   (`element_size × element_count`) as a compile-time constant — no runtime
   code is emitted for the array operand and the array is not decayed to a
-  pointer. `sizeof(int[10])` (array-type-name form) is not yet supported.
+  pointer. The array-type-name form is also supported, including
+  multidimensional shapes (e.g. `sizeof(int[10])` == 40,
+  `sizeof(int[4][8])` == 128).
   `const`-qualified type names in `sizeof` are supported (e.g.,
   `sizeof(const int)`, `sizeof(const char *)`); the qualifier does not
   affect the computed size.
@@ -592,7 +589,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-09 all tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1479 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-11 all tests pass (165 unit, 831 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1479 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
