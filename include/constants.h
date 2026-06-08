@@ -39,14 +39,6 @@
 #define MAX_CALL_LAYOUT_ITEMS 24
 #endif
 
-/* ---- Codegen limits ---- */
-
-#ifndef MAX_SWITCH_LABELS
-/* Stage 92: raised from 64 so the compiler can self-compile. token_type_name()
- * in compiler.c switches over ~83 token kinds in a single switch. */
-#define MAX_SWITCH_LABELS   256
-#endif
-
 /* ---- Preprocessor limits ---- */
 
 #ifndef MAX_INCLUDE_DEPTH

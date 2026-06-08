@@ -439,27 +439,21 @@ static int user_label_defined(CodeGen *cg, const char *name) {
 static void collect_switch_labels(CodeGen *cg, ASTNode *node, SwitchCtx *ctx) {
     if (!node) return;
     if (node->type == AST_CASE_SECTION) {
-        if (ctx->count >= MAX_SWITCH_LABELS) {
-            compile_error( "error: too many case/default labels in switch (max %d)\n",
-                    MAX_SWITCH_LABELS);
-        }
-        ctx->nodes[ctx->count] = node;
-        ctx->labels[ctx->count] = cg->label_count++;
-        ctx->count++;
+        SwitchLabel entry;
+        entry.node = node;
+        entry.label = cg->label_count++;
+        vec_push(&ctx->entries, &entry);
         if (node->child_count > 1) {
             collect_switch_labels(cg, node->children[1], ctx);
         }
         return;
     }
     if (node->type == AST_DEFAULT_SECTION) {
-        if (ctx->count >= MAX_SWITCH_LABELS) {
-            compile_error( "error: too many case/default labels in switch (max %d)\n",
-                    MAX_SWITCH_LABELS);
-        }
         int lbl = cg->label_count++;
-        ctx->nodes[ctx->count] = node;
-        ctx->labels[ctx->count] = lbl;
-        ctx->count++;
+        SwitchLabel entry;
+        entry.node = node;
+        entry.label = lbl;
+        vec_push(&ctx->entries, &entry);
         ctx->default_label = lbl;
         if (node->child_count > 0) {
             collect_switch_labels(cg, node->children[0], ctx);
@@ -475,8 +469,9 @@ static void collect_switch_labels(CodeGen *cg, ASTNode *node, SwitchCtx *ctx) {
 }
 
 static int switch_lookup_label(SwitchCtx *ctx, ASTNode *node) {
-    for (int i = 0; i < ctx->count; i++) {
-        if (ctx->nodes[i] == node) return ctx->labels[i];
+    for (int i = 0; i < (int)ctx->entries.len; i++) {
+        SwitchLabel *e = (SwitchLabel *)vec_get(&ctx->entries, i);
+        if (e->node == node) return e->label;
     }
     return -1;
 }
@@ -4467,8 +4462,11 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
          * targets the switch-end label. */
         int label_id = cg->label_count++;
         {
+            /* Stage 95-12: init the embedded entries Vec BEFORE the push.
+             * vec_push bit-copies the struct (a move of the Vec's data
+             * pointer) into the stack slot; the local must not also free it. */
             SwitchCtx new_ctx;
-            new_ctx.count = 0;
+            vec_init(&new_ctx.entries, sizeof(SwitchLabel));
             new_ctx.default_label = -1;
             vec_push(&cg->switch_stack, &new_ctx);
         }
@@ -4481,14 +4479,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
 
-        for (int i = 0; i < ctx->count; i++) {
-            ASTNode *label_node = ctx->nodes[i];
+        for (int i = 0; i < (int)ctx->entries.len; i++) {
+            SwitchLabel *entry = (SwitchLabel *)vec_get(&ctx->entries, i);
+            ASTNode *label_node = entry->node;
             if (label_node->type == AST_CASE_SECTION) {
                 fprintf(cg->output, "    mov eax, [rsp]\n");
                 fprintf(cg->output, "    cmp eax, %s\n",
                         label_node->children[0]->value);
                 fprintf(cg->output, "    je .L_switch_sec_%d\n",
-                        ctx->labels[i]);
+                        entry->label);
             }
         }
         if (ctx->default_label != -1) {
@@ -4508,6 +4507,15 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         codegen_statement(cg, body, is_main);
 
         cg->switch_depth--;
+        /* Stage 95-12: release the inner label table before popping the
+         * SwitchCtx (vec_pop only decrements len; it does not free the
+         * embedded Vec), otherwise each switch leaks its label table.
+         * Re-fetch the live top element: emitting the body may have pushed
+         * (and popped) nested switches, which can reallocate switch_stack
+         * and leave the earlier `ctx` pointer dangling. */
+        SwitchCtx *top = (SwitchCtx *)vec_get(&cg->switch_stack,
+                                              cg->switch_stack.len - 1);
+        vec_free(&top->entries);
         vec_pop(&cg->switch_stack);
         vec_pop(&cg->break_stack);
         cg->break_depth--;

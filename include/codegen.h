@@ -91,10 +91,17 @@ typedef struct {
  * switches) and assigns each a unique label id. During body emission
  * a case/default node is matched against this table to emit its
  * pre-assigned label. */
+/* Stage 95-12: one case/default label entry. Pairing the node pointer with
+ * its label id keeps the two aligned by construction. */
 typedef struct {
-    ASTNode *nodes[MAX_SWITCH_LABELS];
-    int labels[MAX_SWITCH_LABELS];
-    int count;
+    ASTNode *node;
+    int label;
+} SwitchLabel;
+
+typedef struct {
+    /* Stage 95-12: label table is now dynamic (was parallel fixed arrays
+     * capped at MAX_SWITCH_LABELS). `count` is now `entries.len`. */
+    Vec entries;  /* SwitchLabel */
     int default_label;
 } SwitchCtx;
 
