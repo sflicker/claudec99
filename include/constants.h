@@ -7,8 +7,11 @@
 
 /* Maximum byte length of identifiers, tag names, assembly labels, and
  * string literal payload stored in fixed-size char arrays throughout the
- * compiler.  Token no longer uses this limit (Token.value is now a
- * pointer); it still applies to ASTNode.value and struct name fields. */
+ * compiler.  Token no longer uses this limit (Token.value is a pointer;
+ * stage 95-08). ASTNode.value (stage 95-09), all parser.h struct name/tag
+ * fields (stage 95-10), and all codegen struct name/label fields (LocalVar,
+ * GlobalVar, LocalStaticVar — stage 95-11) are also now pointers.
+ * Remaining applications: StructField.name (type.h). */
 #ifndef MAX_NAME_LEN
 #define MAX_NAME_LEN 256
 #endif
@@ -68,9 +71,6 @@
 /* Stage 92: raised from 64 so the compiler can self-compile. token_type_name()
  * in compiler.c switches over ~83 token kinds in a single switch. */
 #define MAX_SWITCH_LABELS   256
-#endif
-#ifndef MAX_USER_LABELS
-#define MAX_USER_LABELS     64
 #endif
 #ifndef MAX_STRING_LITERALS
 /* Stage 92: raised from 256 so the compiler can self-compile. codegen.c alone

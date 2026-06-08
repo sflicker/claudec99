@@ -7,7 +7,7 @@
 #include "vec.h"
 
 typedef struct {
-    char name[MAX_NAME_LEN];
+    const char *name;
     int offset;
     int size;
     /* Stage 12-02: declared kind so codegen can distinguish a pointer
@@ -25,14 +25,16 @@ typedef struct {
      * set, storage is in a named static symbol addressed via [rel label]
      * instead of [rbp - offset]; offset is unused. */
     int is_static;
-    char static_label[MAX_NAME_LEN];
+    /* Stage 95-11: pointer into util_strdup'd storage for the generated label. */
+    const char *static_label;
 } LocalVar;
 
 /* Stage 71: one entry per block-scope static variable declared during
  * function body emission. Accumulated during codegen_function and
  * emitted to .data or .bss after all function bodies. */
 typedef struct {
-    char label[MAX_NAME_LEN];
+    /* Stage 95-11: pointer into util_strdup'd storage for the generated label. */
+    const char *label;
     TypeKind kind;
     Type *full_type;
     int size;
@@ -48,7 +50,8 @@ typedef struct {
  * Stage 22-02: is_initialized set for globals with a constant initializer;
  * init_value holds that value. Initialized globals go to .data; others to .bss. */
 typedef struct {
-    char name[MAX_NAME_LEN];
+    /* Stage 95-11: pointer into lexer-owned storage (decl->value). */
+    const char *name;
     int size;
     TypeKind kind;
     Type *full_type;
@@ -56,9 +59,10 @@ typedef struct {
     long init_value;
     /* Stage 25-02: when is_label_init is set, the global is initialized to
      * the address of a named symbol (e.g. a function pointer initialized
-     * from a function designator). init_label holds the symbol name. */
+     * from a function designator). init_label holds the symbol name.
+     * Stage 95-11: pointer into lexer-owned storage or util_strdup'd buffer. */
     int is_label_init;
-    char init_label[MAX_NAME_LEN];
+    const char *init_label;
     /* Stage 39: set when the variable itself is const-qualified. */
     int is_const;
     /* Stage 40: set when the variable has an unsigned integer type. */
@@ -115,9 +119,9 @@ typedef struct {
     /* Per-function user label table (populated by a pre-walk before
      * body emission; used to reject duplicates and missing goto
      * targets). Assembly names are prefixed by `current_func` so
-     * reused label names in different functions never collide. */
-    char user_labels[MAX_USER_LABELS][MAX_NAME_LEN];
-    int user_label_count;
+     * reused label names in different functions never collide.
+     * Stage 95-11: converted from 2D char array to Vec of const char*. */
+    Vec user_labels;  /* const char * */
     const char *current_func;
     /* Declared return type of the function currently being emitted —
      * used by AST_RETURN_STATEMENT to convert the return expression

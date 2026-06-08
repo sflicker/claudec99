@@ -369,7 +369,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->break_depth = 0;
     vec_init(&cg->switch_stack, sizeof(SwitchCtx));
     cg->switch_depth = 0;
-    cg->user_label_count = 0;
+    vec_init(&cg->user_labels, sizeof(const char *));
     cg->current_func = NULL;
     cg->current_return_type = TYPE_INT;
     cg->current_return_full_type = NULL;
@@ -405,19 +405,15 @@ static void codegen_warn_const_discard(CodeGen *cg, const char *prefix,
 static void collect_user_labels(CodeGen *cg, ASTNode *node) {
     if (!node) return;
     if (node->type == AST_LABEL_STATEMENT) {
-        for (int i = 0; i < cg->user_label_count; i++) {
-            if (strcmp(cg->user_labels[i], node->value) == 0) {
+        for (int i = 0; i < (int)cg->user_labels.len; i++) {
+            const char **pp = (const char **)vec_get(&cg->user_labels, (size_t)i);
+            const char *s = *pp;
+            if (strcmp(s, node->value) == 0) {
                 compile_error( "error: duplicate label '%s' in function '%s'\n",
                         node->value, cg->current_func);
             }
         }
-        if (cg->user_label_count >= MAX_USER_LABELS) {
-            compile_error( "error: too many labels in function '%s' (max %d)\n",
-                    cg->current_func, MAX_USER_LABELS);
-        }
-        strncpy(cg->user_labels[cg->user_label_count], node->value, 255);
-        cg->user_labels[cg->user_label_count][255] = '\0';
-        cg->user_label_count++;
+        vec_push(&cg->user_labels, &node->value);
     }
     for (int i = 0; i < node->child_count; i++) {
         collect_user_labels(cg, node->children[i]);
@@ -425,8 +421,10 @@ static void collect_user_labels(CodeGen *cg, ASTNode *node) {
 }
 
 static int user_label_defined(CodeGen *cg, const char *name) {
-    for (int i = 0; i < cg->user_label_count; i++) {
-        if (strcmp(cg->user_labels[i], name) == 0) return 1;
+    for (int i = 0; i < (int)cg->user_labels.len; i++) {
+        const char **pp = (const char **)vec_get(&cg->user_labels, (size_t)i);
+        const char *s = *pp;
+        if (strcmp(s, name) == 0) return 1;
     }
     return 0;
 }
@@ -513,8 +511,7 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
     cg->stack_offset += size;
     cg->stack_offset = (cg->stack_offset + align - 1) & ~(align - 1);
     LocalVar new_lv;
-    strncpy(new_lv.name, name, 255);
-    new_lv.name[255] = '\0';
+    new_lv.name = name;
     new_lv.offset = cg->stack_offset;
     new_lv.size = size;
     new_lv.kind = kind;
@@ -525,7 +522,7 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
      * block-scope static local is not misread as static (&var / member access
      * consult this flag). Static locals are registered via a separate path. */
     new_lv.is_static = 0;
-    new_lv.static_label[0] = '\0';
+    new_lv.static_label = NULL;
     vec_push(&cg->locals, &new_lv);
     return cg->stack_offset;
 }
@@ -4001,9 +3998,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                      cg->current_func, cg->label_count++);
             /* Register in the local variable table so scope and shadowing work.
              * Don't advance stack_offset — statics are not stack-allocated. */
+            const char *label_ptr = util_strdup(label);
             LocalVar new_static_lv;
-            strncpy(new_static_lv.name, node->value, 255);
-            new_static_lv.name[255] = '\0';
+            new_static_lv.name = node->value;
             new_static_lv.offset = 0;
             new_static_lv.size = type_kind_bytes(node->decl_type);
             new_static_lv.kind = node->decl_type;
@@ -4011,29 +4008,18 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             new_static_lv.is_const = node->is_const;
             new_static_lv.is_unsigned = node->is_unsigned;
             new_static_lv.is_static = 1;
-            strncpy(new_static_lv.static_label, label, 255);
-            new_static_lv.static_label[255] = '\0';
+            new_static_lv.static_label = label_ptr;
             vec_push(&cg->locals, &new_static_lv);
             /* Add to the deferred emission pool (.data or .bss). */
             LocalStaticVar new_sv;
-            new_sv.label[0] = '\0';
-            new_sv.kind = TYPE_INT;
-            new_sv.full_type = NULL;
-            new_sv.size = 0;
-            new_sv.is_initialized = 0;
-            new_sv.init_value = 0;
-            new_sv.is_unsigned = 0;
+            new_sv.label = label_ptr;
+            new_sv.kind = node->decl_type;
+            new_sv.full_type = node->full_type;
+            new_sv.size = type_kind_bytes(node->decl_type);
+            new_sv.is_initialized = is_initialized;
+            new_sv.init_value = init_value;
+            new_sv.is_unsigned = node->is_unsigned;
             vec_push(&cg->local_statics, &new_sv);
-            LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics,
-                                    cg->local_statics.len - 1);
-            strncpy(sv->label, label, 255);
-            sv->label[255] = '\0';
-            sv->kind = node->decl_type;
-            sv->full_type = node->full_type;
-            sv->size = type_kind_bytes(node->decl_type);
-            sv->is_initialized = is_initialized;
-            sv->init_value = init_value;
-            sv->is_unsigned = node->is_unsigned;
             return;
         }
         /* Stage 13-01: array locals get sized from the array Type
@@ -4618,7 +4604,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         cg->stack_offset = 0;
         cg->scope_start = 0;
         cg->push_depth = 0;
-        cg->user_label_count = 0;
+        vec_clear(&cg->user_labels);
         cg->current_func = node->value;
         cg->current_return_type = node->decl_type;
         /* Stage 91-01: a struct/union return (either class) records its full
@@ -5036,8 +5022,7 @@ static const char *bss_res_directive(TypeKind kind) {
 static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     GlobalVar new_gv;
     GlobalVar *gv = &new_gv;
-    strncpy(gv->name, decl->value, 255);
-    gv->name[255] = '\0';
+    gv->name = decl->value;
     gv->kind = decl->decl_type;
     gv->full_type = decl->full_type;
     if (decl->decl_type == TYPE_ARRAY && decl->full_type) {
@@ -5050,7 +5035,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->is_initialized = 0;
     gv->init_value = 0;
     gv->is_label_init = 0;
-    gv->init_label[0] = '\0';
+    gv->init_label = NULL;
     gv->is_const = decl->is_const;
     gv->is_unsigned = decl->is_unsigned;
     gv->init_node = NULL;
@@ -5069,8 +5054,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
         } else if (init->type == AST_VAR_REF) {
             /* Stage 25-02: function-pointer global initialized from a
              * function designator — store the symbol name for .data emit. */
-            strncpy(gv->init_label, init->value, 255);
-            gv->init_label[255] = '\0';
+            gv->init_label = init->value;
             gv->is_label_init = 1;
             gv->is_initialized = 1;
         } else if (gv->kind == TYPE_ARRAY && init->type == AST_STRING_LITERAL) {
@@ -5083,7 +5067,11 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
              * is assigned before codegen_emit_data runs. */
             int idx = (int)cg->string_pool.len;
             vec_push(&cg->string_pool, &init);
-            snprintf(gv->init_label, sizeof(gv->init_label), "Lstr%d", idx);
+            {
+                char tmp[64];
+                snprintf(tmp, sizeof(tmp), "Lstr%d", idx);
+                gv->init_label = util_strdup(tmp);
+            }
             gv->is_label_init = 1;
             gv->is_initialized = 1;
         } else if (gv->kind == TYPE_ARRAY && init->type == AST_INITIALIZER_LIST) {
