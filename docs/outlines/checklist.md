@@ -1217,6 +1217,75 @@
 - [x] `VERSION_STAGE` "00930000"
 - [x] Test suites gain `TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}` and timeout-wrapped compiler/program invocations
 
+## Stage 94 - Self-Hosting Validation and Bootstrap Cycle
+
+- [x] `build.sh --mode=self-host`: full C0→C1→C2 cycle (archives prior binaries to `build/previous/`, cmake build → C0, bootstrap → C1, bootstrap → C2; runs the full suite and commits a checkpoint at each step)
+- [x] Five build-infrastructure fixes: bootstrap `-I test/include` for stub headers; `-DVERSION_BUILD` computed and passed through; commit checkpoints between C0/C1 and C1/C2; `VERSION_BUILTBY` regex captures all four version groups
+- [x] `VERSION_STAGE` "00940000"
+- [x] Process/validation stage — no language, parser, or codegen changes; C1 and C2 are behavior-identical
+
+## Stage 95-01 - Fixed-Capacity Inventory (docs only)
+
+- [x] `docs/fixed-capacity-inventory.md` catalogs all 23 fixed-capacity tables/buffers (capacity, location, overflow behavior, pointer aliasing, realloc safety, priority)
+- [x] Flagged latent bugs for later stages: `MAX_BREAK_DEPTH` has no bounds check; `PARSER_MAX_STRUCT_FIELDS` uses a hardcoded `64`; tightest commonly-hit limits are `PARSER_MAX_TYPEDEFS` / `PARSER_MAX_FUNCTIONS`
+- [x] Documentation-only — no code changes
+
+## Stage 95-02 - Vec Growable-Array Foundation
+
+- [x] `Vec` generic growable-array module (`include/vec.h`, `src/vec.c`): `vec_init`/`free`/`reserve`/`push`/`get`/`pop`/`clear`; lazy doubling growth (initial cap 8), size_t overflow checks, fatal on allocation failure
+- [x] New `test/unit/` suite with 106 assertions; unit runner added and aggregated into `run_all_tests.sh`
+
+## Stage 95-03 - StrBuf String-Buffer Module
+
+- [x] `StrBuf` dynamic character buffer (`include/strbuf.h`, `src/strbuf.c`): `strbuf_init`/`free`/`reserve`/`append_char`/`append_str`/`append_n`/`null_terminate` (null-terminate writes `'\0'` without bumping `len`)
+- [x] 59-assertion unit suite added (165 unit assertions total)
+
+## Stage 95-04 - Convert Low-Risk Static Arrays to Vec
+
+- [x] `Parser.enum_tags`, `Parser.union_tags`, and `CodeGen.local_statics` converted from fixed arrays to `Vec`
+- [x] Bootstrap fixes: `build.sh` SRC_FILES was missing `vec.c`/`strbuf.c`; `vec_reserve` overflow check emitted signed `idiv` for struct-member operands
+- [x] (Macros `PARSER_MAX_ENUM_TAGS`/`PARSER_MAX_UNION_TAGS`/`MAX_LOCAL_STATICS` left defined-but-dead here; removed later in commit `9fda93c`)
+
+## Stage 95-05 - Convert Medium-Risk Static Arrays to Vec
+
+- [x] `Parser.globals`, `Parser.enum_consts`, `Parser.struct_tags`, `CodeGen.locals`, `CodeGen.globals`, and `CodeGen.string_pool` converted to `Vec`
+- [x] Bootstrap fixes: C0 parser couldn't handle single-line `*(T**)vec_get(...)` cast-of-dereference (split into two statements); `vec_push` signed-division overflow check
+- [x] (Six corresponding macros left defined-but-dead here; removed later in commit `9fda93c`)
+
+## Stage 95-06 - Convert High-Risk Static Arrays to Vec
+
+- [x] Struct/union body field parsing (`tmp_fields`), `CodeGen.break_stack`, `Parser.typedefs`, and `Parser.funcs` converted to `Vec`
+- [x] Fixed two latent bugs: silent struct-field data loss (fields beyond 64 dropped; hardcoded `64` overflow check) and unchecked `break_stack` overflow
+- [x] Removed `PARSER_MAX_STRUCT_FIELDS`, `MAX_BREAK_DEPTH`, `PARSER_MAX_TYPEDEFS`, `PARSER_MAX_FUNCTIONS` from `include/constants.h`
+
+## Stage 95-07 - Convert Remaining Static Usages
+
+- [x] `CodeGen.switch_stack` converted to `Vec` (no `switch`-nesting cap); `MAX_SWITCH_DEPTH` removed
+- [x] `compute_call_layout` gains a `compile_error` guard for >24 arguments (`MAX_CALL_LAYOUT_ITEMS`), replacing a silent overflow risk
+
+## Stage 95-08 - Pointer-Based Token Text Storage
+
+- [x] `Token` redefined with `const char *lexeme`/`value` + `size_t` lengths; lexer gains a `Vec str_pool` and a `lexer_store_bytes()` helper (freed by `lexer_free`)
+- [x] String literals decoded through a `StrBuf` — the 255-byte limit is gone and embedded NUL bytes are supported via `value_len`
+- [x] 4 new valid tests (long strings, embedded NUL, escape sequences, adjacent literals)
+
+## Stage 95-09 - Pointer-Based ASTNode Value
+
+- [x] `ASTNode.value` and `ParsedDeclarator.name` changed from `char[MAX_NAME_LEN]` to `const char *` (pointers into lexer-owned storage)
+- [x] Case-label and enum-constant values now stored via `lexer_store_bytes` instead of local stack buffers (fixes a use-after-stack bug that was failing all switch tests)
+- [x] String literals longer than 255 bytes now handled correctly; 1 new valid test
+
+## Stage 95-10 - Remove static char arrays from parser.h
+
+- [x] Seven parser.h name/tag fields (`EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, `GlobalObjSig.name`) changed from `char[MAX_NAME_LEN]` to `const char *`; all `strncpy` replaced with direct pointer assignment
+- [x] Three `char[256]` specifier-parsing temporaries simplified to `const char *` into the lexer pool
+
+## Stage 95-11 - Remove static char arrays from codegen.h
+
+- [x] Five codegen name/label fields (`LocalVar.name`/`static_label`, `LocalStaticVar.label`, `GlobalVar.name`/`init_label`) changed to `const char *`; generated labels (`Lstatic_*`, `Lstr*`) use `util_strdup`
+- [x] `CodeGen.user_labels[MAX_USER_LABELS][MAX_NAME_LEN]` replaced with a `Vec` of pointers (64-label-per-function cap eliminated); `MAX_USER_LABELS` removed from `include/constants.h`
+- [x] At stage close `MAX_NAME_LEN` applied only to `StructField.name`; that field was later converted to `const char *` and the now-dead constant removed in commit `9fda93c`
+
 ---
 
 ## TODO
@@ -1342,5 +1411,5 @@
 - [ ] -c compile-only (emit object file) option
 - [ ] -S assembly output option (currently the only mode)
 - [ ] -O optimization level flags
-- [x] Makefile / build system for the compiler itself (`build.sh`: normal / bootstrap / fallback modes) (Stage 93)
+- [x] Makefile / build system for the compiler itself (`build.sh`: normal / bootstrap / fallback / self-host modes) (Stage 93, 94)
 - [ ] Comprehensive conformance test suite against C99 standard
