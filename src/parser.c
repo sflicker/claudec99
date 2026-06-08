@@ -747,12 +747,11 @@ static Type *parse_enum_specifier(Parser *parser) {
     /* consume 'enum' */
     parser->current = lexer_next_token(parser->lexer);
 
-    char tag[256] = "";
+    const char *tag = NULL;
     int has_tag = 0;
 
     if (parser->current.type == TOKEN_IDENTIFIER) {
-        strncpy(tag, parser->current.value, sizeof(tag) - 1);
-        tag[sizeof(tag) - 1] = '\0';
+        tag = parser->current.value;
         has_tag = 1;
         parser->current = lexer_next_token(parser->lexer);
     }
@@ -772,13 +771,11 @@ static Type *parse_enum_specifier(Parser *parser) {
             }
             if (!et) {
                 EnumTag new_et;
-                new_et.tag[0] = '\0';
+                new_et.tag = tag;
                 new_et.is_defined = 0;
                 vec_push(&parser->enum_tags, &new_et);
                 et = (EnumTag *)vec_get(&parser->enum_tags,
                                         parser->enum_tags.len - 1);
-                strncpy(et->tag, tag, sizeof(et->tag) - 1);
-                et->tag[sizeof(et->tag) - 1] = '\0';
             }
             et->is_defined = 1;
         }

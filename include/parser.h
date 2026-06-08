@@ -14,8 +14,8 @@ typedef struct {
 } EnumConst;
 
 typedef struct {
-    char tag[MAX_NAME_LEN];
-    int  is_defined;
+    const char *tag;
+    int         is_defined;
 } EnumTag;
 
 /* Stage 30: one entry per named struct tag in the translation unit. */
