@@ -563,14 +563,10 @@ static UnionTag *parser_register_union_tag(Parser *parser, const char *tag) {
     UnionTag *ut = parser_find_union_tag(parser, tag);
     if (ut) return ut;
     UnionTag new_ut;
-    new_ut.tag[0] = '\0';
+    new_ut.tag = tag;
     new_ut.type = NULL;
     vec_push(&parser->union_tags, &new_ut);
-    ut = (UnionTag *)vec_get(&parser->union_tags, parser->union_tags.len - 1);
-    strncpy(ut->tag, tag, sizeof(ut->tag) - 1);
-    ut->tag[sizeof(ut->tag) - 1] = '\0';
-    ut->type = NULL;
-    return ut;
+    return (UnionTag *)vec_get(&parser->union_tags, parser->union_tags.len - 1);
 }
 
 /*
@@ -588,12 +584,11 @@ static Type *parse_union_specifier(Parser *parser) {
     parser->current = lexer_next_token(parser->lexer);
 
     int has_tag = (parser->current.type == TOKEN_IDENTIFIER);
-    char tag[256] = "";
+    const char *tag = NULL;
     UnionTag *ut = NULL;
 
     if (has_tag) {
-        strncpy(tag, parser->current.value, sizeof(tag) - 1);
-        tag[sizeof(tag) - 1] = '\0';
+        tag = parser->current.value;
         parser->current = lexer_next_token(parser->lexer);
         ut = parser_register_union_tag(parser, tag);
     } else if (parser->current.type != TOKEN_LBRACE) {

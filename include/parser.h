@@ -26,7 +26,7 @@ typedef struct {
 
 /* Stage 72: one entry per named union tag in the translation unit. */
 typedef struct {
-    char         tag[MAX_NAME_LEN];
+    const char  *tag;
     struct Type *type;   /* NULL until the union body is parsed */
 } UnionTag;
 
