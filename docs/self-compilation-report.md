@@ -136,6 +136,21 @@ Two bootstrap failures were surfaced and fixed.
 
 After both fixes all 1478 tests passed at C0, C1, and C2.
 
+## Issues found during stage 95-11 self-hosting test
+
+None. The codegen struct `const char *` pointer migrations and `user_labels` Vec
+conversion produced no bootstrap failures. All 1479 tests passed at C0, C1, and C2.
+
+## Result (stage 95-11)
+
+**Date:** 2026-06-08
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00951100.00767` | `GNU_13_3_0` | 1479/1479 |
+| C1 | `build/ccompiler-c1` | `00.02.00951100.00768` | `ClaudeC99_v00_02_00951100_00767` | 1479/1479 |
+| C2 | `build/ccompiler-c2` | `00.02.00951100.00769` | `ClaudeC99_v00_02_00951100_00768` | 1479/1479 |
+
 ## Issues found during stage 95-10 self-hosting test
 
 None. The parser.h `const char *` pointer migration produced no bootstrap failures.
