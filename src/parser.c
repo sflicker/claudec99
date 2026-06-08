@@ -473,8 +473,7 @@ static Type *parse_struct_specifier(Parser *parser) {
                 {
                     StructField sf;
                     memset(&sf, 0, sizeof(sf));
-                    strncpy(sf.name, d.name, sizeof(sf.name) - 1);
-                    sf.name[sizeof(sf.name) - 1] = '\0';
+                    sf.name = d.name;
                     sf.offset    = current_offset;
                     sf.kind      = field_type->kind;
                     sf.full_type = (field_type->kind == TYPE_POINTER ||
@@ -664,8 +663,7 @@ static Type *parse_union_specifier(Parser *parser) {
                 {
                     StructField sf;
                     memset(&sf, 0, sizeof(sf));
-                    strncpy(sf.name, d.name, sizeof(sf.name) - 1);
-                    sf.name[sizeof(sf.name) - 1] = '\0';
+                    sf.name = d.name;
                     sf.offset    = 0; /* all union members at offset 0 */
                     sf.kind      = field_type->kind;
                     sf.full_type = (field_type->kind == TYPE_POINTER ||

@@ -38,7 +38,7 @@ typedef enum {
 
 /* Stage 31: field descriptor stored inside a TYPE_STRUCT Type node. */
 typedef struct {
-    char name[MAX_NAME_LEN];
+    const char *name;
     int  offset;            /* byte offset of this field within the struct */
     TypeKind kind;
     struct Type *full_type; /* non-NULL for pointer/array/struct fields */
