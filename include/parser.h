@@ -39,7 +39,7 @@ typedef struct {
 } TypedefEntry;
 
 typedef struct {
-    char name[MAX_NAME_LEN];
+    const char *name;
     int param_count;
     int has_definition;
     TypeKind return_type;

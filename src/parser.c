@@ -301,8 +301,7 @@ static void parser_register_function(Parser *parser, const char *name,
     {
         FuncSig sig;
         memset(&sig, 0, sizeof(sig));
-        strncpy(sig.name, name, sizeof(sig.name) - 1);
-        sig.name[sizeof(sig.name) - 1] = '\0';
+        sig.name = name;
         sig.param_count = param_count;
         sig.has_definition = is_definition;
         sig.return_type = return_type;
