@@ -18,7 +18,7 @@ Columns:
 
 | Name | Max | Module | On Overflow | Ext Ptr Refs | Safe Realloc | Priority | Status |
 |------|-----|--------|-------------|--------------|--------------|----------|--------|
-| `MAX_NAME_LEN` | 256 bytes | `include/constants.h`; used in `char name[]`, `char tag[]`, `char label[]`, `char static_label[]`, `char init_label[]` fields in `LocalVar`, `GlobalVar`, `LocalStaticVar`, `FuncSig`, `GlobalObjSig`, `TypedefEntry`, `EnumConst`, `EnumTag`, `StructTag`, `UnionTag`, `StructField`. **`Token.value` was migrated to a pointer+length into lexer-owned storage in stage 95-08. `ASTNode.value` was migrated to a `const char *` pointer into lexer-owned storage in stage 95-09 and is no longer subject to this limit.** | `strncpy` silently truncates to 255 bytes; the identifier stored in the struct is silently wrong | No | N/A (embedded `char[]`) | LOW | PENDING (ASTNode.value ✓ DONE stage 95-09) |
+| `MAX_NAME_LEN` | 256 bytes | `include/constants.h`; used in `char label[]`, `char static_label[]`, `char init_label[]` fields in `LocalVar`, `GlobalVar`, `LocalStaticVar`, and `StructField`. **`Token.value` was migrated to a pointer+length into lexer-owned storage in stage 95-08. `ASTNode.value` was migrated to a `const char *` pointer into lexer-owned storage in stage 95-09. All parser.h struct name/tag fields (`FuncSig.name`, `GlobalObjSig.name`, `TypedefEntry.name`, `EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`) were migrated to `const char *` in stage 95-10.** | `strncpy` silently truncates to 255 bytes; the identifier stored in the struct is silently wrong | No | N/A (embedded `char[]`) | LOW | PENDING (ASTNode.value ✓ DONE stage 95-09; parser.h structs ✓ DONE stage 95-10) |
 
 ---
 
@@ -184,7 +184,7 @@ Remaining items require structural changes (embedding dynamic allocation inside 
 | `FUNC_TYPE_MAX_PARAMS` | Embedded `Type *params[16]` in `Type`; converting requires changing to a heap-allocated `Type **` and updating all type construction. NO Safe Realloc. |
 | `MAX_SWITCH_LABELS` | Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc. |
 | `MAX_USER_LABELS` | 2D `char user_labels[64][256]` in CodeGen; converting requires `char **` with per-label allocations. NO Safe Realloc. |
-| `MAX_NAME_LEN` | Embedded `char name[256]` in `LocalVar`, `GlobalVar`, `FuncSig`, and other parser/codegen structs. `Token.value` was migrated to pointer+length (stage 95-08) and `ASTNode.value` to `const char *` (stage 95-09); both are no longer bounded. Remaining uses in `LocalVar`, `GlobalVar`, `FuncSig`, etc. still require per-struct migration. N/A. |
+| `MAX_NAME_LEN` | Embedded `char name[256]` / `char label[256]` in `LocalVar`, `GlobalVar`, `LocalStaticVar` (codegen) and `StructField` (type.h). `Token.value` migrated (stage 95-08), `ASTNode.value` migrated (stage 95-09), all parser.h struct name/tag fields migrated (stage 95-10). Remaining codegen and type.h uses require per-struct migration. N/A. |
 | `MAX_ARRAY_DIMS` | Local `#define` and stack variable in parser.c; only affects nested array dimensions. N/A (stack). |
 | `MAX_INCLUDE_DEPTH` | Recursion depth counter in preprocessor.c; not an array. N/A. |
 | `MAX_COND_DEPTH` | Local stack variable `CondFrame cond_stack[64]` in preprocessor.c. N/A. |
