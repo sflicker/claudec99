@@ -5,6 +5,7 @@
 #include <time.h>
 #include "constants.h"
 #include "preprocessor.h"
+#include "strbuf.h"
 #include "util.h"
 
 typedef struct {
@@ -815,22 +816,27 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
 /* Unary expression: optional leading !, -, +, ~ (chained) then primary. */
 static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
                              char *out_data, char *spliced_buf) {
-    char ops[32];
-    int  nops = 0;
+    /* Stage 95-12: collect the leading unary-operator run into a dynamic
+     * StrBuf instead of a fixed char[32], so an arbitrarily long chain
+     * (e.g. `#if !!!...1`) folds with no cap and no overflow. */
+    StrBuf ops;
+    strbuf_init(&ops);
 
     while (s[*in] == '!' || s[*in] == '-' || s[*in] == '+' || s[*in] == '~') {
-        ops[nops++] = s[(*in)++];
+        strbuf_append_char(&ops, s[(*in)++]);
         while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
     }
 
     long value = eval_cond_primary(s, in, macros, out_data, spliced_buf);
 
-    for (int i = nops - 1; i >= 0; i--) {
-        if      (ops[i] == '!') value = (value == 0) ? 1L : 0L;
-        else if (ops[i] == '-') value = -value;
-        else if (ops[i] == '~') value = ~value;
+    /* Apply right-to-left (operators do not commute: `!-1` != `-!1`). */
+    for (int i = (int)ops.len - 1; i >= 0; i--) {
+        if      (ops.data[i] == '!') value = (value == 0) ? 1L : 0L;
+        else if (ops.data[i] == '-') value = -value;
+        else if (ops.data[i] == '~') value = ~value;
     }
 
+    strbuf_free(&ops);
     return value;
 }
 
