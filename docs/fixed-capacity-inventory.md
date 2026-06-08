@@ -63,7 +63,7 @@ Columns:
 | `MAX_GLOBALS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.globals[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many global variables (max %d)"~~ | ~~`GlobalVar *gv = codegen_find_global(...)` — returned and used locally; never stored~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_BREAK_DEPTH` | 32 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.break_stack[]`); `src/codegen.c`~~ | ~~**No check** — `break_stack` is written at `cg->break_depth` without a bounds test before any of the four write sites (while, do-while, for, switch). Exceeding 32 nesting levels silently corrupts adjacent `CodeGen` fields.~~ | ~~No — accessed only by index `cg->break_depth`; no pointers into slots~~ | ~~YES~~ | ~~HIGH~~ | ✓ DONE (stage 95-06) |
 | `MAX_SWITCH_DEPTH` | 16 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.switch_stack[]`); `src/codegen.c`~~ | ~~`compile_error` — "switch nesting exceeds max depth %d" (checked before writing)~~ | ~~`SwitchCtx *ctx = &cg->switch_stack[...]` — local, used immediately~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-07) |
-| `MAX_SWITCH_LABELS` | 256 | `include/constants.h`; `include/codegen.h` (`SwitchCtx.nodes[]` and `SwitchCtx.labels[]` embedded in `SwitchCtx`); `src/codegen.c` | `compile_error` — "too many case/default labels in switch (max %d)" | `SwitchCtx.nodes[]` stores `ASTNode *` from the AST (not aliases into the array itself) | NO (arrays are embedded in `SwitchCtx` which is embedded in `CodeGen.switch_stack[]`; making them dynamic requires heap allocation inside `SwitchCtx`) | LOW | PENDING |
+| `MAX_SWITCH_LABELS` | 256 | ~~`include/constants.h`; `include/codegen.h` (`SwitchCtx.nodes[]` and `SwitchCtx.labels[]` embedded in `SwitchCtx`); `src/codegen.c`~~ | ~~`compile_error` — "too many case/default labels in switch (max %d)"~~ | ~~`SwitchCtx.nodes[]` stores `ASTNode *` from the AST (not aliases into the array itself)~~ | ~~NO (arrays are embedded in `SwitchCtx`…)~~ — done by giving `SwitchCtx` an embedded `Vec entries` of a `SwitchLabel{node,label}` pair, init'd before push and freed before pop | LOW | ✓ DONE (stage 95-12) |
 | `MAX_USER_LABELS` | 64 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.user_labels[][MAX_NAME_LEN]`); `src/codegen.c`~~ | ~~`compile_error` — "too many labels in function (max %d)"~~ | ~~No — 2D `char` array; accessed by index only~~ | ~~NO (2D `char` array; dynamic form requires `char **` and separate allocations)~~ | ~~LOW~~ | ✓ DONE (stage 95-11) |
 | `MAX_STRING_LITERALS` | 2048 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.string_pool[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many string literals (max %d)". **Note:** raised from 256 → 2048 in stage 92 because the compiler itself uses ~750 string-literal occurrences.~~ | ~~`CodeGen.string_pool[]` stores `ASTNode *` pointers from the AST; no pointers into the pool array itself escape~~ | ~~YES~~ | ~~MEDIUM~~ | ✓ DONE (stage 95-05) |
 | `MAX_LOCAL_STATICS` | 128 | ~~`include/constants.h`; `include/codegen.h` (`CodeGen.local_statics[]`); `src/codegen.c`~~ | ~~`compile_error` — "too many local static variables (max %d)"~~ | ~~No — accessed by index only; no escaping pointers~~ | ~~YES~~ | ~~LOW~~ | ✓ DONE (stage 95-04) |
@@ -86,14 +86,15 @@ _Added 2026-06-08 (commit `be5cbca`). These are **not** part of the original
 Stage 95-01 table inventory — they are fixed-size local `char` buffers used for
 one-shot formatting (label generation, number→string, path/marker assembly,
 diagnostics), not growable collections, so none is a `Vec`/`StrBuf` conversion
-candidate. With one exception every site is bounded by `snprintf`, an explicit
-index guard, or a `memcpy` length clamp — so it cannot overflow, though several
-silently **truncate** on pathological input. The exception (`ops[]`) has no
-bound and is a real overflow._
+candidate. Every site is bounded by `snprintf`, an explicit index guard, or a
+`memcpy` length clamp — so it cannot overflow, though several silently
+**truncate** on pathological input. (The former `ops[]` exception — the one
+real overflow — was converted to a dynamic `StrBuf` in stage 95-12; no
+unbounded fixed-capacity write remains.)_
 
 | Buffer | Size | Location | Formats | Bound | Note |
 |--------|------|----------|---------|-------|------|
-| `ops` | 32 | `src/preprocessor.c` `eval_cond_unary` | chained `#if` unary ops `! - + ~` | **NONE** — `ops[nops++]` with no `nops` check | **⚠ Stack buffer overflow.** A `#if` with >32 leading unary operators overruns the buffer; ~200k operators SIGSEGVs the compiler. Only unchecked fixed-capacity write left in the tree. **PENDING — needs a bounds check (or fold operators without storing them).** |
+| ~~`ops`~~ | ~~32~~ | `src/preprocessor.c` `eval_cond_unary` | chained `#if` unary ops `! - + ~` | now a dynamic `StrBuf` (no bound) | ✓ DONE (stage 95-12) — replaced the fixed `char ops[32]` with a `StrBuf`; operators are appended as consumed and applied right-to-left, freed before return. The former unchecked overflow is gone. |
 | `label` | 256 | `src/codegen.c` (block-static emit) | `Lstatic_<func>_<n>` | `snprintf` | Truncates a function name > ~240 bytes (names are unbounded since 95-08); a truncated label could collide. Low risk. |
 | `tmp` | 64 | `src/codegen.c` (global ptr init) | `Lstr<idx>` | `snprintf` | Safe — `idx` is an `int`. |
 | `num_buf` | 64 | `src/lexer.c` | integer-literal digits | index guard `i < 62` | Truncates an integer literal > 62 chars. |
@@ -178,12 +179,15 @@ This iterates in seconds instead of waiting for a full `./build.sh --mode=self-h
 
 ## Summary by Priority
 
-> **Open issue (found 2026-06-08):** the `ops[32]` buffer in
-> `eval_cond_unary` (`src/preprocessor.c`) is an **unchecked** fixed-capacity
-> write — a `#if` with >32 chained unary operators (`!`/`-`/`+`/`~`) overflows
-> the stack and crashes the compiler. It is the last unbounded fixed-capacity
-> write in the tree; see the *Fixed-Size Scratch / Formatting Buffers* section.
-> All other constant-backed table items below are resolved.
+> **Resolved (stage 95-12):** the `ops[32]` buffer in `eval_cond_unary`
+> (`src/preprocessor.c`) — formerly the last unbounded fixed-capacity write in
+> the tree — was replaced with a dynamic `StrBuf`, and `MAX_SWITCH_LABELS`
+> (the last arbitrary per-switch cap) became a dynamic `Vec` inside `SwitchCtx`.
+> **There are now no unchecked fixed-capacity writes anywhere and no hard cap on
+> case/default labels per switch.** The only remaining fixed limits are the
+> intentionally-static set (`FUNC_MAX_PARAMS`, `FUNC_TYPE_MAX_PARAMS`,
+> `MAX_ARRAY_DIMS`, `MAX_INCLUDE_DEPTH`, `MAX_COND_DEPTH`, `MAX_CALL_LAYOUT_ITEMS`),
+> each of which overflows cleanly with a diagnostic.
 
 ### HIGH — fix before compiling larger programs
 
@@ -219,11 +223,11 @@ Remaining items require structural changes (embedding dynamic allocation inside 
 |------|-------------|
 | `FUNC_MAX_PARAMS` | Embedded `TypeKind param_types[16]` in `FuncSig`; converting requires changing to a heap-allocated `TypeKind *` and updating all callers. NO Safe Realloc. |
 | `FUNC_TYPE_MAX_PARAMS` | Embedded `Type *params[16]` in `Type`; converting requires changing to a heap-allocated `Type **` and updating all type construction. NO Safe Realloc. |
-| `MAX_SWITCH_LABELS` | Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc. |
+| ~~`MAX_SWITCH_LABELS`~~ | ~~Embedded `ASTNode *nodes[256]` and `int labels[256]` in `SwitchCtx`; converting requires heap-allocating arrays inside SwitchCtx and updating collect_switch_labels. NO Safe Realloc.~~ ✓ DONE stage 95-12 — replaced with an embedded `Vec entries` of `SwitchLabel{node,label}`, init'd before push / freed before pop. |
 | ~~`MAX_USER_LABELS`~~ | ~~2D `char user_labels[64][256]` in CodeGen; converting requires `char **` with per-label allocations. NO Safe Realloc.~~ ✓ DONE stage 95-11 |
 | ~~`MAX_NAME_LEN`~~ | ~~Remaining application: `StructField.name` in `type.h`.~~ ✓ DONE — `StructField.name` converted to `const char *` (commit `ebf178b`); all earlier fields migrated in 95-08…95-11; the dead macro was removed from `include/constants.h` in commit `9fda93c`. |
 | `MAX_ARRAY_DIMS` | Local `#define` and stack variable in parser.c; only affects nested array dimensions. N/A (stack). |
 | `MAX_INCLUDE_DEPTH` | Recursion depth counter in preprocessor.c; not an array. N/A. |
 | `MAX_COND_DEPTH` | Local stack variable `CondFrame cond_stack[64]` in preprocessor.c. N/A. |
 
-Previously completed LOW items: ~~`PARSER_MAX_ENUM_TAGS`~~ ✓ DONE stage 95-04, ~~`PARSER_MAX_UNION_TAGS`~~ ✓ DONE stage 95-04, ~~`MAX_LOCAL_STATICS`~~ ✓ DONE stage 95-04, ~~`MAX_SWITCH_DEPTH`~~ ✓ DONE stage 95-07, ~~`MAX_CALL_LAYOUT_ITEMS`~~ ✓ DONE stage 95-07 (bounds check added), ~~`MAX_USER_LABELS`~~ ✓ DONE stage 95-11 (Vec of const char*), codegen `MAX_NAME_LEN` fields ✓ DONE stage 95-11.
+Previously completed LOW items: ~~`PARSER_MAX_ENUM_TAGS`~~ ✓ DONE stage 95-04, ~~`PARSER_MAX_UNION_TAGS`~~ ✓ DONE stage 95-04, ~~`MAX_LOCAL_STATICS`~~ ✓ DONE stage 95-04, ~~`MAX_SWITCH_DEPTH`~~ ✓ DONE stage 95-07, ~~`MAX_CALL_LAYOUT_ITEMS`~~ ✓ DONE stage 95-07 (bounds check added), ~~`MAX_USER_LABELS`~~ ✓ DONE stage 95-11 (Vec of const char*), codegen `MAX_NAME_LEN` fields ✓ DONE stage 95-11, ~~`MAX_SWITCH_LABELS`~~ ✓ DONE stage 95-12 (Vec of `SwitchLabel` in `SwitchCtx`), ~~`ops[32]`~~ ✓ DONE stage 95-12 (StrBuf in `eval_cond_unary`).
