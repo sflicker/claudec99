@@ -344,9 +344,8 @@ static StructTag *parser_register_struct_tag(Parser *parser, const char *tag) {
     StructTag *st = parser_find_struct_tag(parser, tag);
     if (st) return st;
     StructTag new_st;
+    new_st.tag = tag;
     new_st.type = NULL;
-    strncpy(new_st.tag, tag, sizeof(new_st.tag) - 1);
-    new_st.tag[sizeof(new_st.tag) - 1] = '\0';
     vec_push(&parser->struct_tags, &new_st);
     return (StructTag *)vec_get(&parser->struct_tags, parser->struct_tags.len - 1);
 }
@@ -385,12 +384,11 @@ static Type *parse_struct_specifier(Parser *parser) {
     parser->current = lexer_next_token(parser->lexer);
 
     int has_tag = (parser->current.type == TOKEN_IDENTIFIER);
-    char tag[256] = "";
+    const char *tag = NULL;
     StructTag *st = NULL;
 
     if (has_tag) {
-        strncpy(tag, parser->current.value, sizeof(tag) - 1);
-        tag[sizeof(tag) - 1] = '\0';
+        tag = parser->current.value;
         parser->current = lexer_next_token(parser->lexer);
         st = parser_register_struct_tag(parser, tag);
     } else if (parser->current.type != TOKEN_LBRACE) {

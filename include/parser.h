@@ -20,7 +20,7 @@ typedef struct {
 
 /* Stage 30: one entry per named struct tag in the translation unit. */
 typedef struct {
-    char         tag[MAX_NAME_LEN];
+    const char  *tag;
     struct Type *type;   /* NULL until the struct body is parsed */
 } StructTag;
 
