@@ -525,49 +525,49 @@ Token lexer_next_token(Lexer *lexer) {
      * static string literal (for keywords) or intern a heap copy (for
      * user identifiers). */
     if (isalpha(c) || c == '_') {
-        char ident_buf[MAX_NAME_LEN];
-        int i = 0;
-        while ((isalnum(lexer->source[lexer->pos]) || lexer->source[lexer->pos] == '_') &&
-               i < (int)sizeof(ident_buf) - 1) {
-            ident_buf[i++] = lexer->source[lexer->pos];
+        StrBuf ident_buf;
+        strbuf_init(&ident_buf);
+        while (isalnum(lexer->source[lexer->pos]) || lexer->source[lexer->pos] == '_') {
+            strbuf_append_char(&ident_buf, lexer->source[lexer->pos]);
             lexer_advance(lexer);
         }
-        ident_buf[i] = '\0';
+        strbuf_null_terminate(&ident_buf);
 
-        if      (strcmp(ident_buf, "int")      == 0) { token.type = TOKEN_INT;      token.value = "int";      token.value_len = 3; }
-        else if (strcmp(ident_buf, "char")     == 0) { token.type = TOKEN_CHAR;     token.value = "char";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "short")    == 0) { token.type = TOKEN_SHORT;    token.value = "short";    token.value_len = 5; }
-        else if (strcmp(ident_buf, "long")     == 0) { token.type = TOKEN_LONG;     token.value = "long";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "return")   == 0) { token.type = TOKEN_RETURN;   token.value = "return";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "if")       == 0) { token.type = TOKEN_IF;       token.value = "if";       token.value_len = 2; }
-        else if (strcmp(ident_buf, "else")     == 0) { token.type = TOKEN_ELSE;     token.value = "else";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "while")    == 0) { token.type = TOKEN_WHILE;    token.value = "while";    token.value_len = 5; }
-        else if (strcmp(ident_buf, "do")       == 0) { token.type = TOKEN_DO;       token.value = "do";       token.value_len = 2; }
-        else if (strcmp(ident_buf, "for")      == 0) { token.type = TOKEN_FOR;      token.value = "for";      token.value_len = 3; }
-        else if (strcmp(ident_buf, "break")    == 0) { token.type = TOKEN_BREAK;    token.value = "break";    token.value_len = 5; }
-        else if (strcmp(ident_buf, "continue") == 0) { token.type = TOKEN_CONTINUE; token.value = "continue"; token.value_len = 8; }
-        else if (strcmp(ident_buf, "switch")   == 0) { token.type = TOKEN_SWITCH;   token.value = "switch";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "default")  == 0) { token.type = TOKEN_DEFAULT;  token.value = "default";  token.value_len = 7; }
-        else if (strcmp(ident_buf, "case")     == 0) { token.type = TOKEN_CASE;     token.value = "case";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "goto")     == 0) { token.type = TOKEN_GOTO;     token.value = "goto";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "sizeof")   == 0) { token.type = TOKEN_SIZEOF;   token.value = "sizeof";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "extern")   == 0) { token.type = TOKEN_EXTERN;   token.value = "extern";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "static")   == 0) { token.type = TOKEN_STATIC;   token.value = "static";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "typedef")  == 0) { token.type = TOKEN_TYPEDEF;  token.value = "typedef";  token.value_len = 7; }
-        else if (strcmp(ident_buf, "enum")     == 0) { token.type = TOKEN_ENUM;     token.value = "enum";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "struct")   == 0) { token.type = TOKEN_STRUCT;   token.value = "struct";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "union")    == 0) { token.type = TOKEN_UNION;    token.value = "union";    token.value_len = 5; }
-        else if (strcmp(ident_buf, "void")     == 0) { token.type = TOKEN_VOID;     token.value = "void";     token.value_len = 4; }
-        else if (strcmp(ident_buf, "const")    == 0) { token.type = TOKEN_CONST;    token.value = "const";    token.value_len = 5; }
-        else if (strcmp(ident_buf, "volatile") == 0) { token.type = TOKEN_VOLATILE; token.value = "volatile"; token.value_len = 8; }
-        else if (strcmp(ident_buf, "signed")   == 0) { token.type = TOKEN_SIGNED;   token.value = "signed";   token.value_len = 6; }
-        else if (strcmp(ident_buf, "unsigned") == 0) { token.type = TOKEN_UNSIGNED; token.value = "unsigned"; token.value_len = 8; }
-        else if (strcmp(ident_buf, "_Bool")    == 0) { token.type = TOKEN_BOOL;     token.value = "_Bool";    token.value_len = 5; }
+        if      (strcmp(ident_buf.data, "int")      == 0) { token.type = TOKEN_INT;      token.value = "int";      token.value_len = 3; }
+        else if (strcmp(ident_buf.data, "char")     == 0) { token.type = TOKEN_CHAR;     token.value = "char";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "short")    == 0) { token.type = TOKEN_SHORT;    token.value = "short";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "long")     == 0) { token.type = TOKEN_LONG;     token.value = "long";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "return")   == 0) { token.type = TOKEN_RETURN;   token.value = "return";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "if")       == 0) { token.type = TOKEN_IF;       token.value = "if";       token.value_len = 2; }
+        else if (strcmp(ident_buf.data, "else")     == 0) { token.type = TOKEN_ELSE;     token.value = "else";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "while")    == 0) { token.type = TOKEN_WHILE;    token.value = "while";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "do")       == 0) { token.type = TOKEN_DO;       token.value = "do";       token.value_len = 2; }
+        else if (strcmp(ident_buf.data, "for")      == 0) { token.type = TOKEN_FOR;      token.value = "for";      token.value_len = 3; }
+        else if (strcmp(ident_buf.data, "break")    == 0) { token.type = TOKEN_BREAK;    token.value = "break";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "continue") == 0) { token.type = TOKEN_CONTINUE; token.value = "continue"; token.value_len = 8; }
+        else if (strcmp(ident_buf.data, "switch")   == 0) { token.type = TOKEN_SWITCH;   token.value = "switch";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "default")  == 0) { token.type = TOKEN_DEFAULT;  token.value = "default";  token.value_len = 7; }
+        else if (strcmp(ident_buf.data, "case")     == 0) { token.type = TOKEN_CASE;     token.value = "case";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "goto")     == 0) { token.type = TOKEN_GOTO;     token.value = "goto";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "sizeof")   == 0) { token.type = TOKEN_SIZEOF;   token.value = "sizeof";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "extern")   == 0) { token.type = TOKEN_EXTERN;   token.value = "extern";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "static")   == 0) { token.type = TOKEN_STATIC;   token.value = "static";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "typedef")  == 0) { token.type = TOKEN_TYPEDEF;  token.value = "typedef";  token.value_len = 7; }
+        else if (strcmp(ident_buf.data, "enum")     == 0) { token.type = TOKEN_ENUM;     token.value = "enum";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "struct")   == 0) { token.type = TOKEN_STRUCT;   token.value = "struct";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "union")    == 0) { token.type = TOKEN_UNION;    token.value = "union";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "void")     == 0) { token.type = TOKEN_VOID;     token.value = "void";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "const")    == 0) { token.type = TOKEN_CONST;    token.value = "const";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "volatile") == 0) { token.type = TOKEN_VOLATILE; token.value = "volatile"; token.value_len = 8; }
+        else if (strcmp(ident_buf.data, "signed")   == 0) { token.type = TOKEN_SIGNED;   token.value = "signed";   token.value_len = 6; }
+        else if (strcmp(ident_buf.data, "unsigned") == 0) { token.type = TOKEN_UNSIGNED; token.value = "unsigned"; token.value_len = 8; }
+        else if (strcmp(ident_buf.data, "_Bool")    == 0) { token.type = TOKEN_BOOL;     token.value = "_Bool";    token.value_len = 5; }
         else {
             token.type = TOKEN_IDENTIFIER;
-            token.value     = lexer_store_bytes(lexer, ident_buf, (size_t)i);
-            token.value_len = (size_t)i;
+            token.value     = lexer_store_bytes(lexer, ident_buf.data, ident_buf.len);
+            token.value_len = ident_buf.len;
         }
+        strbuf_free(&ident_buf);
         token.lexeme     = token.value;
         token.lexeme_len = token.value_len;
         return token;
