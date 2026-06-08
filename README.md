@@ -77,7 +77,7 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. Applies to struct name/tag fields (`StructField.name`, `FuncSig.name`, etc.). `Token.value` (since Stage 95-08) and `ASTNode.value` (since Stage 95-09) are no longer bounded by this limit — both are pointers into lexer-owned storage. |
+| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. `Token.value` (since Stage 95-08), `ASTNode.value` (since Stage 95-09), and all parser.h struct name/tag fields (`EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, `GlobalObjSig.name`) (since Stage 95-10) are no longer bounded by this limit — all are pointers into lexer-owned storage. Remaining applications: codegen symbol tables (`LocalVar.label`, `GlobalVar.label`, `LocalStaticVar.label`) and type.h struct fields (`StructField.name`). |
 
 ### AST
 
@@ -220,6 +220,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 95-10 (remove static char arrays from parser.h):
+
+> Stage 95-10 converts seven `char field[MAX_NAME_LEN]` embedded arrays in parser.h structs to `const char *` pointers: `EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, and `GlobalObjSig.name`. All `strncpy` copy operations are replaced with direct pointer assignments. Three local `char[256]` temporary buffers (used during struct, union, and enum specifier parsing) are simplified to `const char *` pointers into the lexer string pool. The `MAX_NAME_LEN` limit is removed from all parser.h struct name/tag fields. All name and tag values derive from `parser->current.value` (a persistent pointer into lexer-owned storage since stage 95-08), making direct pointer assignment safe. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-09 (remove static char array from ASTNode and parser):
 
