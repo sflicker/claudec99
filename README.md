@@ -77,7 +77,7 @@ raise a limit.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. `Token.value` (since Stage 95-08), `ASTNode.value` (since Stage 95-09), and all parser.h struct name/tag fields (`EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, `GlobalObjSig.name`) (since Stage 95-10) are no longer bounded by this limit — all are pointers into lexer-owned storage. Remaining applications: codegen symbol tables (`LocalVar.label`, `GlobalVar.label`, `LocalStaticVar.label`) and type.h struct fields (`StructField.name`). |
+| `MAX_NAME_LEN` | 256 | Maximum byte length of identifiers, tag names, assembly labels, and value strings stored in fixed-size `char` arrays. `Token.value` (since Stage 95-08), `ASTNode.value` (since Stage 95-09), all parser.h struct name/tag fields (`EnumConst.name`, `EnumTag.tag`, `StructTag.tag`, `UnionTag.tag`, `TypedefEntry.name`, `FuncSig.name`, `GlobalObjSig.name`) (since Stage 95-10), and all codegen struct name/label fields (`LocalVar.name`, `LocalVar.static_label`, `GlobalVar.name`, `GlobalVar.init_label`, `LocalStaticVar.label`) (since Stage 95-11) are no longer bounded by this limit — all are pointers into lexer-owned or `util_strdup`'d storage. Remaining application: `StructField.name` (type.h). |
 
 ### AST
 
@@ -109,7 +109,6 @@ raise a limit.
 | `MAX_LOCALS` | 256 | Maximum number of local variables per function. |
 | `MAX_GLOBALS` | 256 | Maximum number of global variables tracked by the code generator. |
 | `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. |
-| `MAX_USER_LABELS` | 64 | Maximum number of user-defined `goto` labels per function. |
 | `MAX_STRING_LITERALS` | 2048 | Maximum number of string literal occurrences in a translation unit. |
 | `MAX_LOCAL_STATICS` | 128 | Maximum number of block-scope `static` variables across all functions in a translation unit. |
 
@@ -220,6 +219,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 95-11 (remove static char arrays from codegen.h):
+
+> Stage 95-11 converts the remaining `char[MAX_NAME_LEN]` name/label buffers in codegen.h structs to `const char *` pointers: `LocalVar.name`, `LocalVar.static_label`, `LocalStaticVar.label`, `GlobalVar.name`, and `GlobalVar.init_label`. Names from AST/lexer-owned storage assign the pointer directly; generated labels (`Lstatic_*` and `Lstr*`) use `util_strdup`. The 2D array `char user_labels[MAX_USER_LABELS][MAX_NAME_LEN]` in `CodeGen` (plus `user_label_count`) is replaced with `Vec user_labels; /* const char * */`, removing the 64-label-per-function cap entirely. `MAX_USER_LABELS` is removed from `include/constants.h`. The only remaining `MAX_NAME_LEN` application is `StructField.name` in `type.h`. All 1479 tests pass (165 unit, 828 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-10 (remove static char arrays from parser.h):
 
