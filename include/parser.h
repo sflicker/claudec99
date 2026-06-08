@@ -9,8 +9,8 @@
 #include <stdio.h>
 
 typedef struct {
-    char name[MAX_NAME_LEN];
-    long value;
+    const char *name;
+    long        value;
 } EnumConst;
 
 typedef struct {

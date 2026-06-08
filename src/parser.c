@@ -787,9 +787,7 @@ static Type *parse_enum_specifier(Parser *parser) {
                 PARSER_ERROR(parser, "error: expected identifier in enumerator list, got '%s'\n",
                         parser->current.value);
             }
-            char ename[256];
-            strncpy(ename, parser->current.value, sizeof(ename) - 1);
-            ename[sizeof(ename) - 1] = '\0';
+            const char *ename = parser->current.value;
             parser->current = lexer_next_token(parser->lexer);
 
             for (size_t i = 0; i < parser->enum_consts.len; i++) {
@@ -820,8 +818,7 @@ static Type *parse_enum_specifier(Parser *parser) {
             }
 
             EnumConst new_ec;
-            strncpy(new_ec.name, ename, sizeof(new_ec.name) - 1);
-            new_ec.name[sizeof(new_ec.name) - 1] = '\0';
+            new_ec.name = ename;
             new_ec.value = next_val++;
             vec_push(&parser->enum_consts, &new_ec);
 
