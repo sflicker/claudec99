@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
-**Date:** 2026-06-07
-**Stage:** stage-95-08 (replace Token.value fixed buffer with pointer+length fields; lexer string arena)
+**Date:** 2026-06-08
+**Stage:** stage-95-12 (fix #if unary-operator overflow; dynamic switch label tables)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -135,6 +135,29 @@ Two bootstrap failures were surfaced and fixed.
 | 2 | C1 crashed: `internal error: strbuf_append_char: capacity overflow` for any string literal of 9 or more characters | `strbuf_append_char` checked `b->cap > (size_t)-1 / 2` to guard the doubling. C0 emits `cqo; idiv` (signed division) for `(size_t)-1 / 2` — the `is_unsigned` flag is not propagated through cast expressions — giving `(-1)/2 = 0`, so any non-zero `b->cap` (e.g. 8 after the first reallocation) triggered the false overflow. The identical pattern was fixed in `vec_push` during stage 95-05. | Rewrote all three affected checks (`strbuf_append_char`, `strbuf_null_terminate`, `strbuf_append_n`) to copy `b->cap` and `(size_t)-1` to local `size_t` variables before the division — matching the vec.c pattern that correctly generates unsigned `div`. (`src/strbuf.c`) |
 
 After both fixes all 1478 tests passed at C0, C1, and C2.
+
+## Issues found during stage 95-12 self-hosting test
+
+None. The preprocessor `eval_cond_unary` StrBuf conversion and the `SwitchCtx`
+dynamic label-table conversion produced no bootstrap failures. The new
+`(SwitchLabel *)vec_get(...)` accesses use the cast-of-pointer form (then `->`),
+not the `*(T **)expr` cast-of-deref pattern C0 cannot parse, so no split was
+needed. A dangling-pointer bug in the switch lifecycle (the post-body
+`vec_free(&ctx->entries)` reused a `ctx` pointer invalidated when nested
+switches reallocated `switch_stack`) was caught by the existing
+`test_switch_nested_20_deep` test during the GCC test run and fixed before the
+bootstrap by re-fetching the live top element via `vec_get`. All 1481 tests
+passed at C0, C1, and C2.
+
+## Result (stage 95-12)
+
+**Date:** 2026-06-08
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00951200.00778` | `GNU_13_3_0` | 1481/1481 |
+| C1 | `build/ccompiler-c1` | `00.02.00951200.00779` | `ClaudeC99_v00_02_00951200_00778` | 1481/1481 |
+| C2 | `build/ccompiler-c2` | `00.02.00951200.00780` | `ClaudeC99_v00_02_00951200_00779` | 1481/1481 |
 
 ## Issues found during stage 95-11 self-hosting test
 
