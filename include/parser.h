@@ -57,7 +57,7 @@ typedef struct {
  * Stage 25-01: full_type carries the complete type chain for function-pointer
  * globals so compatibility between successive declarations can be verified. */
 typedef struct {
-    char name[MAX_NAME_LEN];
+    const char *name;
     TypeKind kind;
     StorageClass storage_class;
     struct Type *full_type;

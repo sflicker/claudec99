@@ -226,8 +226,7 @@ static void parser_register_global(Parser *parser, const char *name,
         return;
     }
     GlobalObjSig new_g;
-    strncpy(new_g.name, name, 255);
-    new_g.name[255] = '\0';
+    new_g.name = name;
     new_g.kind = kind;
     new_g.storage_class = sc;
     new_g.full_type = full_type;
