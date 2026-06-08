@@ -111,8 +111,7 @@ static void parser_register_typedef(Parser *parser, const char *name,
     {
         TypedefEntry entry;
         memset(&entry, 0, sizeof(entry));
-        strncpy(entry.name, name, sizeof(entry.name) - 1);
-        entry.name[sizeof(entry.name) - 1] = '\0';
+        entry.name = name;
         entry.kind = kind;
         entry.full_type = full_type;
         entry.scope_depth = parser->scope_depth;

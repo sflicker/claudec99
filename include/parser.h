@@ -32,7 +32,7 @@ typedef struct {
 
 /* Stage 28-01/28-02: entry in the parser-level typedef table. */
 typedef struct {
-    char         name[MAX_NAME_LEN];
+    const char  *name;
     TypeKind     kind;       /* outermost kind; TYPE_POINTER for pointer typedefs */
     struct Type *full_type;  /* NULL for scalar typedefs; pointer chain for pointer typedefs */
     int          scope_depth; /* 0 = file scope, 1+ = block scope */
