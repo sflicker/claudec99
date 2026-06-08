@@ -34,4 +34,4 @@ the code changes for that conversions, update the checklist then repeat for the 
 After all the conversions update the fixed-capacity-inventory.md
 
 ## Tests
-add tests where appropriate to ensure test converage
+add tests where appropriate to ensure test coverage
