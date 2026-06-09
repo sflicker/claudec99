@@ -125,10 +125,10 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>
+ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
 ```
 
-- Default: writes `<name>.asm` next to the invocation directory and
+- Default: writes `<name>.asm` for each source file next to the invocation directory and
   prints `compiled: <source> -> <name>.asm`.
 - `--version`: prints the compiler version string and exits.
 - `--print-tokens`: dumps the token stream and exits.
@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 95-12 (fix #if unary overflow and dynamic switch labels):
+Through stage 96 (multi-file compilation and lifecycle management):
 
-> Stage 95-12 completes the final two fixed-capacity conversions: the preprocessor's `#if`/`#elif` unary-operator buffer (now StrBuf, replacing unbounded fixed `char ops[32]`) and the code generator's per-switch label capacity (now Vec, replacing parallel fixed arrays with a 256-case/default limit). The last unbounded fixed-capacity write in the tree (`eval_cond_unary` operator accumulation) is eliminated, and `MAX_SWITCH_LABELS` is removed from `include/constants.h`. One bug fixed during testing: dangling-pointer dereference in post-body switch cleanup when nested switches reallocate the stack, fixed by re-fetching the live top element before freeing. All 1481 tests pass (165 unit, 833 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 96 ships multi-file compilation and complete lifecycle resource management. The compiler now accepts multiple source files per invocation (`ccompiler file1.c file2.c ...`), with each file processed through an independent error-collection boundary. Per-file cleanup functions (`reset_error_state()`, `parser_free()`, `codegen_free()`) ensure all acquired resources are freed at the end of each file. The main driver now accumulates source files, processes sysroot once, and exits with a status reflecting overall success/failure across all input files. All 1483 tests pass (165 unit, 833 valid, 237 invalid, 84 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-11 (remove static char arrays from codegen.h):
 
@@ -574,7 +574,8 @@ Through stage 91 (address-of member lvalues):
 
 Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`; block-scope `static` arrays and structs;
 floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
-`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer.
+`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
+object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
 The authoritative grammar for the supported language is in
 [`docs/grammar.md`](docs/grammar.md). The full per-feature checklist is in
@@ -601,7 +602,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-12 all tests pass (165 unit, 833 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1481 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 96 all tests pass (165 unit, 833 valid, 237 invalid, 84 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1483 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

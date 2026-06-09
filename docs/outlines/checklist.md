@@ -1293,6 +1293,20 @@
   - [x] Lifecycle: `entries` is `vec_init`'d before the `SwitchCtx` is `vec_push`'d (move semantics) and `vec_free`'d before `vec_pop`; the live top element is re-fetched via `vec_get` after the body to avoid a dangling pointer when nested switches reallocate `switch_stack`
 - [x] No grammar, parser, or AST changes; switch and `#if` syntax/semantics unchanged
 
+## Stage 96 - Compile multiple source files per invocation
+
+- [x] `src/compiler.c`: `source_file` pointer replaced with a growable `source_files` array (doubling realloc pattern matching `-D`/`-I` lists); zero source files remains a usage error
+- [x] `compile_one_file()` static helper (`src/compiler.c`): extracts the per-file read→preprocess→lex→parse→codegen→write body; builds, uses, and fully tears down its own Lexer/Parser/CodeGen/AST and preprocessed buffer; returns 0 on success, 1 on failure
+- [x] `main` loop: calls `reset_error_state()` before each file, calls `compile_one_file()`, accumulates `overall_status`; continues on failure so all files are attempted
+- [x] `parser_free()` (`include/parser.h`, `src/parser.c`): `vec_free`s the seven Vecs the parser owns (`funcs`, `globals`, `typedefs`, `enum_consts`, `enum_tags`, `struct_tags`, `union_tags`); element strings stay in lexer-owned storage
+- [x] `codegen_free()` (`include/codegen.h`, `src/codegen.c`): frees all eight Vecs (`owned_strings`, `locals`, `globals`, `break_stack`, `switch_stack`, `user_labels`, `string_pool`, `local_statics`)
+  - [x] `Vec owned_strings` field added to `CodeGen`; `codegen_intern()` static helper routes all `util_strdup` calls through a single owned list, eliminating mixed-ownership on `GlobalVar.init_label` and `LocalStaticVar.label`
+  - [x] `user_labels` `vec_free`d as a Vec only (elements are non-owned AST/lexer pointers)
+- [x] `reset_error_state()` (`include/util.h`, `src/util.c`): zeroes `g_error_count`, `g_error_src_file/line/col`, `g_error_jmp_valid`; leaves `g_max_errors` and `g_warnings_are_errors` untouched
+- [x] Integration runner (`test/integration/run_tests.sh`): added `run_test.sh` support for custom per-directory tests (directories without `<name>.c` but with `run_test.sh` are run and counted)
+- [x] Tests: `test_multi_file_success` (single ccompiler invocation with two files that each define same-named static symbol; verifies independent per-file state and correct linked output) and `test_multi_file_error` (bad.c error reported, good.asm still produced, exit non-zero)
+- [x] No grammar, AST node, or language-semantic changes; single-file invocation byte-for-byte unchanged
+
 ---
 
 ## TODO
@@ -1389,6 +1403,7 @@
 
 ### Code Generation and Optimization
 - [ ] Multi-file compilation (compile multiple .c files to .o files)
+  - [x] Multiple source files accepted in a single `ccompiler` invocation — each compiled independently to its own `.asm` with full per-file teardown (Stage 96)
 - [ ] Object file emission (.o / ELF)
 - [ ] Linker invocation
 - [ ] Debug information (DWARF)
@@ -1414,6 +1429,7 @@
 
 ### Tooling and Infrastructure
 - [ ] Multi-file / split compilation mode
+  - [x] `ccompiler` now accepts one or more source files per invocation, compiling each independently (Stage 96)
 - [ ] -o output file option
 - [ ] -c compile-only (emit object file) option
 - [ ] -S assembly output option (currently the only mode)
