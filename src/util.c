@@ -107,6 +107,17 @@ void make_output_path(char *out, size_t out_size, const char *input_path) {
     strncat(out, ".asm", out_size - strlen(out) - 1);
 }
 
+/* Stage 96: reset per-file error state between files in a multi-file
+ * compilation pass.  Clears counts and positions; leaves configuration
+ * globals (g_max_errors, g_warnings_are_errors) untouched. */
+void reset_error_state(void) {
+    g_error_count     = 0;
+    g_error_src_file  = NULL;
+    g_error_src_line  = 0;
+    g_error_src_col   = 0;
+    g_error_jmp_valid = 0;
+}
+
 /* Stage 83: ISO C99 replacement for POSIX strdup. */
 char *util_strdup(const char *s) {
     if (!s) {

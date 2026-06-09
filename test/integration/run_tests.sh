@@ -33,7 +33,21 @@ total=0
 for test_dir in "$SCRIPT_DIR"/*/; do
     [ -d "$test_dir" ] || continue
     name=$(basename "$test_dir")
-    [ -f "$test_dir/${name}.c" ] || continue
+
+    # Stage 96: directories with run_test.sh but no <name>.c use a custom script.
+    if [ ! -f "$test_dir/${name}.c" ]; then
+        if [ -f "$test_dir/run_test.sh" ]; then
+            total=$((total + 1))
+            if bash "$test_dir/run_test.sh" >/dev/null 2>&1; then
+                echo "PASS  $name"
+                pass=$((pass + 1))
+            else
+                echo "FAIL  $name"
+                fail=$((fail + 1))
+            fi
+        fi
+        continue
+    fi
     total=$((total + 1))
 
     test_work="$WORK_DIR/$name"

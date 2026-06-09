@@ -179,9 +179,15 @@ typedef struct {
     int current_sret_offset;
     int struct_ret_scratch_base;
     int struct_ret_scratch_cursor;
+    /* Stage 96: all strings codegen generated via codegen_intern() —
+     * a single owned list so codegen_free() can release them all without
+     * per-field ownership tracking. */
+    Vec owned_strings;  /* char * */
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
 void codegen_translation_unit(CodeGen *cg, ASTNode *node);
+/* Stage 96: release all heap storage owned by the code generator. */
+void codegen_free(CodeGen *cg);
 
 #endif

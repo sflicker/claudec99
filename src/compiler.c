@@ -252,137 +252,21 @@ static void print_tokens_mode(const char *source, const char *source_file) {
     lexer_free(&lexer);
 }
 
-int main(int argc, char **argv) {
-    int print_ast = 0;
-    int print_tokens = 0;
-    int warnings_are_errors = 0;
-    const char *source_file = NULL;
-    const char *sysroot = NULL;
-    const char **defines = NULL;
-    int n_defines = 0;
-    int defines_cap = 0;
-    const char **include_dirs = NULL;
-    int n_include_dirs = 0;
-    int include_dirs_cap = 0;
-
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--version") == 0) {
-            printf("%s\n", get_version_string());
-            return 0;
-        } else if (strcmp(argv[i], "--print-ast") == 0) {
-            print_ast = 1;
-        } else if (strcmp(argv[i], "--print-tokens") == 0) {
-            print_tokens = 1;
-        } else if (strcmp(argv[i], "-Werror") == 0) {
-            warnings_are_errors = 1;
-            g_warnings_are_errors = 1;
-        } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
-            const char *val = argv[i] + 13;
-            char *end;
-            long n = strtol(val, &end, 10);
-            if (*end != '\0' || n < 0) {
-                fprintf(stderr, "error: --max-errors requires a non-negative integer\n");
-                free(defines); free(include_dirs);
-                return 1;
-            }
-            g_max_errors = (int)n;
-        } else if (strncmp(argv[i], "--sysroot=", 10) == 0) {
-            sysroot = argv[i] + 10;
-            if (*sysroot == '\0') {
-                fprintf(stderr, "error: --sysroot requires a non-empty directory\n");
-                free(defines); free(include_dirs);
-                return 1;
-            }
-        } else if (strncmp(argv[i], "-D", 2) == 0) {
-            if (n_defines == defines_cap) {
-                defines_cap = defines_cap * 2 + 8;
-                defines = realloc(defines, (size_t)defines_cap * sizeof(const char *));
-                if (!defines) {
-                    fprintf(stderr, "error: out of memory\n");
-                    return 1;
-                }
-            }
-            defines[n_defines++] = argv[i] + 2; /* skip "-D" prefix */
-        } else if (strncmp(argv[i], "-I", 2) == 0) {
-            const char *ipath;
-            if (argv[i][2] != '\0') {
-                ipath = argv[i] + 2; /* -Ipath form */
-            } else {
-                if (i + 1 >= argc) {
-                    fprintf(stderr, "error: -I requires an argument\n");
-                    free(defines); free(include_dirs);
-                    return 1;
-                }
-                ipath = argv[++i]; /* -I path form */
-            }
-            if (n_include_dirs == include_dirs_cap) {
-                include_dirs_cap = include_dirs_cap * 2 + 8;
-                include_dirs = realloc(include_dirs,
-                                       (size_t)include_dirs_cap * sizeof(const char *));
-                if (!include_dirs) {
-                    fprintf(stderr, "error: out of memory\n");
-                    free(defines);
-                    return 1;
-                }
-            }
-            include_dirs[n_include_dirs++] = ipath;
-        } else if (!source_file) {
-            source_file = argv[i];
-        } else {
-            fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
-            free(defines); free(include_dirs);
-            return 1;
-        }
-    }
-
-    if (!source_file) {
-        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c>\n");
-        free(defines); free(include_dirs);
-        return 1;
-    }
-
-    /* Apply sysroot: for each absolute -I path, prepend <sysroot>.
-     * The include path's own leading '/' serves as the separator, so
-     * --sysroot=root -I/include => root/include. */
-    char **sysroot_strs = NULL;
-    int n_sysroot_strs = 0;
-    if (sysroot && n_include_dirs > 0) {
-        size_t sroot_len = strlen(sysroot);
-        while (sroot_len > 1 && sysroot[sroot_len - 1] == '/') sroot_len--;
-
-        sysroot_strs = malloc((size_t)n_include_dirs * sizeof(char *));
-        if (!sysroot_strs) {
-            fprintf(stderr, "error: out of memory\n");
-            free(defines); free(include_dirs);
-            return 1;
-        }
-        for (int i = 0; i < n_include_dirs; i++) {
-            if (include_dirs[i][0] != '/') continue;
-            size_t idir_len = strlen(include_dirs[i]);
-            char *combined = malloc(sroot_len + idir_len + 1);
-            if (!combined) {
-                fprintf(stderr, "error: out of memory\n");
-                for (int j = 0; j < n_sysroot_strs; j++) free(sysroot_strs[j]);
-                free(sysroot_strs); free(defines); free(include_dirs);
-                return 1;
-            }
-            memcpy(combined, sysroot, sroot_len);
-            memcpy(combined + sroot_len, include_dirs[i], idir_len + 1);
-            sysroot_strs[n_sysroot_strs++] = combined;
-            include_dirs[i] = combined;
-        }
-    }
-
+/* Stage 96: compile one source file end-to-end.
+ * Builds, uses, and fully tears down its own Lexer/Parser/CodeGen/AST and
+ * the preprocessed buffer before returning.  Returns 0 on success, 1 on
+ * failure.  Does NOT free defines or include_dirs — those belong to main. */
+static int compile_one_file(const char *source_file,
+                            int print_ast, int print_tokens,
+                            int warnings_are_errors,
+                            const char **defines, int n_defines,
+                            const char **include_dirs, int n_include_dirs) {
     /* Read source and preprocess */
     char *source = read_file(source_file);
     char *preprocessed = preprocess_with_defines_and_includes(source, source_file,
                                                                defines, n_defines,
                                                                include_dirs, n_include_dirs);
     free(source);
-    for (int i = 0; i < n_sysroot_strs; i++) free(sysroot_strs[i]);
-    free(sysroot_strs);
-    free(defines);
-    free(include_dirs);
 
     if (print_tokens) {
         print_tokens_mode(preprocessed, source_file);
@@ -399,9 +283,11 @@ int main(int argc, char **argv) {
 
     ASTNode *ast = parse_translation_unit(&parser);
 
-    /* If parse errors were collected (max-errors > 1 or 0), exit now
+    /* If parse errors were collected (max-errors > 1 or 0), stop now
      * rather than attempting codegen on a partial AST. */
     if (g_error_count > 0) {
+        parser_free(&parser);
+        lexer_free(&lexer);
         ast_free(ast);
         free(preprocessed);
         return 1;
@@ -409,6 +295,8 @@ int main(int argc, char **argv) {
 
     if (print_ast) {
         ast_pretty_print(ast, 0);
+        parser_free(&parser);
+        lexer_free(&lexer);
         ast_free(ast);
         free(preprocessed);
         return 0;
@@ -421,8 +309,10 @@ int main(int argc, char **argv) {
     FILE *out = fopen(output_path, "w");
     if (!out) {
         fprintf(stderr, "error: could not create '%s'\n", output_path);
-        free(preprocessed);
+        parser_free(&parser);
+        lexer_free(&lexer);
         ast_free(ast);
+        free(preprocessed);
         return 1;
     }
 
@@ -430,11 +320,166 @@ int main(int argc, char **argv) {
     codegen_init(&cg, out);
     cg.warnings_are_errors = warnings_are_errors;
     codegen_translation_unit(&cg, ast);
+    codegen_free(&cg);
 
     fclose(out);
+    parser_free(&parser);
+    lexer_free(&lexer);
     ast_free(ast);
     free(preprocessed);
 
     printf("compiled: %s -> %s\n", source_file, output_path);
     return 0;
+}
+
+int main(int argc, char **argv) {
+    int print_ast = 0;
+    int print_tokens = 0;
+    int warnings_are_errors = 0;
+    const char *sysroot = NULL;
+    const char **defines = NULL;
+    int n_defines = 0;
+    int defines_cap = 0;
+    const char **include_dirs = NULL;
+    int n_include_dirs = 0;
+    int include_dirs_cap = 0;
+    const char **source_files = NULL;
+    int n_source_files = 0;
+    int source_files_cap = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--version") == 0) {
+            printf("%s\n", get_version_string());
+            free(defines); free(include_dirs); free(source_files);
+            return 0;
+        } else if (strcmp(argv[i], "--print-ast") == 0) {
+            print_ast = 1;
+        } else if (strcmp(argv[i], "--print-tokens") == 0) {
+            print_tokens = 1;
+        } else if (strcmp(argv[i], "-Werror") == 0) {
+            warnings_are_errors = 1;
+            g_warnings_are_errors = 1;
+        } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
+            const char *val = argv[i] + 13;
+            char *end;
+            long n = strtol(val, &end, 10);
+            if (*end != '\0' || n < 0) {
+                fprintf(stderr, "error: --max-errors requires a non-negative integer\n");
+                free(defines); free(include_dirs); free(source_files);
+                return 1;
+            }
+            g_max_errors = (int)n;
+        } else if (strncmp(argv[i], "--sysroot=", 10) == 0) {
+            sysroot = argv[i] + 10;
+            if (*sysroot == '\0') {
+                fprintf(stderr, "error: --sysroot requires a non-empty directory\n");
+                free(defines); free(include_dirs); free(source_files);
+                return 1;
+            }
+        } else if (strncmp(argv[i], "-D", 2) == 0) {
+            if (n_defines == defines_cap) {
+                defines_cap = defines_cap * 2 + 8;
+                defines = realloc(defines, (size_t)defines_cap * sizeof(const char *));
+                if (!defines) {
+                    fprintf(stderr, "error: out of memory\n");
+                    free(include_dirs); free(source_files);
+                    return 1;
+                }
+            }
+            defines[n_defines++] = argv[i] + 2; /* skip "-D" prefix */
+        } else if (strncmp(argv[i], "-I", 2) == 0) {
+            const char *ipath;
+            if (argv[i][2] != '\0') {
+                ipath = argv[i] + 2; /* -Ipath form */
+            } else {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "error: -I requires an argument\n");
+                    free(defines); free(include_dirs); free(source_files);
+                    return 1;
+                }
+                ipath = argv[++i]; /* -I path form */
+            }
+            if (n_include_dirs == include_dirs_cap) {
+                include_dirs_cap = include_dirs_cap * 2 + 8;
+                include_dirs = realloc(include_dirs,
+                                       (size_t)include_dirs_cap * sizeof(const char *));
+                if (!include_dirs) {
+                    fprintf(stderr, "error: out of memory\n");
+                    free(defines); free(source_files);
+                    return 1;
+                }
+            }
+            include_dirs[n_include_dirs++] = ipath;
+        } else {
+            /* Positional argument: a source file */
+            if (n_source_files == source_files_cap) {
+                source_files_cap = source_files_cap * 2 + 8;
+                source_files = realloc(source_files,
+                                       (size_t)source_files_cap * sizeof(const char *));
+                if (!source_files) {
+                    fprintf(stderr, "error: out of memory\n");
+                    free(defines); free(include_dirs);
+                    return 1;
+                }
+            }
+            source_files[n_source_files++] = argv[i];
+        }
+    }
+
+    if (n_source_files == 0) {
+        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
+        free(defines); free(include_dirs); free(source_files);
+        return 1;
+    }
+
+    /* Apply sysroot once: for each absolute -I path, prepend <sysroot>.
+     * The include path's own leading '/' serves as the separator, so
+     * --sysroot=root -I/include => root/include.
+     * These combined strings are shared across all file compilations. */
+    char **sysroot_strs = NULL;
+    int n_sysroot_strs = 0;
+    if (sysroot && n_include_dirs > 0) {
+        size_t sroot_len = strlen(sysroot);
+        while (sroot_len > 1 && sysroot[sroot_len - 1] == '/') sroot_len--;
+
+        sysroot_strs = malloc((size_t)n_include_dirs * sizeof(char *));
+        if (!sysroot_strs) {
+            fprintf(stderr, "error: out of memory\n");
+            free(defines); free(include_dirs); free(source_files);
+            return 1;
+        }
+        for (int i = 0; i < n_include_dirs; i++) {
+            if (include_dirs[i][0] != '/') continue;
+            size_t idir_len = strlen(include_dirs[i]);
+            char *combined = malloc(sroot_len + idir_len + 1);
+            if (!combined) {
+                fprintf(stderr, "error: out of memory\n");
+                for (int j = 0; j < n_sysroot_strs; j++) free(sysroot_strs[j]);
+                free(sysroot_strs); free(defines); free(include_dirs); free(source_files);
+                return 1;
+            }
+            memcpy(combined, sysroot, sroot_len);
+            memcpy(combined + sroot_len, include_dirs[i], idir_len + 1);
+            sysroot_strs[n_sysroot_strs++] = combined;
+            include_dirs[i] = combined;
+        }
+    }
+
+    /* Compile each source file independently; continue on failure. */
+    int overall_status = 0;
+    for (int f = 0; f < n_source_files; f++) {
+        reset_error_state();
+        if (compile_one_file(source_files[f], print_ast, print_tokens,
+                             warnings_are_errors,
+                             defines, n_defines,
+                             include_dirs, n_include_dirs) != 0)
+            overall_status = 1;
+    }
+
+    for (int i = 0; i < n_sysroot_strs; i++) free(sysroot_strs[i]);
+    free(sysroot_strs);
+    free(defines);
+    free(include_dirs);
+    free(source_files);
+    return overall_status;
 }

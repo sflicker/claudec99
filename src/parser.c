@@ -88,6 +88,18 @@ void parser_init(Parser *parser, Lexer *lexer) {
     vec_init(&parser->union_tags, sizeof(UnionTag));
 }
 
+/* Stage 96: release all Vec backing buffers owned by the parser.
+ * Element strings point into lexer-owned storage and are not freed. */
+void parser_free(Parser *parser) {
+    vec_free(&parser->funcs);
+    vec_free(&parser->globals);
+    vec_free(&parser->typedefs);
+    vec_free(&parser->enum_consts);
+    vec_free(&parser->enum_tags);
+    vec_free(&parser->struct_tags);
+    vec_free(&parser->union_tags);
+}
+
 /* Stage 28-01: typedef name table helpers. */
 static TypedefEntry *parser_find_typedef(Parser *parser, const char *name) {
     for (int i = parser->typedef_count - 1; i >= 0; i--) {

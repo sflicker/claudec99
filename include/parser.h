@@ -93,5 +93,8 @@ typedef struct {
 
 void parser_init(Parser *parser, Lexer *lexer);
 ASTNode *parse_translation_unit(Parser *parser);
+/* Stage 96: release the seven Vec backing buffers owned by the parser.
+ * Element strings remain in lexer-owned storage and are not freed here. */
+void parser_free(Parser *parser);
 
 #endif

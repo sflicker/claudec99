@@ -383,6 +383,33 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_sret_offset = 0;
     cg->struct_ret_scratch_base = 0;
     cg->struct_ret_scratch_cursor = 0;
+    vec_init(&cg->owned_strings, sizeof(char *));
+}
+
+/* Stage 96: strdup `s` into codegen-owned storage and return it.
+ * All strings routed through this helper are freed by codegen_free. */
+static const char *codegen_intern(CodeGen *cg, const char *s) {
+    char *copy = util_strdup(s);
+    vec_push(&cg->owned_strings, &copy);
+    return copy;
+}
+
+/* Stage 96: release all heap storage owned by the code generator. */
+void codegen_free(CodeGen *cg) {
+    size_t i;
+    for (i = 0; i < cg->owned_strings.len; i++) {
+        char **pp = (char **)vec_get(&cg->owned_strings, i);
+        char *s = *pp;
+        free(s);
+    }
+    vec_free(&cg->owned_strings);
+    vec_free(&cg->locals);
+    vec_free(&cg->globals);
+    vec_free(&cg->break_stack);
+    vec_free(&cg->switch_stack);
+    vec_free(&cg->user_labels);
+    vec_free(&cg->string_pool);
+    vec_free(&cg->local_statics);
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -3993,7 +4020,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                      cg->current_func, cg->label_count++);
             /* Register in the local variable table so scope and shadowing work.
              * Don't advance stack_offset — statics are not stack-allocated. */
-            const char *label_ptr = util_strdup(label);
+            const char *label_ptr = codegen_intern(cg, label);
             LocalVar new_static_lv;
             new_static_lv.name = node->value;
             new_static_lv.offset = 0;
@@ -5078,7 +5105,7 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             {
                 char tmp[64];
                 snprintf(tmp, sizeof(tmp), "Lstr%d", idx);
-                gv->init_label = util_strdup(tmp);
+                gv->init_label = codegen_intern(cg, tmp);
             }
             gv->is_label_init = 1;
             gv->is_initialized = 1;

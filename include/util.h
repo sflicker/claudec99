@@ -45,6 +45,11 @@ extern const char *g_error_src_file;
 extern int         g_error_src_line;
 extern int         g_error_src_col;
 
+/* Stage 96: reset per-file error state between files in multi-file
+ * compilation. Zeroes g_error_count, g_error_src_*, g_error_jmp_valid.
+ * Does NOT reset g_max_errors or g_warnings_are_errors. */
+void reset_error_state(void);
+
 CC_NORETURN CC_PRINTF(1, 2)
 void compile_error(const char *fmt, ...);
 
