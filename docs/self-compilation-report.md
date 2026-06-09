@@ -1,7 +1,7 @@
 # Self-Compilation Diagnostic Report
 
 **Date:** 2026-06-08
-**Stage:** stage-95-12 (fix #if unary-operator overflow; dynamic switch label tables)
+**Stage:** stage-96 (compile multiple source files per invocation)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
 **Method:** `./build.sh --mode=self-host` (added in stage 94):
 archives previous named binaries, saves GCC-built binary as `ccompiler-c0`,
@@ -135,6 +135,26 @@ Two bootstrap failures were surfaced and fixed.
 | 2 | C1 crashed: `internal error: strbuf_append_char: capacity overflow` for any string literal of 9 or more characters | `strbuf_append_char` checked `b->cap > (size_t)-1 / 2` to guard the doubling. C0 emits `cqo; idiv` (signed division) for `(size_t)-1 / 2` — the `is_unsigned` flag is not propagated through cast expressions — giving `(-1)/2 = 0`, so any non-zero `b->cap` (e.g. 8 after the first reallocation) triggered the false overflow. The identical pattern was fixed in `vec_push` during stage 95-05. | Rewrote all three affected checks (`strbuf_append_char`, `strbuf_null_terminate`, `strbuf_append_n`) to copy `b->cap` and `(size_t)-1` to local `size_t` variables before the division — matching the vec.c pattern that correctly generates unsigned `div`. (`src/strbuf.c`) |
 
 After both fixes all 1478 tests passed at C0, C1, and C2.
+
+## Issues found during stage 96 self-hosting test
+
+None. The `parser_free`/`codegen_free`/`reset_error_state` lifecycle additions
+and the `owned_strings` Vec in `CodeGen` produced no bootstrap failures.
+The `codegen_free` loop over `owned_strings` uses the two-statement
+`char **pp = ...; char *s = *pp;` split pattern (avoiding the
+`*(T **)vec_get(...)` form C0 cannot parse) as prescribed by the spec's
+bootstrap caveat, and passed C0 compilation without incident.
+All 1483 tests passed at C0, C1, and C2.
+
+## Result (stage 96)
+
+**Date:** 2026-06-08
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00960000.00786` | `GNU_13_3_0` | 1483/1483 |
+| C1 | `build/ccompiler-c1` | `00.02.00960000.00787` | `ClaudeC99_v00_02_00960000_00786` | 1483/1483 |
+| C2 | `build/ccompiler-c2` | `00.02.00960000.00788` | `ClaudeC99_v00_02_00960000_00787` | 1483/1483 |
 
 ## Issues found during stage 95-12 self-hosting test
 
