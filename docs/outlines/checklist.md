@@ -1286,6 +1286,13 @@
 - [x] `CodeGen.user_labels[MAX_USER_LABELS][MAX_NAME_LEN]` replaced with a `Vec` of pointers (64-label-per-function cap eliminated); `MAX_USER_LABELS` removed from `include/constants.h`
 - [x] At stage close `MAX_NAME_LEN` applied only to `StructField.name`; that field was later converted to `const char *` and the now-dead constant removed in commit `9fda93c`
 
+## Stage 95-12 - Fix #if unary overflow and dynamic switch labels
+
+- [x] `eval_cond_unary` (`src/preprocessor.c`): replaced the unchecked fixed `char ops[32]` with a dynamic `StrBuf`; leading `#if`/`#elif` unary operators (`! - + ~`) are appended as consumed and applied right-to-left, freed before return — removes the last unbounded fixed-capacity write in the tree (a >32-operator chain previously SIGSEGV'd)
+- [x] `SwitchCtx` (`include/codegen.h`): parallel fixed arrays `nodes[MAX_SWITCH_LABELS]`/`labels[MAX_SWITCH_LABELS]` + `count` replaced with an embedded `Vec entries` of a new `SwitchLabel{node,label}` pair struct; `count` becomes `entries.len`; the per-switch case/default cap (256) is removed and `MAX_SWITCH_LABELS` deleted from `include/constants.h`
+  - [x] Lifecycle: `entries` is `vec_init`'d before the `SwitchCtx` is `vec_push`'d (move semantics) and `vec_free`'d before `vec_pop`; the live top element is re-fetched via `vec_get` after the body to avoid a dangling pointer when nested switches reallocate `switch_stack`
+- [x] No grammar, parser, or AST changes; switch and `#if` syntax/semantics unchanged
+
 ---
 
 ## TODO

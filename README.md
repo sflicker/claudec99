@@ -89,8 +89,11 @@ structural refactor for limits that are generous in practice and overflow
 cleanly (a diagnostic, never silent corruption). These permanent limits are
 `FUNC_MAX_PARAMS` (16), `FUNC_TYPE_MAX_PARAMS` (16), `MAX_ARRAY_DIMS` (8),
 `MAX_INCLUDE_DEPTH` (64), and `MAX_COND_DEPTH` (64); they are flagged
-_(permanent)_ in the tables below. The remaining tabled limits are still
-candidates for conversion.
+_(permanent)_ in the tables below. As of stage 95-12 the dynamic-capacity
+work is complete: no candidates remain for conversion, there are no unchecked
+fixed-capacity writes anywhere, and the only other tabled entries are
+`AST_MAX_CHILDREN` (a doubling initial capacity, not a cap) and
+`MAX_CALL_LAYOUT_ITEMS` (a guarded local-stack bound).
 
 ### AST
 
@@ -111,12 +114,6 @@ candidates for conversion.
 | `FUNC_MAX_PARAMS` | 16 | _(permanent)_ Maximum number of parameters in a function declaration or definition. Embedded `FuncSig.param_types[]`. |
 | `MAX_ARRAY_DIMS` | 8 | _(permanent)_ Maximum number of array dimensions in a declarator (e.g. `int a[2][3][4]` is 3). Defined in `src/parser.c` rather than `constants.h`; sizes a local/embedded `array_dims[]`. |
 | `MAX_CALL_LAYOUT_ITEMS` | 24 | Maximum `ArgSlot` entries in a single call's argument layout (`FUNC_MAX_PARAMS` plus headroom for a hidden `sret` slot and variadic overhead). Local stack struct with a bounds-check guard. |
-
-### Code generator
-
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `MAX_SWITCH_LABELS` | 256 | Maximum number of `case`/`default` labels in a single `switch`. (Slated for dynamic conversion in stage 95-12; see `docs/stages/`.) |
 
 ### Preprocessor
 
@@ -225,6 +222,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 95-12 (fix #if unary overflow and dynamic switch labels):
+
+> Stage 95-12 completes the final two fixed-capacity conversions: the preprocessor's `#if`/`#elif` unary-operator buffer (now StrBuf, replacing unbounded fixed `char ops[32]`) and the code generator's per-switch label capacity (now Vec, replacing parallel fixed arrays with a 256-case/default limit). The last unbounded fixed-capacity write in the tree (`eval_cond_unary` operator accumulation) is eliminated, and `MAX_SWITCH_LABELS` is removed from `include/constants.h`. One bug fixed during testing: dangling-pointer dereference in post-body switch cleanup when nested switches reallocate the stack, fixed by re-fetching the live top element before freeing. All 1481 tests pass (165 unit, 833 valid, 237 invalid, 82 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
 
 Through stage 95-11 (remove static char arrays from codegen.h):
 
@@ -600,7 +601,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 95-11 all tests pass (165 unit, 831 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1479 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 95-12 all tests pass (165 unit, 833 valid, 237 invalid, 82 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1481 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
