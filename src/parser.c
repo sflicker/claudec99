@@ -742,6 +742,8 @@ static Type *parse_union_specifier(Parser *parser) {
     }
 }
 
+static long eval_const_expr(Parser *parser, const char *context);
+
 /*
  * <enum_specifier> ::= "enum" <identifier> "{" <enumerator_list> "}"
  *                    | "enum"             "{" <enumerator_list> "}"
@@ -809,22 +811,7 @@ static Type *parse_enum_specifier(Parser *parser) {
 
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
-                if (parser->current.type == TOKEN_INT_LITERAL) {
-                    next_val = parser->current.long_value;
-                    parser->current = lexer_next_token(parser->lexer);
-                } else if (parser->current.type == TOKEN_CHAR_LITERAL) {
-                    next_val = (long)(unsigned char)parser->current.value[0];
-                    parser->current = lexer_next_token(parser->lexer);
-                } else {
-                    PARSER_ERROR(parser, 
-                            "error: enumerator value must be an integer or character literal\n");
-                }
-                /* Reject expressions: only a bare literal is accepted. */
-                if (parser->current.type != TOKEN_COMMA &&
-                    parser->current.type != TOKEN_RBRACE) {
-                    PARSER_ERROR(parser, 
-                            "error: enumerator value must be an integer or character literal\n");
-                }
+                next_val = eval_const_expr(parser, "enumerator value");
             }
 
             EnumConst new_ec;
@@ -847,13 +834,17 @@ static Type *parse_enum_specifier(Parser *parser) {
         int found = 0;
         for (size_t i = 0; i < parser->enum_tags.len; i++) {
             EnumTag *t = (EnumTag *)vec_get(&parser->enum_tags, i);
-            if (strcmp(t->tag, tag) == 0 && t->is_defined) {
+            if (strcmp(t->tag, tag) == 0) {
                 found = 1;
                 break;
             }
         }
         if (!found) {
-            PARSER_ERROR(parser, "error: 'enum %s' is not defined\n", tag);
+            /* Tag not found and no body — create a forward-declaration entry. */
+            EnumTag new_et;
+            new_et.tag        = tag;
+            new_et.is_defined = 0;
+            vec_push(&parser->enum_tags, &new_et);
         }
     }
 
@@ -1344,7 +1335,6 @@ static Type *build_fp_type(Type *base_type, const ParsedDeclarator *d) {
 static ASTNode *parse_expression(Parser *parser);
 static ASTNode *parse_assignment_expression(Parser *parser);
 static ASTNode *parse_initializer(Parser *parser);
-static long eval_case_const_expr(Parser *parser);
 
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
@@ -2110,7 +2100,7 @@ static ASTNode *parse_initializer_element(Parser *parser) {
         return node;
     } else if (parser->current.type == TOKEN_LBRACKET) {
         parser->current = lexer_next_token(parser->lexer);
-        long index = eval_case_const_expr(parser);
+        long index = eval_const_expr(parser, "array designator index");
         if (index < 0) {
             PARSER_ERROR(parser,
                 "error: array designator index must be non-negative\n");
@@ -2573,17 +2563,24 @@ static ASTNode *parse_for_statement(Parser *parser) {
 }
 
 /*
- * Stage 77: Compile-time case constant expression evaluator.
+ * Stage 99: Compile-time integer constant expression evaluator.
  *
- * Grammar:
- *   case_expr    := case_additive
- *   case_additive := case_unary ( ('+' | '-') case_unary )*
- *   case_unary   := ('+' | '-') case_unary | case_primary
- *   case_primary := INT_LITERAL | CHAR_LITERAL | enum-constant-IDENTIFIER
+ * Grammar (loosest to tightest):
+ *   const_expr            := const_bitwise_or
+ *   const_bitwise_or      := const_bitwise_xor ( '|' const_bitwise_xor )*
+ *   const_bitwise_xor     := const_bitwise_and ( '^' const_bitwise_and )*
+ *   const_bitwise_and     := const_additive    ( '&' const_additive    )*
+ *   const_additive        := const_shift       ( ('+' | '-') const_shift )*
+ *   const_shift           := const_mult        ( ('<<' | '>>') const_mult )*
+ *   const_mult            := const_unary       ( ('*' | '/' | '%') const_unary )*
+ *   const_unary           := ('+' | '-' | '~' | '!') const_unary | const_primary
+ *   const_primary         := INT_LITERAL | CHAR_LITERAL | enum-const-IDENTIFIER
+ *                          | '(' const_expr ')'
  *
+ * context is "case label expression", "enumerator value", or "array designator index".
  * Calls PARSER_ERROR (does not return) if a non-constant operand is found.
  */
-static long eval_case_const_primary(Parser *parser) {
+static long eval_const_primary(Parser *parser, const char *context) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
         long v = parser->current.long_value;
         parser->current = lexer_next_token(parser->lexer);
@@ -2604,34 +2601,114 @@ static long eval_case_const_primary(Parser *parser) {
             }
         }
         PARSER_ERROR(parser,
-            "error: case label expression is not an integer constant expression\n");
+            "error: %s is not an integer constant expression\n", context);
+    }
+    if (parser->current.type == TOKEN_LPAREN) {
+        parser->current = lexer_next_token(parser->lexer);
+        long v = eval_const_expr(parser, context);
+        parser_expect(parser, TOKEN_RPAREN);
+        return v;
     }
     PARSER_ERROR(parser,
-        "error: case label expression is not an integer constant expression\n");
+        "error: %s is not an integer constant expression\n", context);
 }
 
-static long eval_case_const_unary(Parser *parser) {
+static long eval_const_unary(Parser *parser, const char *context) {
     if (parser->current.type == TOKEN_MINUS) {
         parser->current = lexer_next_token(parser->lexer);
-        return -eval_case_const_unary(parser);
+        return -eval_const_unary(parser, context);
     }
     if (parser->current.type == TOKEN_PLUS) {
         parser->current = lexer_next_token(parser->lexer);
-        return eval_case_const_unary(parser);
+        return eval_const_unary(parser, context);
     }
-    return eval_case_const_primary(parser);
+    if (parser->current.type == TOKEN_TILDE) {
+        parser->current = lexer_next_token(parser->lexer);
+        return ~eval_const_unary(parser, context);
+    }
+    if (parser->current.type == TOKEN_BANG) {
+        parser->current = lexer_next_token(parser->lexer);
+        return !eval_const_unary(parser, context);
+    }
+    return eval_const_primary(parser, context);
 }
 
-static long eval_case_const_expr(Parser *parser) {
-    long val = eval_case_const_unary(parser);
-    while (parser->current.type == TOKEN_PLUS || parser->current.type == TOKEN_MINUS) {
+static long eval_const_multiplicative(Parser *parser, const char *context) {
+    long val = eval_const_unary(parser, context);
+    while (parser->current.type == TOKEN_STAR ||
+           parser->current.type == TOKEN_SLASH ||
+           parser->current.type == TOKEN_PERCENT) {
         int op = parser->current.type;
         parser->current = lexer_next_token(parser->lexer);
-        long rhs = eval_case_const_unary(parser);
-        if (op == TOKEN_PLUS) val += rhs;
-        else val -= rhs;
+        long rhs = eval_const_unary(parser, context);
+        if (op == TOKEN_STAR) {
+            val *= rhs;
+        } else {
+            if (rhs == 0)
+                PARSER_ERROR(parser,
+                    "error: division by zero in constant expression\n");
+            if (op == TOKEN_SLASH) val /= rhs;
+            else                   val %= rhs;
+        }
     }
     return val;
+}
+
+static long eval_const_shift(Parser *parser, const char *context) {
+    long val = eval_const_multiplicative(parser, context);
+    while (parser->current.type == TOKEN_LEFT_SHIFT ||
+           parser->current.type == TOKEN_RIGHT_SHIFT) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_multiplicative(parser, context);
+        if (op == TOKEN_LEFT_SHIFT) val <<= rhs;
+        else                        val >>= rhs;
+    }
+    return val;
+}
+
+static long eval_const_additive(Parser *parser, const char *context) {
+    long val = eval_const_shift(parser, context);
+    while (parser->current.type == TOKEN_PLUS ||
+           parser->current.type == TOKEN_MINUS) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_shift(parser, context);
+        if (op == TOKEN_PLUS) val += rhs;
+        else                  val -= rhs;
+    }
+    return val;
+}
+
+static long eval_const_bitwise_and(Parser *parser, const char *context) {
+    long val = eval_const_additive(parser, context);
+    while (parser->current.type == TOKEN_AMPERSAND) {
+        parser->current = lexer_next_token(parser->lexer);
+        val &= eval_const_additive(parser, context);
+    }
+    return val;
+}
+
+static long eval_const_bitwise_xor(Parser *parser, const char *context) {
+    long val = eval_const_bitwise_and(parser, context);
+    while (parser->current.type == TOKEN_CARET) {
+        parser->current = lexer_next_token(parser->lexer);
+        val ^= eval_const_bitwise_and(parser, context);
+    }
+    return val;
+}
+
+static long eval_const_bitwise_or(Parser *parser, const char *context) {
+    long val = eval_const_bitwise_xor(parser, context);
+    while (parser->current.type == TOKEN_PIPE) {
+        parser->current = lexer_next_token(parser->lexer);
+        val |= eval_const_bitwise_xor(parser, context);
+    }
+    return val;
+}
+
+static long eval_const_expr(Parser *parser, const char *context) {
+    return eval_const_bitwise_or(parser, context);
 }
 
 /*
@@ -3031,7 +3108,7 @@ static ASTNode *parse_statement(Parser *parser) {
             PARSER_ERROR(parser, "error: 'case' label outside of switch\n");
         }
         parser->current = lexer_next_token(parser->lexer);
-        long case_val = eval_case_const_expr(parser);
+        long case_val = eval_const_expr(parser, "case label expression");
         parser_expect(parser, TOKEN_COLON);
         char case_buf[32];
         snprintf(case_buf, sizeof(case_buf), "%ld", case_val);

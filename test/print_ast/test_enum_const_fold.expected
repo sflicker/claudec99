@@ -1,0 +1,10 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int p
+        IntLiteral: 4
+      ReturnStmt:
+        Binary: SUBTRACT
+          VariableExpression: p
+          IntLiteral: 4
