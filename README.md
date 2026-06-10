@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 96 (multi-file compilation and lifecycle management):
+Through stage 97 (designated initializers):
 
-> Stage 96 ships multi-file compilation and complete lifecycle resource management. The compiler now accepts multiple source files per invocation (`ccompiler file1.c file2.c ...`), with each file processed through an independent error-collection boundary. Per-file cleanup functions (`reset_error_state()`, `parser_free()`, `codegen_free()`) ensure all acquired resources are freed at the end of each file. The main driver now accumulates source files, processes sysroot once, and exits with a status reflecting overall success/failure across all input files. All 1483 tests pass (165 unit, 833 valid, 237 invalid, 84 integration, 43 print_ast, 100 print_tokens, 21 print_asm).
+> Stage 97 ships C99 designated initializers (`.member = value` for struct fields and `[index] = value` for array elements), enabling sparse and out-of-order field/element initialization with automatic zero-fill for skipped positions. The implementation adds `AST_DESIGNATED_INIT` node type, extends the parser to dispatch on designator syntax, and rewrites four codegen paths (local struct, local array, global struct, global array) with cursor or slots-mapping patterns. Chained designators (`.a.b`, `.arr[2]`) are detected and rejected. All 1501 tests pass (843 valid, 242 invalid, 85 integration, 45 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
 
 Through stage 95-11 (remove static char arrays from codegen.h):
 
@@ -602,7 +602,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 96 all tests pass (165 unit, 833 valid, 237 invalid, 84 integration, 43 print-AST, 100 print-tokens, 21 print-asm; 1483 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 97 all tests pass (843 valid, 242 invalid, 85 integration, 45 print-AST, 100 print-tokens, 21 print-asm; 1501 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

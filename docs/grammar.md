@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 91)
+# Claude C99 Grammar (Current through Stage 97)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -50,7 +50,13 @@
 <initializer> ::= <assignment_expression>
                 | "{" <initializer_list> [ "," ] "}"
 
-<initializer_list> ::= <initializer> { "," <initializer> }
+<initializer_list> ::= <initializer_element> { "," <initializer_element> }
+
+<initializer_element> ::= <designator> "=" <initializer>
+                       | <initializer>
+
+<designator> ::= "." TOKEN_IDENTIFIER
+              | "[" <constant_expression> "]"
 
 <declarator> ::= { "*" } <direct_declarator>
 

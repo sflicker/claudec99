@@ -1307,6 +1307,39 @@
 - [x] Tests: `test_multi_file_success` (single ccompiler invocation with two files that each define same-named static symbol; verifies independent per-file state and correct linked output) and `test_multi_file_error` (bad.c error reported, good.asm still produced, exit non-zero)
 - [x] No grammar, AST node, or language-semantic changes; single-file invocation byte-for-byte unchanged
 
+## Stage 97 - Designated Initializers
+
+- [x] `AST_DESIGNATED_INIT` node type added to `ASTNodeType` enum (`include/ast.h`)
+  - [x] `node->value != NULL` → member designator (field name string); `node->value == NULL` → array index designator (index in `node->byte_length`); `child_count` always 1
+- [x] `parse_initializer_element()` static helper (`src/parser.c`): detects `.IDENT =` (member designator) and `[const_expr] =` (array index designator) at the head of each initializer-list element
+  - [x] `.IDENT` designator: consumes `.`, reads identifier, checks for chained designator (emits "chained designators not yet supported" if another `.` or `[` follows), then consumes `=`
+  - [x] `[expr]` designator: consumes `[`, calls `eval_case_const_expr` for constant index, rejects negative index, consumes `]`, checks for chaining, then consumes `=`
+  - [x] `eval_case_const_expr` forward-declared before `parse_initializer` to allow use in `parse_initializer_element`
+  - [x] Non-designator path falls through to `parse_initializer` unchanged
+- [x] `parse_initializer` updated to call `parse_initializer_element` for each list element instead of calling `parse_initializer` directly
+- [x] `ast_pretty_printer.c`: `AST_DESIGNATED_INIT` prints `DESIGNATED_INIT(.name)` (member) or `DESIGNATED_INIT([N])` (index)
+- [x] `emit_local_struct_init` rewritten with current-field cursor (`src/codegen.c`)
+  - [x] Member designator: field looked up by name; `cur_field` set to found index; error if not found
+  - [x] Array index designator in struct context: `compile_error` "array index designator in struct initializer"
+  - [x] Non-designator: uses sequential `cur_field`; `cur_field` incremented after each element
+- [x] Local array init in `codegen_statement` rewritten with two-phase approach (`src/codegen.c`)
+  - [x] Phase 1: zero-fill entire array unconditionally (byte-by-byte `mov byte [rbp - N], 0`)
+  - [x] Phase 2: walk list with `cur` index cursor; `AST_DESIGNATED_INIT` (index) sets `cur`; member designator in array context: `compile_error`; plain element advances `cur` sequentially
+  - [x] Out-of-bounds index: `compile_error` "array designator index %d out of bounds"
+- [x] `emit_global_struct` rewritten to use slots array (`src/codegen.c`)
+  - [x] `ASTNode *slots[MAX_STRUCT_FIELDS_DESIGNATED]` (fixed 64, no VLA); `slots[]` initialized to `NULL`
+  - [x] Walk init list: member designator finds field by name and assigns to `slots[idx]`; plain element assigns to `slots[cur++]`
+  - [x] Field-emission loop iterates fields in declared order; `slots[i] != NULL` emits the initializer, `NULL` emits zero bytes
+  - [x] `compile_error` if `st->field_count > MAX_STRUCT_FIELDS_DESIGNATED`
+- [x] Global array init in `codegen_emit_data` extended with slots approach (`src/codegen.c`)
+  - [x] `ASTNode *slots[MAX_ARRAY_ELEMS_DESIGNATED]` (fixed 1024, no VLA); `slots[]` initialized to `NULL`
+  - [x] Walk init list: `AST_DESIGNATED_INIT` (index) sets `slots[idx]`; member designator: `compile_error`; plain element assigns `slots[cur++]`
+  - [x] Emit loop iterates `0..length-1`; `slots[i] != NULL` uses existing element dispatch; `NULL` emits zero
+  - [x] `compile_error` if `arr_len > MAX_ARRAY_ELEMS_DESIGNATED`
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"00970000"`
+- [x] Tests: 10 valid (local struct basic/partial/mixed, local array basic/advance/reorder, global struct, global sparse array, array of structs, char-literal index), 5 invalid (unknown member, array index in struct, member in array, index out of bounds, chained designators), 2 print_ast (member designator, index designator), 1 integration (multi-file with designated global struct + global array)
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1501 tests pass at all three stages
+
 ---
 
 ## TODO
@@ -1344,8 +1377,8 @@
 - [ ] Incomplete array types in extern declarations
 
 ### Initializers
-- [ ] Designated initializers for arrays: [idx] = value
-- [ ] Designated initializers for structs: .member = value
+- [x] Designated initializers for arrays: [idx] = value (Stage 97)
+- [x] Designated initializers for structs: .member = value (Stage 97)
 - [ ] Zero-initialization of static-duration objects (global structs/arrays)
 
 ### Expressions
