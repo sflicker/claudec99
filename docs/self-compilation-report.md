@@ -146,6 +146,20 @@ The `codegen_free` loop over `owned_strings` uses the two-statement
 bootstrap caveat, and passed C0 compilation without incident.
 All 1483 tests passed at C0, C1, and C2.
 
+## Issues found during stage 97 self-hosting test
+
+None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
+
+## Result (stage 97)
+
+**Date:** 2026-06-10
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00970000.00792` | `GNU_13_3_0` | 1501/1501 |
+| C1 | `build/ccompiler-c1` | `00.02.00970000.00793` | `ClaudeC99_v00_02_00970000_00792` | 1501/1501 |
+| C2 | `build/ccompiler-c2` | `00.02.00970000.00794` | `ClaudeC99_v00_02_00970000_00793` | 1501/1501 |
+
 ## Result (stage 96)
 
 **Date:** 2026-06-08
