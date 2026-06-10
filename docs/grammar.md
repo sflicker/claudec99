@@ -189,7 +189,8 @@
 
 <multiplicative_expression> ::= <cast_expression> { ("*" | "/" | "%") <cast_expression> }
 
-<cast_expression> ::= "(" <type_name> ")" <cast_expression>
+<cast_expression> ::= "(" <type_name> ")" "{" <initializer_list> [ "," ] "}"
+                    | "(" <type_name> ")" <cast_expression>
                     | <unary_expression>
 
 <unary_expression> ::= <sizeof_expression>

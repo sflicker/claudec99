@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 98 (compound literals):
+
+> Stage 98 ships C99 compound literals — `(type-name){ initializer-list }` creates an unnamed temporary object on the stack that is a modifiable lvalue. Struct/union compound literals (e.g. `(struct Point){ .x = 1, .y = 2 }`), array compound literals with explicit or inferred size (e.g. `(int[]){ 1, 2, 3 }`), and scalar compound literals (e.g. `(int){ 7 }`) are all supported. Compound literals can be passed as function arguments, assigned to variables, used as postfix bases for `.field`/`[index]`, and have their address taken with `&`. A two-phase pre-scan (`scan_expr_compound_literals`) assigns each literal an rbp-relative stack slot before the prologue is emitted. Compound literals at file scope are diagnosed. All 1521 tests pass (855 valid, 246 invalid, 86 integration, 48 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 97 (designated initializers):
 
 > Stage 97 ships C99 designated initializers (`.member = value` for struct fields and `[index] = value` for array elements), enabling sparse and out-of-order field/element initialization with automatic zero-fill for skipped positions. The implementation adds `AST_DESIGNATED_INIT` node type, extends the parser to dispatch on designator syntax, and rewrites four codegen paths (local struct, local array, global struct, global array) with cursor or slots-mapping patterns. Chained designators (`.a.b`, `.arr[2]`) are detected and rejected. All 1501 tests pass (843 valid, 242 invalid, 85 integration, 45 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
@@ -574,7 +578,7 @@ Through stage 91 (address-of member lvalues):
 
 Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`; block-scope `static` arrays and structs;
 floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
-`#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
+compound literals at file scope; `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
 The authoritative grammar for the supported language is in
@@ -602,7 +606,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 97 all tests pass (843 valid, 242 invalid, 85 integration, 45 print-AST, 100 print-tokens, 21 print-asm; 1501 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 98 all tests pass (855 valid, 246 invalid, 86 integration, 48 print-AST, 100 print-tokens, 21 print-asm; 1521 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

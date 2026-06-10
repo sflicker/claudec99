@@ -1,0 +1,12 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        ArrayIndex:
+          COMPOUND_LITERAL(int[4])
+            InitializerList:
+              IntLiteral: 1
+              IntLiteral: 2
+              IntLiteral: 0
+              IntLiteral: 0
+          IntLiteral: 0

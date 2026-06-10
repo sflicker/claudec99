@@ -1,0 +1,8 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int x
+        COMPOUND_LITERAL(int)
+          IntLiteral: 42
+      ReturnStmt:
+        VariableExpression: x

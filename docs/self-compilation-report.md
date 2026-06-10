@@ -150,6 +150,20 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 98 self-hosting test
+
+None. The compound literal implementation compiled cleanly under C0. The compound literal stack-offset pre-scan and codegen use the standard `for`-over-children pattern (no fixed-size temp arrays, no VLAs). The `parse_postfix` compound literal detection uses an `int saved_pos`/`Token saved_token` checkpoint to restore the lexer when `(type-name)` is not followed by `{`. All 1521 tests passed at C0, C1, and C2.
+
+## Result (stage 98)
+
+**Date:** 2026-06-10
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00980000.00799` | `GNU_13_3_0` | 1521/1521 |
+| C1 | `build/ccompiler-c1` | `00.02.00980000.00800` | `ClaudeC99_v00_02_00980000_00799` | 1521/1521 |
+| C2 | `build/ccompiler-c2` | `00.02.00980000.00801` | `ClaudeC99_v00_02_00980000_00800` | 1521/1521 |
+
 ## Result (stage 97)
 
 **Date:** 2026-06-10

@@ -1340,6 +1340,44 @@
 - [x] Tests: 10 valid (local struct basic/partial/mixed, local array basic/advance/reorder, global struct, global sparse array, array of structs, char-literal index), 5 invalid (unknown member, array index in struct, member in array, index out of bounds, chained designators), 2 print_ast (member designator, index designator), 1 integration (multi-file with designated global struct + global array)
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1501 tests pass at all three stages
 
+## Stage 98 - Compound Literals
+
+- [x] `AST_COMPOUND_LITERAL` node type added to `ASTNodeType` enum (`include/ast.h`), after `AST_DESIGNATED_INIT`
+  - [x] `node->decl_type` = base type kind; `node->full_type` = struct/union/array/pointer `Type*`, NULL for plain scalars
+  - [x] `node->byte_length` = 0 at parse time; pre-scan overwrites with rbp-relative stack offset
+  - [x] `node->value` = pre-formatted type label ("int", "struct Point", "int[4]") stored in lexer pool via `lexer_store_bytes`
+  - [x] `node->children[0]` = `AST_INITIALIZER_LIST` for aggregate types; plain `parse_assignment_expression` result for scalar
+- [x] `ast_pretty_printer.c`: `AST_COMPOUND_LITERAL` prints `COMPOUND_LITERAL(type-label)` followed by the initializer child
+- [x] `parse_postfix_suffixes` extracted from `parse_postfix` as a standalone static helper; `parse_postfix` now calls it
+- [x] `build_compound_literal` static helper (`src/parser.c`): consumes `{` initializer `}` and builds `AST_COMPOUND_LITERAL` node
+  - [x] Rejects void and function types with `"error: invalid type for compound literal"`
+  - [x] Struct/union: delegates to `parse_initializer`; sets `decl_type = TYPE_STRUCT`/`TYPE_UNION`, `full_type = struct Type*`
+  - [x] Array with explicit length N: delegates to `parse_initializer`; `full_type = type_array(elem, N)`
+  - [x] Array with omitted first dimension (`[]`): delegates to `parse_initializer`, then calls `infer_compound_literal_array_length` and rebuilds `full_type = type_array(elem, inferred_length)`
+  - [x] Scalar: manually consumes `{`, calls `parse_assignment_expression`, allows trailing comma, consumes `}`
+- [x] `infer_compound_literal_array_length` static helper: walks child list, tracks cursor, returns `max(highest [N] designator + 1, plain_count)`
+- [x] `parse_cast` updated: after `(type-name)`, if next token is `{` → delegate to `build_compound_literal` + `parse_postfix_suffixes`; else → regular cast
+  - [x] `TOKEN_STRUCT` and `TOKEN_UNION` added to the type-start check in `parse_cast`
+  - [x] After casting path: `sizeof(int[])` with `length == 0` raises `"error: sizeof applied to incomplete array type"`
+  - [x] Compound literal `(type-name){` with `length == 0` array is inferred; cast `(type-name)expr` with `length == 0` raises `"error: array type in cast has omitted size"`
+- [x] `parse_postfix` updated: tries compound literal detection (`(type-name){`) before falling back to `parse_primary`; restores lexer state if `{` not found
+- [x] `parse_unary` updated: `&` operand check allows `AST_COMPOUND_LITERAL` as a valid lvalue
+- [x] `parse_type_name` updated: `[]` (omitted first dimension) accepted for `dim_count == 0` in array-suffix loop (new for stage 98)
+- [x] Global initializer: `parse_primary` → `parse_assignment_expression` so compound literals are parsed before the constant-only check; `AST_COMPOUND_LITERAL` triggers `"error: compound literals at file scope are not yet supported"` (Stage 98)
+- [x] `compute_compound_literal_bytes` static helper (`src/codegen.c`): conservative upper-bound walk for stack-frame sizing
+- [x] `scan_expr_compound_literals` static helper: recursive walk to assign `node->byte_length` offsets to every `AST_COMPOUND_LITERAL` in an expression tree
+- [x] Frame-size pre-scan calls `scan_expr_compound_literals(cg, body)` after computing param/decl bytes; `compound_lit_bytes` added to `stack_size`
+- [x] `codegen_expression` case `AST_COMPOUND_LITERAL`: file-scope guard, then struct/union path (zero-fill + `emit_local_struct_init` + `lea rax`), array path (zero-fill + cursor-based element init + `lea rax`), scalar path (eval init + store)
+  - [x] Union: non-first-member designator → `"error: union compound literal with non-first member designator not yet supported"`
+  - [x] Array: out-of-bounds designator → `"error: array designator index %d out of bounds"`; too many initializers → `"error: too many initializers in compound literal"`
+- [x] `emit_struct_addr` case `AST_COMPOUND_LITERAL`: calls `codegen_expression`, returns `node->full_type->base` (the struct type)
+- [x] `emit_member_addr` case `AST_COMPOUND_LITERAL`: calls `codegen_expression`, adds field offset, returns field; enables `(T){...}.field`
+- [x] `emit_array_index_addr` case `AST_COMPOUND_LITERAL`: calls `codegen_expression`, computes scaled index; enables `(T[]){...}[i]`
+- [x] `AST_ADDR_OF` codegen: compound literal operand path calls `codegen_expression`, emits `lea rax, [rbp - offset]` for scalar, uses address already in rax for struct/array
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"00980000"`
+- [x] Tests: 12 valid (struct arg, struct assign, array explicit, array omitted size, array designator, postfix member, postfix subscript, addr-of scalar, scalar, zero-fill, dot-product, char array), 4 invalid (file scope, void type, too many initializers, array index oob), 3 print_ast (struct, array, scalar), 1 integration (`test_compound_literal_multifile`)
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1521 tests pass at all three stages
+
 ---
 
 ## TODO
@@ -1359,7 +1397,7 @@
 - [x] Multidimensional arrays (Stage 86; up to 8 dimensions)
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
-- [ ] Compound literals: (Type){ ... }
+- [x] Compound literals: `(Type){ ... }` (Stage 98; file-scope and designated union non-first-member not yet supported)
 - [x] volatile qualifier (Stage 82-04; parsed and tracked, no codegen effect yet)
 - [ ] restrict qualifier on pointers
 - [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)

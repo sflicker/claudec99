@@ -1,0 +1,14 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int y
+        MemberAccess: y
+          COMPOUND_LITERAL(struct Point)
+            InitializerList:
+              DESIGNATED_INIT(.x)
+                IntLiteral: 1
+              DESIGNATED_INIT(.y)
+                IntLiteral: 2
+      ReturnStmt:
+        VariableExpression: y
