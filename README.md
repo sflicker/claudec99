@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 99 (typedef enum completion):
+
+> Stage 99 completes the `typedef enum` feature with full support for integer constant-expression enumerator values and forward-declared enum tags. Enumerators now accept arbitrary constant expressions (arithmetic, bitwise, shift operators, parentheses, and references to previously-defined enum constants) instead of just literals. The pattern `typedef enum Status Status;` before the definition now works, enabling idiomatic C99 code. Internally, the three single-operator `eval_case_const_*` helpers were replaced with a unified nine-level constant-expression evaluator (primary → unary → multiplicative → shift → additive → bitwise-and/xor/or) matching C99 precedence rules. All 1531 tests pass (864 valid, 246 invalid, 86 integration, 49 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 98 (compound literals):
 
 > Stage 98 ships C99 compound literals — `(type-name){ initializer-list }` creates an unnamed temporary object on the stack that is a modifiable lvalue. Struct/union compound literals (e.g. `(struct Point){ .x = 1, .y = 2 }`), array compound literals with explicit or inferred size (e.g. `(int[]){ 1, 2, 3 }`), and scalar compound literals (e.g. `(int){ 7 }`) are all supported. Compound literals can be passed as function arguments, assigned to variables, used as postfix bases for `.field`/`[index]`, and have their address taken with `&`. A two-phase pre-scan (`scan_expr_compound_literals`) assigns each literal an rbp-relative stack slot before the prologue is emitted. Compound literals at file scope are diagnosed. All 1521 tests pass (855 valid, 246 invalid, 86 integration, 48 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
@@ -386,8 +390,10 @@ Through stage 91 (address-of member lvalues):
   declarations (e.g., `typedef struct ASTNode ASTNode;` before the body is defined) with full
   type chain support, block-scope tracking, and shadowing. The typedef name can be used as a type specifier in variable
   declarations, assignments, multi-declarator lists, and (for function pointers) indirect calls.
-  Enum declarations (named and anonymous) with auto-incrementing or explicit literal (integer/character) values;
+  Enum declarations (named and anonymous) with auto-incrementing or explicit integer constant expression values
+  (arithmetic, bitwise, shift operators, parentheses, and references to previously-defined enum constants);
   enum constants are available as compile-time integer values throughout the translation unit.
+  Forward-declared enum tags (`typedef enum Status Status;` before the body) are supported.
   Block-scope `static` variables (scalar and pointer types) persist values across function calls and are stored in .bss or .data with constant-only initializers.
 - **Integer types**: `char`, `short`, `int`, `long` and their `unsigned` variants
   (`unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, plain `unsigned`).
@@ -606,7 +612,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 98 all tests pass (855 valid, 246 invalid, 86 integration, 48 print-AST, 100 print-tokens, 21 print-asm; 1521 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 99 all tests pass (864 valid, 246 invalid, 86 integration, 49 print-AST, 100 print-tokens, 21 print-asm; 1531 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

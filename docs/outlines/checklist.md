@@ -509,11 +509,11 @@
 - [x] Tokenizer: enum keyword
 - [x] parse_enum_specifier
 	- [x] Named and anonymous enum forms: `enum E { ... }` and `enum { ... }`
-	- [x] Explicit enumerator values: integer literal or character literal
+	- [x] Explicit enumerator values: integer literal or character literal (Stage 29); extended to full integer constant expressions (Stage 99)
 	- [x] Auto-increment for subsequent enumerators
 	- [x] Trailing comma in enumerator list
 	- [x] Duplicate enumerator name detection
-	- [x] Enum tag table; undefined tag reference rejected
+	- [x] Enum tag table; undefined tag reference rejected (Stage 29); forward-declared tags accepted (Stage 99)
 - [x] Enum constants folded to AST_INT_LITERAL (TYPE_INT) at parse time
 - [x] `enum Tag` used as a type specifier resolves to int
 - [x] Standalone enum declarations at file scope and block scope
@@ -1314,7 +1314,7 @@
 - [x] `parse_initializer_element()` static helper (`src/parser.c`): detects `.IDENT =` (member designator) and `[const_expr] =` (array index designator) at the head of each initializer-list element
   - [x] `.IDENT` designator: consumes `.`, reads identifier, checks for chained designator (emits "chained designators not yet supported" if another `.` or `[` follows), then consumes `=`
   - [x] `[expr]` designator: consumes `[`, calls `eval_case_const_expr` for constant index, rejects negative index, consumes `]`, checks for chaining, then consumes `=`
-  - [x] `eval_case_const_expr` forward-declared before `parse_initializer` to allow use in `parse_initializer_element`
+  - [x] `eval_const_expr` forward-declared before `parse_initializer` to allow use in `parse_initializer_element` (was `eval_case_const_expr` in Stage 97, renamed in Stage 99)
   - [x] Non-designator path falls through to `parse_initializer` unchanged
 - [x] `parse_initializer` updated to call `parse_initializer_element` for each list element instead of calling `parse_initializer` directly
 - [x] `ast_pretty_printer.c`: `AST_DESIGNATED_INIT` prints `DESIGNATED_INIT(.name)` (member) or `DESIGNATED_INIT([N])` (index)
@@ -1378,6 +1378,31 @@
 - [x] Tests: 12 valid (struct arg, struct assign, array explicit, array omitted size, array designator, postfix member, postfix subscript, addr-of scalar, scalar, zero-fill, dot-product, char array), 4 invalid (file scope, void type, too many initializers, array index oob), 3 print_ast (struct, array, scalar), 1 integration (`test_compound_literal_multifile`)
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1521 tests pass at all three stages
 
+## Stage 99 - typedef enum Completion
+
+- [x] Extended integer constant expression evaluator (replacing three `eval_case_const_*` helpers)
+	- [x] `eval_const_primary`: INT_LITERAL, CHAR_LITERAL, enum-const IDENTIFIER, parenthesized expression
+	- [x] `eval_const_unary`: unary `+`, `-`, `~`, `!`
+	- [x] `eval_const_multiplicative`: `*`, `/`, `%` (division-by-zero check via `PARSER_ERROR`)
+	- [x] `eval_const_shift`: `<<` (`TOKEN_LEFT_SHIFT`), `>>` (`TOKEN_RIGHT_SHIFT`)
+	- [x] `eval_const_additive`: `+`, `-` (now calls `eval_const_multiplicative`)
+	- [x] `eval_const_bitwise_and`: `&` (`TOKEN_AMPERSAND`)
+	- [x] `eval_const_bitwise_xor`: `^` (`TOKEN_CARET`)
+	- [x] `eval_const_bitwise_or`: `|` (`TOKEN_PIPE`)
+	- [x] `eval_const_expr`: public entry point calling `eval_const_bitwise_or`
+	- [x] `const char *context` parameter throughout for context-specific error messages
+- [x] `parse_enum_specifier`: enumerator value now calls `eval_const_expr(parser, "enumerator value")`
+	- [x] Replaces literal-only check (integer literal / char literal with trailing-comma guard)
+	- [x] Enables `FLAG = 1 << 0`, `STEP = BASE + 5`, `TOP = STEP * 2`, `ALL = ~0`, etc.
+- [x] `parse_enum_specifier`: forward-declared enum tags accepted (no body, tag not in table)
+	- [x] Creates `EnumTag { tag, is_defined = 0 }` entry via `vec_push`; returns `type_int()`
+	- [x] Enables `typedef enum Status Status;` before `enum Status { OK, ERR };`
+- [x] `parse_initializer_element`: updated to call `eval_const_expr(parser, "array designator index")`
+- [x] Case-label handler: updated to call `eval_const_expr(parser, "case label expression")`
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"00990000"`
+- [x] Tests: 9 valid (enum shift, prior-const, complement, paren, case-label-shift, 3 forward-ref, regression), 2 invalid (non-const expression, division-by-zero), 1 print_ast (enum const fold to INT_LITERAL); 2 outdated invalid tests removed; all 1531 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1531 tests pass at all three stages
+
 ---
 
 ## TODO
@@ -1423,7 +1448,7 @@
 - [ ] sizeof with unsigned result type (size_t)
 - [ ] Pointer comparison operators (< <= > >= on pointers)
 - [ ] Pointer equality with non-null constants
-- [x] Integer constant expressions in case labels (Stage 77; enum constants and +/- folding)
+- [x] Integer constant expressions in case labels (Stage 77; Stage 99: extended to full bitwise/shift/multiplicative operators)
 - [x] Hexadecimal integer literals: 0x/0X prefix (Stage 90)
 - [x] Adjacent string literal concatenation (Stage 89)
 - [x] Hex (\xNN) and octal (\NNN) character/string escapes (Stage 88)
@@ -1440,7 +1465,7 @@
 - [x] For-loop initializer declarations (Stage 76)
 - [ ] switch with long / char / short discriminant (after promotion)
 - [ ] Case labels with unsigned and long constant values
-- [x] Case labels with enum constants and +/- constant expressions (Stage 77)
+- [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions)
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions

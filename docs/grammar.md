@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 97)
+# Claude C99 Grammar (Current through Stage 99)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -110,7 +110,7 @@
 
 <enumerator_list> ::= <enumerator> { "," <enumerator> } [","]
 
-<enumerator> ::= <identifier> [ "=" <constant_expression> ]
+<enumerator> ::= <identifier> [ "=" <constant_integer_expression> ]
 
 <struct_specifier> ::= "struct" [ <identifier> ] "{" <struct_declaration_list> "}"
                      | "struct" <identifier>
@@ -142,7 +142,28 @@
                       | "case" <case_constant_expr> ":" <statement>
                       | "default" ":" <statement>
 
-<case_constant_expr>  ::= <case_additive>
+<constant_integer_expression> ::= <const_bitwise_or>
+
+<const_bitwise_or>    ::= <const_bitwise_xor> { "|" <const_bitwise_xor> }
+
+<const_bitwise_xor>   ::= <const_bitwise_and> { "^" <const_bitwise_and> }
+
+<const_bitwise_and>   ::= <const_additive> { "&" <const_additive> }
+
+<const_additive>      ::= <const_shift> { ("+" | "-") <const_shift> }
+
+<const_shift>         ::= <const_multiplicative> { ("<<" | ">>") <const_multiplicative> }
+
+<const_multiplicative> ::= <const_unary> { ("*" | "/" | "%") <const_unary> }
+
+<const_unary>         ::= ("+" | "-" | "~" | "!")? <const_primary>
+
+<const_primary>       ::= <integer_literal> 
+                       | <character_literal> 
+                       | <identifier>    { enum constant lookup }
+                       | "(" <constant_integer_expression> ")"
+
+<case_constant_expr>  ::= <constant_integer_expression>
 
 <case_additive>       ::= <case_unary> { ("+" | "-") <case_unary> }
 
