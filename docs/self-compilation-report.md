@@ -150,6 +150,20 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 99 self-hosting test
+
+None. The extended `eval_const_expr` evaluator is purely recursive arithmetic with no dynamic allocation and no new AST nodes, so it compiled cleanly under C0. The forward-declaration enum tag path uses `vec_push` exactly as existing struct/union tag paths do. All 1531 tests passed at C0, C1, and C2.
+
+## Result (stage 99)
+
+**Date:** 2026-06-10
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.00990000.00805` | `GNU_13_3_0` | 1531/1531 |
+| C1 | `build/ccompiler-c1` | `00.02.00990000.00806` | `ClaudeC99_v00_02_00990000_00805` | 1531/1531 |
+| C2 | `build/ccompiler-c2` | `00.02.00990000.00807` | `ClaudeC99_v00_02_00990000_00806` | 1531/1531 |
+
 ## Issues found during stage 98 self-hosting test
 
 None. The compound literal implementation compiled cleanly under C0. The compound literal stack-offset pre-scan and codegen use the standard `for`-over-children pattern (no fixed-size temp arrays, no VLAs). The `parse_postfix` compound literal detection uses an `int saved_pos`/`Token saved_token` checkpoint to restore the lexer when `(type-name)` is not followed by `{`. All 1521 tests passed at C0, C1, and C2.
