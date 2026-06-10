@@ -3924,53 +3924,74 @@ static void emit_cond_cmp_zero(CodeGen *cg, ASTNode *cond) {
 static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
                                    ASTNode *list) {
     int ninit = list ? list->child_count : 0;
-    if (ninit > st->field_count) {
-        compile_error( "error: too many initializers for struct\n");
-    }
+    int cur_field = 0;
     for (int i = 0; i < ninit; i++) {
-        StructField *f = &st->fields[i];
+        ASTNode *child = list->children[i];
+        ASTNode *elem;
+
+        if (child->type == AST_DESIGNATED_INIT && child->value != NULL) {
+            /* Member designator: find field by name. */
+            int found = -1;
+            int fi;
+            for (fi = 0; fi < st->field_count; fi++) {
+                if (strcmp(st->fields[fi].name, child->value) == 0) {
+                    found = fi;
+                    break;
+                }
+            }
+            if (found < 0) {
+                compile_error(
+                    "error: struct has no member named '%s'\n", child->value);
+            }
+            cur_field = found;
+            elem = child->children[0];
+        } else if (child->type == AST_DESIGNATED_INIT && child->value == NULL) {
+            compile_error(
+                "error: array index designator in struct initializer\n");
+            return;
+        } else {
+            elem = child;
+        }
+
+        if (cur_field >= st->field_count) {
+            compile_error("error: too many initializers for struct\n");
+        }
+
+        StructField *f = &st->fields[cur_field];
         int foffset = base_offset - f->offset;
         int fsize   = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
-        ASTNode *elem = list->children[i];
         cg_mark(elem);
 
         if (f->kind == TYPE_STRUCT && f->full_type &&
             elem->type == AST_INITIALIZER_LIST) {
-            /* Nested struct field — recurse. */
             emit_local_struct_init(cg, f->full_type, foffset, elem);
         } else if (f->kind == TYPE_ARRAY && f->full_type &&
                    elem->type == AST_STRING_LITERAL) {
-            /* Stage 85: char-array member initialized from a string literal.
-             * The struct slot is already zero-filled, so copy the literal's
-             * payload bytes into the field; the NUL and trailing zero fill
-             * are already present. The literal is not added to the .rodata
-             * pool — per-byte stores mirror the local char-array init path. */
             for (int b = 0; b < fsize && b < elem->byte_length; b++) {
                 fprintf(cg->output, "    mov byte [rbp - %d], %d\n",
                         foffset - b, (unsigned char)elem->value[b]);
             }
         } else if (f->kind == TYPE_POINTER) {
-            /* Pointer field: initializer must produce a pointer value. */
             codegen_expression(cg, elem);
             if (elem->result_type != TYPE_POINTER &&
                 !is_null_pointer_constant(elem)) {
                 compile_error(
-                        "error: incompatible field initializer for pointer field '%s'\n",
-                        f->name);
+                    "error: incompatible field initializer for pointer field '%s'\n",
+                    f->name);
             }
             emit_store_local(cg, foffset, fsize, 1);
         } else {
-            /* Scalar field: string literals are not valid for non-pointer fields. */
             if (elem->type == AST_STRING_LITERAL) {
                 compile_error(
-                        "error: incompatible field initializer for field '%s'\n",
-                        f->name);
+                    "error: incompatible field initializer for field '%s'\n",
+                    f->name);
             }
             codegen_expression(cg, elem);
             int src_is_long = (elem->result_type == TYPE_LONG ||
                                elem->result_type == TYPE_POINTER);
             emit_store_local(cg, foffset, fsize, src_is_long);
         }
+        cur_field++;
     }
 }
 
@@ -4147,42 +4168,56 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             }
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
-                /* Stage 32: brace-initializer list. Evaluate each element and
-                 * store it; zero-fill any elements beyond the list length.
-                 * Stage 44: struct elements handled via emit_local_struct_init. */
+                /* Stage 32/97: brace-initializer list.
+                 * Phase 1: zero-fill the entire array unconditionally.
+                 * Phase 2: apply initializers with a current-index cursor
+                 *          (supporting designated index elements). */
                 ASTNode *list = node->children[0];
-                if (list->child_count > length) {
-                    compile_error(
+                Type *elem_type = node->full_type->base;
+                int b;
+                for (b = 0; b < size; b++)
+                    fprintf(cg->output, "    mov byte [rbp - %d], 0\n",
+                            offset - b);
+                int cur = 0;
+                int j;
+                for (j = 0; j < list->child_count; j++) {
+                    ASTNode *child = list->children[j];
+                    ASTNode *elem;
+                    if (child->type == AST_DESIGNATED_INIT &&
+                        child->value == NULL) {
+                        /* Array index designator. */
+                        int idx = child->byte_length;
+                        if (idx < 0 || idx >= length) {
+                            compile_error(
+                                "error: array designator index %d out of bounds\n",
+                                idx);
+                        }
+                        cur = idx;
+                        elem = child->children[0];
+                    } else if (child->type == AST_DESIGNATED_INIT) {
+                        compile_error(
+                            "error: member designator in array initializer\n");
+                        return;
+                    } else {
+                        elem = child;
+                    }
+                    if (cur >= length) {
+                        compile_error(
                             "error: too many initializers for array '%s'\n",
                             node->value);
-                }
-                Type *elem_type = node->full_type->base;
-                for (int i = 0; i < length; i++) {
-                    int elem_offset = offset - i * elem_size;
-                    if (i < list->child_count) {
-                        ASTNode *elem = list->children[i];
-                        if (elem_type && elem_type->kind == TYPE_STRUCT &&
-                            elem->type == AST_INITIALIZER_LIST) {
-                            /* Stage 44: struct element — zero-fill then recurse. */
-                            for (int b = 0; b < elem_size; b++)
-                                fprintf(cg->output, "    mov byte [rbp - %d], 0\n",
-                                        elem_offset - b);
-                            emit_local_struct_init(cg, elem_type, elem_offset, elem);
-                        } else {
-                            codegen_expression(cg, elem);
-                            int src_is_long = (elem->result_type == TYPE_LONG ||
-                                               elem->result_type == TYPE_POINTER);
-                            emit_store_local(cg, elem_offset, elem_size, src_is_long);
-                        }
-                    } else {
-                        /* zero-fill */
-                        switch (elem_size) {
-                        case 1: fprintf(cg->output, "    mov byte [rbp - %d], 0\n", elem_offset); break;
-                        case 2: fprintf(cg->output, "    mov word [rbp - %d], 0\n", elem_offset); break;
-                        case 8: fprintf(cg->output, "    mov qword [rbp - %d], 0\n", elem_offset); break;
-                        default: fprintf(cg->output, "    mov dword [rbp - %d], 0\n", elem_offset); break;
-                        }
                     }
+                    int elem_offset = offset - cur * elem_size;
+                    if (elem_type && elem_type->kind == TYPE_STRUCT &&
+                        elem->type == AST_INITIALIZER_LIST) {
+                        /* Struct element: slot already zeroed; recurse. */
+                        emit_local_struct_init(cg, elem_type, elem_offset, elem);
+                    } else {
+                        codegen_expression(cg, elem);
+                        int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_POINTER);
+                        emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                    }
+                    cur++;
                 }
             } else if (node->child_count > 0) {
                 /* String-literal initializer path (existing). */
@@ -5147,10 +5182,57 @@ static const char *data_init_directive(TypeKind kind) {
  * fields emit the literal value; missing trailing fields emit zero.
  * The label for the whole object has already been emitted by the caller.
  */
+/* Maximum struct fields supported for designated global struct init.
+ * Matches the largest struct in the compiler's own source. */
+#define MAX_STRUCT_FIELDS_DESIGNATED 64
+
 static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
     int ninit = list ? list->child_count : 0;
-    int cur_off = 0; /* bytes emitted so far within this struct */
-    for (int i = 0; i < st->field_count; i++) {
+
+    if (st->field_count > MAX_STRUCT_FIELDS_DESIGNATED) {
+        compile_error(
+            "error: struct has too many fields for designated init "
+            "(max %d)\n", MAX_STRUCT_FIELDS_DESIGNATED);
+    }
+
+    /* Build a field-index → element map (stage 97: supports designators). */
+    ASTNode *slots[MAX_STRUCT_FIELDS_DESIGNATED];
+    int si;
+    for (si = 0; si < st->field_count; si++) slots[si] = NULL;
+
+    int cur = 0;
+    int j;
+    for (j = 0; j < ninit; j++) {
+        ASTNode *child = list->children[j];
+        if (child->type == AST_DESIGNATED_INIT && child->value != NULL) {
+            /* Member designator: find field by name. */
+            int found = -1;
+            int fi;
+            for (fi = 0; fi < st->field_count; fi++) {
+                if (strcmp(st->fields[fi].name, child->value) == 0) {
+                    found = fi;
+                    break;
+                }
+            }
+            if (found < 0) {
+                compile_error(
+                    "error: struct has no member named '%s'\n", child->value);
+            }
+            slots[found] = child->children[0];
+            cur = found + 1;
+        } else {
+            if (cur >= st->field_count) {
+                compile_error("error: too many initializers for struct\n");
+            }
+            slots[cur] = child;
+            cur++;
+        }
+    }
+
+    /* Emit fields in declared order. */
+    int cur_off = 0;
+    int i;
+    for (i = 0; i < st->field_count; i++) {
         StructField *f = &st->fields[i];
         int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
         /* Emit padding bytes to reach the field's declared offset. */
@@ -5158,8 +5240,8 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
             fprintf(cg->output, "    db 0\n");
             cur_off++;
         }
-        if (i < ninit) {
-            ASTNode *elem = list->children[i];
+        ASTNode *elem = slots[i];
+        if (elem != NULL) {
             if (f->kind == TYPE_STRUCT && f->full_type &&
                 elem->type == AST_INITIALIZER_LIST) {
                 emit_global_struct(cg, f->full_type, elem);
@@ -5178,12 +5260,13 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
                         data_init_directive(f->kind), v);
             } else {
                 compile_error(
-                        "error: unsupported initializer for struct field '%s'\n",
-                        f->name);
+                    "error: unsupported initializer for struct field '%s'\n",
+                    f->name);
             }
         } else {
-            /* Zero-fill missing trailing fields. */
-            for (int b = 0; b < fsize; b++)
+            /* Zero-fill missing fields. */
+            int b;
+            for (b = 0; b < fsize; b++)
                 fprintf(cg->output, "    db 0\n");
         }
         cur_off = f->offset + fsize;
@@ -5264,26 +5347,61 @@ static void codegen_emit_data(CodeGen *cg) {
             }
         } else if (gv->init_node && gv->kind == TYPE_ARRAY &&
                    gv->init_node->type == AST_INITIALIZER_LIST) {
-            /* Stage 43: int values[] = {10,20,30} or char *names[] = {...}.
-             * Stage 44: struct Point pts[] = {{1,2},{10,20},...}.
-             * One directive per element; struct elements delegate to
-             * emit_global_struct. */
+            /* Stage 43/44/97: int values[] = {10,20,30} or struct arrays or
+             * designated-index arrays.  Build a slots[] map, then emit. */
             ASTNode *list = gv->init_node;
             int arr_len = gv->full_type ? gv->full_type->length : list->child_count;
             Type *elem_type = gv->full_type ? gv->full_type->base : NULL;
             TypeKind elem_kind = elem_type ? elem_type->kind : TYPE_INT;
             const char *dir = data_init_directive(elem_kind);
-            for (int j = 0; j < arr_len; j++) {
-                /* Emit label on first element only. */
+
+/* Maximum array elements supported for designated global array init. */
+#define MAX_ARRAY_ELEMS_DESIGNATED 1024
+            if (arr_len > MAX_ARRAY_ELEMS_DESIGNATED) {
+                compile_error(
+                    "error: array too large for designated initializer "
+                    "emission\n");
+            }
+            ASTNode *slots[MAX_ARRAY_ELEMS_DESIGNATED];
+            int si;
+            for (si = 0; si < arr_len; si++) slots[si] = NULL;
+
+            int cur = 0;
+            int jj;
+            for (jj = 0; jj < list->child_count; jj++) {
+                ASTNode *child = list->children[jj];
+                if (child->type == AST_DESIGNATED_INIT &&
+                    child->value == NULL) {
+                    int idx = child->byte_length;
+                    if (idx < 0 || idx >= arr_len) {
+                        compile_error(
+                            "error: array designator index %d out of "
+                            "bounds\n", idx);
+                    }
+                    cur = idx;
+                    slots[cur++] = child->children[0];
+                } else if (child->type == AST_DESIGNATED_INIT) {
+                    compile_error(
+                        "error: member designator in array initializer\n");
+                } else {
+                    if (cur >= arr_len) {
+                        compile_error(
+                            "error: too many initializers for array '%s'\n",
+                            gv->name);
+                    }
+                    slots[cur++] = child;
+                }
+            }
+
+            int j;
+            for (j = 0; j < arr_len; j++) {
                 if (j == 0) fprintf(cg->output, "%s:\n", gv->name);
-                if (j < list->child_count) {
-                    ASTNode *elem = list->children[j];
+                ASTNode *elem = slots[j];
+                if (elem != NULL) {
                     if (elem_type && elem_type->kind == TYPE_STRUCT &&
                         elem->type == AST_INITIALIZER_LIST) {
-                        /* Stage 44: struct element. */
                         emit_global_struct(cg, elem_type, elem);
                     } else if (elem->type == AST_STRING_LITERAL) {
-                        /* char *names[] element — add to pool, emit dq Lstr<N>. */
                         int idx = (int)cg->string_pool.len;
                         vec_push(&cg->string_pool, &elem);
                         fprintf(cg->output, "    dq Lstr%d\n", idx);
@@ -5295,13 +5413,14 @@ static void codegen_emit_data(CodeGen *cg) {
                         fprintf(cg->output, "    %s %ld\n", dir, v);
                     } else {
                         compile_error(
-                                "error: unsupported initializer element type in '%s'\n",
-                                gv->name);
+                            "error: unsupported initializer element type "
+                            "in '%s'\n", gv->name);
                     }
                 } else {
-                    /* Zero-fill trailing elements. */
+                    /* Zero-fill empty slots. */
                     if (elem_type && elem_type->kind == TYPE_STRUCT) {
-                        for (int b = 0; b < elem_type->size; b++)
+                        int b;
+                        for (b = 0; b < elem_type->size; b++)
                             fprintf(cg->output, "    db 0\n");
                     } else {
                         fprintf(cg->output, "    %s 0\n", dir);

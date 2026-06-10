@@ -1335,6 +1335,7 @@ static Type *build_fp_type(Type *base_type, const ParsedDeclarator *d) {
 static ASTNode *parse_expression(Parser *parser);
 static ASTNode *parse_assignment_expression(Parser *parser);
 static ASTNode *parse_initializer(Parser *parser);
+static long eval_case_const_expr(Parser *parser);
 
 static ASTNode *parse_primary(Parser *parser) {
     if (parser->current.type == TOKEN_INT_LITERAL) {
@@ -1999,9 +2000,53 @@ static ASTNode *parse_conditional(Parser *parser) {
  * Stage 32: <initializer> ::= <assignment_expression>
  *                            | "{" <initializer_list> [ "," ] "}"
  *
+ * Stage 97: <initializer_list> elements may carry an optional designator:
+ *   <initializer_element> ::= <designator_list> "=" <initializer>
+ *                           | <initializer>
+ *   <designator> ::= "." IDENTIFIER | "[" <constant_integer_expression> "]"
+ *
  * Returns an AST_INITIALIZER_LIST node when a brace-initializer is
  * parsed; otherwise returns the result of parse_assignment_expression.
  */
+
+/* Stage 97: parse one element of an initializer list. */
+static ASTNode *parse_initializer_element(Parser *parser) {
+    if (parser->current.type == TOKEN_DOT) {
+        parser->current = lexer_next_token(parser->lexer);
+        Token id = parser_expect(parser, TOKEN_IDENTIFIER);
+        /* Reject chained designators before consuming '='. */
+        if (parser->current.type == TOKEN_DOT ||
+            parser->current.type == TOKEN_LBRACKET) {
+            PARSER_ERROR(parser, "error: chained designators not yet supported\n");
+        }
+        parser_expect(parser, TOKEN_ASSIGN);
+        ASTNode *node = parser_node(parser, AST_DESIGNATED_INIT, id.value);
+        node->byte_length = 0;
+        ast_add_child(node, parse_initializer(parser));
+        return node;
+    } else if (parser->current.type == TOKEN_LBRACKET) {
+        parser->current = lexer_next_token(parser->lexer);
+        long index = eval_case_const_expr(parser);
+        if (index < 0) {
+            PARSER_ERROR(parser,
+                "error: array designator index must be non-negative\n");
+        }
+        parser_expect(parser, TOKEN_RBRACKET);
+        /* Reject chained designators before consuming '='. */
+        if (parser->current.type == TOKEN_DOT ||
+            parser->current.type == TOKEN_LBRACKET) {
+            PARSER_ERROR(parser, "error: chained designators not yet supported\n");
+        }
+        parser_expect(parser, TOKEN_ASSIGN);
+        ASTNode *node = parser_node(parser, AST_DESIGNATED_INIT, NULL);
+        node->byte_length = (int)index;
+        ast_add_child(node, parse_initializer(parser));
+        return node;
+    } else {
+        return parse_initializer(parser);
+    }
+}
+
 static ASTNode *parse_initializer(Parser *parser) {
     if (parser->current.type != TOKEN_LBRACE)
         return parse_assignment_expression(parser);
@@ -2017,12 +2062,12 @@ static ASTNode *parse_initializer(Parser *parser) {
         return list;
     }
 
-    ast_add_child(list, parse_initializer(parser));
+    ast_add_child(list, parse_initializer_element(parser));
     while (parser->current.type == TOKEN_COMMA) {
         parser->current = lexer_next_token(parser->lexer);
         if (parser->current.type == TOKEN_RBRACE)
             break; /* trailing comma */
-        ast_add_child(list, parse_initializer(parser));
+        ast_add_child(list, parse_initializer_element(parser));
     }
     if (parser->current.type != TOKEN_RBRACE) {
         PARSER_ERROR(parser, "error: expected '}' to close initializer list\n");

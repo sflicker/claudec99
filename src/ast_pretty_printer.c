@@ -275,6 +275,12 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_INITIALIZER_LIST:
         printf("InitializerList:\n");
         break;
+    case AST_DESIGNATED_INIT:
+        if (node->value != NULL)
+            printf("DESIGNATED_INIT(.%s)\n", node->value);
+        else
+            printf("DESIGNATED_INIT([%d])\n", node->byte_length);
+        break;
     case AST_BUILTIN_VA_START:
         printf("BuiltinVaStart:\n");
         break;

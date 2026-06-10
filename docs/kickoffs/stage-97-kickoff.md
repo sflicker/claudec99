@@ -1,158 +1,256 @@
-# Stage 97 Kickoff
-
-**Stage 97:** Designated Initializers
-
-**Spec:** docs/stages/ClaudeC99-spec-stage-97-designated-initializers.md
-
----
+# Stage 97 Kickoff — Designated Initializers
 
 ## Summary
 
-Add C99 designated initializers — `.member = value` for struct fields and
-`[index] = value` for array elements.  Designators may appear in any order;
-subsequent undesignated elements continue sequentially from the last
-designator's position; uninitialized fields and elements are zero-filled.
+Add C99 designated initializers — the `.member = value` and `[index] = value`
+syntactic forms that let brace initializers name their target field or array
+index instead of relying on positional order.
+
+```c
+struct Point { int x, y; };
+struct Point p = { .y = 10, .x = 3 };   /* member designators */
+
+int a[6] = { [2] = 5, [5] = 9 };        /* array index designators */
+```
+
+Designated initializers are pervasive in real-world systems code (driver-style
+struct init, sparse array tables, protocol-field initialization). Without them,
+a large class of real C programs cannot compile.
 
 This is a **language feature stage** touching the AST, parser, and code
-generator.  No driver, preprocessor, or lifecycle changes.  The self-host
-cycle must continue to pass.
+generator. No driver, lexer, or lifecycle changes. The self-host cycle must
+continue to pass.
 
 ---
 
-## AST changes
+## Tokenizer Changes
 
-**Add `AST_DESIGNATED_INIT`** (`include/ast.h`):
+None. Designated initializers use only existing tokens: `.`, `[`, `]`, `=`.
 
-A wrapper node placed inside an `AST_INITIALIZER_LIST` when the element has a
-designator.
+---
+
+## Parser Changes
+
+**Add `parse_initializer_element()`** (`src/parser.c`):
+
+A static helper called in the brace-element loop of `parse_initializer()` instead
+of calling `parse_initializer()` directly for each element.
+
+Pseudocode:
+
+```
+if current == TOKEN_DOT:
+    consume '.'
+    expect IDENTIFIER → save member_name
+    expect '=' (TOKEN_ASSIGN)
+    if current == TOKEN_DOT or TOKEN_LBRACKET:
+        error "chained designators not yet supported"
+    return AST_DESIGNATED_INIT(.member_name, parse_initializer())
+
+else if current == TOKEN_LBRACKET:
+    consume '['
+    long index = eval_case_const_expr()  /* forward declare eval_case_const_expr */
+    if index < 0:
+        error "array designator index must be non-negative"
+    expect ']'
+    expect '='
+    if current == TOKEN_DOT or TOKEN_LBRACKET:
+        error "chained designators not yet supported"
+    return AST_DESIGNATED_INIT([index], parse_initializer())
+
+else:
+    return parse_initializer()   /* unchanged path */
+```
+
+Update `parse_initializer()` to call `parse_initializer_element()` in the
+brace-list loop instead of `parse_initializer()`.
+
+---
+
+## AST Changes
+
+**Add `AST_DESIGNATED_INIT`** to `ASTNodeType` enum (`include/ast.h`), after
+`AST_INITIALIZER_LIST`:
+
+Node layout:
 
 | Field | Member designator `.name` | Array index designator `[i]` |
-|---|---|---|
+|-------|---------------------------|------------------------------|
 | `value` | member name string | `NULL` |
-| `byte_length` | 0 | integer index ≥ 0 |
-| `children[0]` | the initializer value | the initializer value |
+| `byte_length` | 0 (unused) | integer index ≥ 0 |
+| `children[0]` | initializer value | initializer value |
+| `child_count` | 1 | 1 |
 
 Discrimination: `node->value != NULL` → member designator; `node->value == NULL`
-→ array index designator.
+→ array index designator with index in `node->byte_length`.
 
 ---
 
-## Tokenizer changes
+## Code Generation Changes
 
-**None.** `TOKEN_DOT` and `TOKEN_LBRACKET` are already tokenized.  No lexer
-changes.
+### Task 1 — Local struct designated init
 
----
+**Function:** `emit_local_struct_init()` (`src/codegen.c`)
 
-## Parser changes
+Replace the positional `children[i]` loop with a `cur_field` cursor and member-name
+lookup. For each child:
 
-**Add `parse_initializer_element`** (`src/parser.c`):
+- If `AST_DESIGNATED_INIT` with `value != NULL`: look up field by name, set
+  `cur_field` to that index
+- If `AST_DESIGNATED_INIT` with `value == NULL`: error (array designator in struct)
+- Otherwise: use `cur_field` as-is
 
-A static helper called in the brace-list loop of `parse_initializer` instead
-of calling `parse_initializer` directly for each element.
+Emit field at `cur_field`, then increment. The struct slot is already
+zero-filled by the caller, so skipped fields remain zero.
 
-- If current token is `TOKEN_DOT`: consume `.`, expect `IDENTIFIER`, expect
-  `=`, reject a second `./[` (chained — error), recurse into
-  `parse_initializer`, return `AST_DESIGNATED_INIT` with `value` = member name.
-- If current token is `TOKEN_LBRACKET`: consume `[`, evaluate index with
-  `eval_case_const_expr`, expect `]`, expect `=`, reject chained designator,
-  recurse, return `AST_DESIGNATED_INIT` with `value = NULL`,
-  `byte_length = index`.
-- Otherwise: fall through to existing `parse_initializer` call.
+### Task 2 — Local array designated init
 
----
+**Location:** `codegen_statement()`, `TYPE_ARRAY` branch (`src/codegen.c`)
 
-## Code generation changes
+Two-phase approach:
 
-**`emit_local_struct_init`** (`src/codegen.c`):
+**Phase 1 — Zero-fill:** Unconditionally zero-fill the entire array (byte loop).
 
-Replace the positional `children[i]` loop with a `cur_field` cursor.  For each
-child: if it is `AST_DESIGNATED_INIT` with a member name, look up the field by
-name and set `cur_field`; otherwise advance `cur_field` sequentially.  Emit
-the field at `cur_field`, then increment.  The struct slot is already
-zero-filled by the caller, so skipped fields are already zero.
+**Phase 2 — Apply designators:** Walk the initializer list with a `cur` index cursor:
 
-**Local array init** (`codegen_statement`, `TYPE_ARRAY` branch):
+- If `AST_DESIGNATED_INIT` with `value == NULL`: set `cur = child->byte_length`,
+  check bounds
+- If `AST_DESIGNATED_INIT` with `value != NULL`: error (member designator in array)
+- Otherwise: use child as-is
 
-Two phases:
-1. Zero-fill the entire array unconditionally (byte loop over `size` bytes).
-2. Walk the initializer list with a `cur` index cursor.  `AST_DESIGNATED_INIT`
-   with `value == NULL` sets `cur = child->byte_length`; plain elements advance
-   `cur` sequentially.  Emit to `offset - cur * elem_size` and increment.
+Emit to `offset - cur * elem_size`, then increment. Remove the old
+`list->child_count > length` guard (replaced by per-element bounds checks).
 
-Remove the old `list->child_count > length` guard (replaced by per-element
-bounds checks inside the loop).
+### Task 3 — Global struct designated init
 
-**`emit_global_struct`** (`src/codegen.c`):
+**Function:** `emit_global_struct()` (`src/codegen.c`)
 
-Before the field-emission loop, build a `slots[MAX_STRUCT_FIELDS_DESIGNATED]`
-array of `ASTNode *` (all `NULL`).  Walk the initializer list with a
-`cur_field` cursor, filling `slots` by field name or sequentially.  The
-existing field-order emission loop then uses `slots[i]` (or zero if `NULL`)
-for field `i`.  `MAX_STRUCT_FIELDS_DESIGNATED = 64` (constant — no VLA).
+Before the field-emission loop, build a slots array and walk the initializer list:
 
-**Global array emit** (`codegen_emit_data`, array branch):
+1. Allocate `ASTNode *slots[MAX_STRUCT_FIELDS_DESIGNATED]`, all `NULL`
+2. Walk init list with `cur_field` cursor, filling `slots` by field name or sequentially
+3. Emit fields in declared order, using `slots[i]` (or zero if `NULL`) for field `i`
 
-Build a `slots[MAX_ARRAY_ELEMS_DESIGNATED]` array (all `NULL`,
-`MAX_ARRAY_ELEMS_DESIGNATED = 1024`).  Walk the list with a `cur` cursor,
-filling slots by index or sequentially.  Emit all `length` slots in order;
-`NULL` slots emit zero bytes.
+`MAX_STRUCT_FIELDS_DESIGNATED = 64` (fixed constant, no VLAs for self-hosting).
+Error if `st->field_count > MAX_STRUCT_FIELDS_DESIGNATED`.
 
----
+### Task 4 — Global array designated init
 
-## Test plan
+**Location:** `codegen_emit_data()`, array branch (`src/codegen.c`)
 
-1. **Local struct — member designators** (basic, partial/zero-fill, mixed
-   designated + plain advancing current position).
-2. **Local array — index designators** (sparse, current-position advance,
-   reordering).
-3. **Global struct — out-of-order designators** emitting correct field layout.
-4. **Global array — sparse designation** with zero gaps.
-5. **Array of structs** with index + member designators combined.
-6. **Invalid** — unknown member name, wrong designator kind (array in struct,
-   member in array), index out of bounds, chained designators.
-7. **`print_ast`** — one member-designator test, one index-designator test.
-8. **Integration** — multi-file test combining stage-96 multi-file compilation
-   with stage-97 designated initializers.
-9. **Full regression** — all 1483 existing tests must pass unchanged.
+Build a slots array and walk the initializer list:
+
+1. Allocate `ASTNode *slots[MAX_ARRAY_ELEMS_DESIGNATED]`, all `NULL`
+2. Walk init list with `cur` cursor, filling `slots` by index or sequentially
+3. Emit all `length` slots in order; `NULL` slots emit zero bytes
+
+`MAX_ARRAY_ELEMS_DESIGNATED = 1024` (fixed constant, no VLAs). Error if
+`length > MAX_ARRAY_ELEMS_DESIGNATED`.
 
 ---
 
-## Implementation order
+## Test Plan
 
-1. `include/ast.h` — add `AST_DESIGNATED_INIT`.
-2. `src/ast_pretty_printer.c` — handle `AST_DESIGNATED_INIT`.
-3. `src/parser.c` — add `parse_initializer_element`, wire into
-   `parse_initializer`.
-4. `src/codegen.c` — update `emit_local_struct_init`.
-5. `src/codegen.c` — update local array init in `codegen_statement`.
-6. `src/codegen.c` — update `emit_global_struct`.
-7. `src/codegen.c` — update global array emit in `codegen_emit_data`.
-8. `src/version.c` — bump `VERSION_STAGE` to `"00970000"`.
-9. Add tests (valid, invalid, print_ast, integration).
-10. Documentation: README, grammar.md, supplemental docs, self-host report.
+**Valid tests (9):**
+- Local struct: basic member designators
+- Local struct: partial designated (zero fill)
+- Local struct: mixed designated + plain (advancing current position)
+- Local array: basic index designators
+- Local array: designator advancing current position
+- Local array: designators reordering elements
+- Global struct: out-of-order member designators
+- Global array: sparse designation
+- Array of structs: index + member designators combined
+- Char-literal designator index
+
+**Invalid tests (5):**
+- Unknown member name
+- Array designator in struct initializer
+- Member designator in array initializer
+- Array index out of bounds
+- Chained designators not yet supported
+
+**`print_ast` tests (2):**
+- Member designator: `DESIGNATED_INIT(.name)` + child
+- Index designator: `DESIGNATED_INIT([N])` + child
+
+**Integration test (1):**
+- Multi-file (stage 96) with designated initializers in multiple files
 
 ---
 
-## Ambiguities / Notes
+## Out of Scope
 
-- **Chained designators** (`.a.b`, `.arr[0]`) are out of scope; the parser
-  must error if a second `./[` follows the first before the `=`.
+- Chained designators (`.a.b`, `.arr[0]`)
+- Designated union init
+- Non-constant array index expressions
+- Designated init for block-scope static locals
+- Compound literals `(T){ ... }`
+- `print_tokens` updates (no new tokens)
 
-- **Union designated init** is out of scope.  The current union path expects at
-  most one positional element.  If a union initializer contains a designated
-  element naming the first field, it may work incidentally, but no new union
-  designated-init codegen is added.
+---
 
-- **VLA restriction**: `emit_global_struct` and the global array path use
-  fixed-size `slots[]` arrays because cc99 does not implement VLAs and must
-  self-compile.  The constants `MAX_STRUCT_FIELDS_DESIGNATED = 64` and
-  `MAX_ARRAY_ELEMS_DESIGNATED = 1024` are generous; verify against the largest
-  actual usages in the compiler's own source before finalizing.
+## Implementation Order
 
-- **`*(T **)vec_get(...)` split**: watch for this C0 parser limitation in any
-  new Vec accesses; split into two statements as in prior stages.
+1. `include/ast.h` — add `AST_DESIGNATED_INIT` enum
+2. `src/ast_pretty_printer.c` — add case for `AST_DESIGNATED_INIT`
+3. `src/parser.c` — add `parse_initializer_element()` helper + forward decl for
+   `eval_case_const_expr`; update `parse_initializer()` to call it
+4. `src/codegen.c` — rewrite `emit_local_struct_init()` (Task 1)
+5. `src/codegen.c` — rewrite local array init in `codegen_statement()` (Task 2)
+6. `src/codegen.c` — rewrite `emit_global_struct()` (Task 3)
+7. `src/codegen.c` — extend global array emit in `codegen_emit_data()` (Task 4)
+8. `src/version.c` — bump `VERSION_STAGE` to `"00970000"`
+9. Add tests: valid (9), invalid (5), print_ast (2), integration (1)
+10. Documentation: README, grammar.md, supplemental snapshots, self-host report
 
-- **Self-host**: run `./build.sh --mode=self-host` before closing the stage.
-  The compiler source itself does not use designated initializers today, so
+---
+
+## Key Decisions
+
+- **Fixed-size arrays for slots:** `MAX_STRUCT_FIELDS_DESIGNATED = 64` and
+  `MAX_ARRAY_ELEMS_DESIGNATED = 1024` to avoid VLAs (required for self-hosting).
+  Verify limits against compiler's own source before finalizing.
+
+- **eval_case_const_expr forward declaration:** Required because it's defined
+  after `parse_initializer()` in the source.
+
+- **Two-phase array init:** Phase 1 (zero-fill) + Phase 2 (apply designators)
+  simplifies handling of sparse designators and avoids positional assumptions.
+
+- **Slots array strategy:** For both global contexts (struct and array), collect
+  designator mappings into a slots array before emission, avoiding reordering
+  and maintaining correct padding/alignment behavior.
+
+---
+
+## Ambiguities Resolved
+
+- **Chained designators:** Parse error "chained designators not yet supported"
+  if a second `./[` follows the first before `=`.
+
+- **Negative array indices:** Parse error "array designator index must be
+  non-negative".
+
+- **Out-of-bounds indices:** Codegen error at emission time for local and global
+  contexts.
+
+- **Mixed designator types:** Struct initializer rejects array designators with
+  error; array initializer rejects member designators with error.
+
+- **Union designated init:** Out of scope. No new codegen for selecting
+  non-first fields by name.
+
+---
+
+## Bootstrap Notes
+
+- **VLA restriction:** C0 parser cannot handle runtime-sized arrays. All new
+  codegen code uses fixed-size constants.
+
+- **`*(T **)vec_get(...)` split:** If any new Vec access uses a dereference-cast
+  pattern, split into two statements as in prior stages.
+
+- **Self-host verification:** Run `./build.sh --mode=self-host` before closing.
+  The compiler's own source does not use designated initializers today, so
   C0→C1→C2 is expected to pass without new bootstrap workarounds.
