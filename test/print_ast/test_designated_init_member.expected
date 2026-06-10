@@ -1,0 +1,13 @@
+TranslationUnit:
+  TypedefDecl: 
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: struct p
+        InitializerList:
+          DESIGNATED_INIT(.y)
+            IntLiteral: 10
+          DESIGNATED_INIT(.x)
+            IntLiteral: 3
+      ReturnStmt:
+        MemberAccess: x
+          VariableExpression: p

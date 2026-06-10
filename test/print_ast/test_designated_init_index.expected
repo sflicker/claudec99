@@ -1,0 +1,13 @@
+TranslationUnit:
+  FunctionDecl: int main
+    Block
+      VariableDeclaration: int a[5]
+        InitializerList:
+          DESIGNATED_INIT([2])
+            IntLiteral: 5
+          DESIGNATED_INIT([4])
+            IntLiteral: 9
+      ReturnStmt:
+        ArrayIndex:
+          VariableExpression: a
+          IntLiteral: 2
