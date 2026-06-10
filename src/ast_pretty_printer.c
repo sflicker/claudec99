@@ -281,6 +281,10 @@ void ast_pretty_print(ASTNode *node, int depth) {
         else
             printf("DESIGNATED_INIT([%d])\n", node->byte_length);
         break;
+    case AST_COMPOUND_LITERAL:
+        /* node->value holds a pre-formatted type label set at parse time. */
+        printf("COMPOUND_LITERAL(%s)\n", node->value ? node->value : "?");
+        break;
     case AST_BUILTIN_VA_START:
         printf("BuiltinVaStart:\n");
         break;

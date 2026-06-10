@@ -678,6 +678,10 @@ static void cg_mark(const ASTNode *node) {
 static StructField *find_struct_field(Type *st, const char *name);
 static StructField *emit_member_addr(CodeGen *cg, ASTNode *node);
 static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node);
+/* Stage 98: forward declaration — emit_local_struct_init is defined after
+ * codegen_expression but called from the compound literal case within it. */
+static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
+                                   ASTNode *list);
 
 /*
  * Stage 86: return the element Type* of a subscript expression without
@@ -938,6 +942,36 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    add rax, rbx\n");
         return element;
     }
+    /* Stage 98: array compound literal as subscript base.
+     * codegen_expression leaves rax = base address and sets full_type = ptr-to-elem. */
+    if (base_node->type == AST_COMPOUND_LITERAL) {
+        codegen_expression(cg, base_node);
+        if (!base_node->full_type || base_node->full_type->kind != TYPE_POINTER ||
+            !base_node->full_type->base) {
+            compile_error( "error: compound literal subscript: expected pointer type\n");
+            return NULL;
+        }
+        Type *element = base_node->full_type->base;
+        int elem_size = type_size(element);
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            compile_error( "error: array subscript index must be an integer\n");
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        if (elem_size != 1) {
+            fprintf(cg->output, "    imul rax, rax, %d\n", elem_size);
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
+
     if (base_node->type != AST_VAR_REF) {
         compile_error( "error: subscript base must be an identifier\n");
     }
@@ -1119,6 +1153,27 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
         return f;
     }
 
+    /* Stage 98: compound literal — initialize it and leave address in rax,
+     * then add the field offset. */
+    if (base->type == AST_COMPOUND_LITERAL) {
+        codegen_expression(cg, base);
+        /* After codegen_expression for a struct literal, rax holds the address
+         * and base->full_type is pointer-to-struct; unwrap to get struct type. */
+        Type *st = (base->full_type && base->full_type->kind == TYPE_POINTER)
+                   ? base->full_type->base : NULL;
+        if (!st || !is_struct_or_union_kind(st->kind)) {
+            compile_error( "error: '.' applied to non-struct/union compound literal\n");
+        }
+        StructField *f = find_struct_field(st, field_name);
+        if (!f) {
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(st->kind), field_name);
+        }
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+
     if (base->type != AST_VAR_REF) {
         compile_error( "error: '.' base must be an identifier\n");
     }
@@ -1288,6 +1343,15 @@ static Type *emit_struct_addr(CodeGen *cg, ASTNode *node) {
             compile_error( "error: call does not return a struct/union value\n");
         return node->full_type;
     }
+    case AST_COMPOUND_LITERAL: {
+        /* Stage 98: compound literal — codegen_expression initializes the
+         * slot and leaves its address in rax.  After eval, full_type is
+         * type_pointer(st), so return full_type->base (the struct type). */
+        codegen_expression(cg, node);
+        if (!node->full_type || !is_struct_or_union_kind(node->decl_type))
+            compile_error( "error: compound literal is not a struct/union value\n");
+        return node->full_type->base;
+    }
     default:
         compile_error( "error: expression is not a usable struct/union value\n");
     }
@@ -1321,6 +1385,30 @@ static int compute_decl_bytes(ASTNode *node) {
 }
 
 /*
+ * Stage 98: conservative upper bound on stack bytes needed for compound
+ * literals in expression trees: actual size plus alignment slack.
+ * Called before the prologue to contribute to the total frame size.
+ */
+static int compute_compound_literal_bytes(ASTNode *node) {
+    if (!node) return 0;
+    int total = 0;
+    if (node->type == AST_COMPOUND_LITERAL) {
+        int sz, align;
+        if (node->full_type) {
+            sz = node->full_type->size;
+            align = node->full_type->alignment;
+        } else {
+            sz = type_kind_bytes(node->decl_type);
+            align = sz;
+        }
+        total = sz + (align > 1 ? align - 1 : 0);
+    }
+    for (int i = 0; i < node->child_count; i++)
+        total += compute_compound_literal_bytes(node->children[i]);
+    return total;
+}
+
+/*
  * Stage 91-01: bytes of frame scratch needed to materialize the results of
  * struct-returning function calls in a body. Each such call gets its own slot
  * (the simple bump allocator below never frees), sized to the rounded struct
@@ -1340,6 +1428,37 @@ static int compute_struct_ret_bytes(CodeGen *cg, ASTNode *node) {
     for (int i = 0; i < node->child_count; i++)
         total += compute_struct_ret_bytes(cg, node->children[i]);
     return total;
+}
+
+/*
+ * Stage 98: walk an expression (or statement) subtree and reserve stack
+ * space for each AST_COMPOUND_LITERAL node encountered, storing the
+ * rbp-relative offset in node->byte_length.  Called once per function
+ * after the prologue and parameter-binding are complete.
+ */
+static void scan_expr_compound_literals(CodeGen *cg, ASTNode *node) {
+    if (!node) return;
+    if (node->type == AST_COMPOUND_LITERAL) {
+        int sz, align;
+        if (node->full_type) {
+            sz = node->full_type->size;
+            align = node->full_type->alignment;
+        } else {
+            sz = type_kind_bytes(node->decl_type);
+            align = sz;
+        }
+        cg->stack_offset += sz;
+        if (align > 1)
+            cg->stack_offset = (cg->stack_offset + align - 1) & ~(align - 1);
+        node->byte_length = cg->stack_offset;
+        /* Recurse into children (the initializer list) to handle nested
+         * compound literals. */
+        for (int i = 0; i < node->child_count; i++)
+            scan_expr_compound_literals(cg, node->children[i]);
+        return;
+    }
+    for (int i = 0; i < node->child_count; i++)
+        scan_expr_compound_literals(cg, node->children[i]);
 }
 
 /*
@@ -2414,6 +2533,26 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             Type *element = emit_array_index_addr(cg, operand);
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(element);
+            return;
+        }
+        /* Stage 98: &(T){...} — evaluate the compound literal to materialise
+         * it on the stack, then return its address.  Structs/arrays already
+         * leave the address in rax; scalars leave the value, so emit lea. */
+        if (operand->type == AST_COMPOUND_LITERAL) {
+            codegen_expression(cg, operand);
+            Type *base_type;
+            if (operand->decl_type == TYPE_STRUCT || operand->decl_type == TYPE_UNION ||
+                operand->decl_type == TYPE_ARRAY) {
+                /* rax already holds the address; full_type is pointer-to-element */
+                base_type = operand->full_type ? operand->full_type->base : type_int();
+            } else {
+                /* rax holds the value — emit lea to get the address */
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", operand->byte_length);
+                base_type = operand->full_type ? operand->full_type
+                                               : type_from_kind(operand->decl_type);
+            }
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(base_type);
             return;
         }
         /* Stage 91: &s.member — member access via dot. */
@@ -3900,6 +4039,136 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->full_type = arg_type;
         return;
     }
+    /* Stage 98: compound literal — (type-name){ initializer-list }.
+     * node->byte_length holds the rbp-relative stack offset (positive),
+     * pre-assigned by scan_expr_compound_literals. */
+    if (node->type == AST_COMPOUND_LITERAL) {
+        int offset = node->byte_length;
+        if (offset == 0) {
+            compile_error("error: compound literals at file scope are not yet supported\n");
+            return;
+        }
+        if (node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) {
+            Type *st = node->full_type;
+            ASTNode *list = node->children[0];
+            int b;
+            /* Zero-fill the struct slot. */
+            for (b = 0; b < st->size; b++)
+                fprintf(cg->output, "    mov byte [rbp - %d], 0\n", offset - b);
+            /* Handle union vs struct. */
+            if (node->decl_type == TYPE_UNION) {
+                if (list->child_count > 0) {
+                    ASTNode *child = list->children[0];
+                    if (child->type == AST_DESIGNATED_INIT && child->value != NULL) {
+                        /* Named member designator. */
+                        int found = -1;
+                        int fi;
+                        for (fi = 0; fi < st->field_count; fi++) {
+                            if (strcmp(st->fields[fi].name, child->value) == 0) {
+                                found = fi;
+                                break;
+                            }
+                        }
+                        if (found != 0) {
+                            compile_error("error: union compound literal with non-first member"
+                                          " designator not yet supported\n");
+                            return;
+                        }
+                        ASTNode *elem = child->children[0];
+                        StructField *f = &st->fields[0];
+                        int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
+                        codegen_expression(cg, elem);
+                        int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_POINTER);
+                        emit_store_local(cg, offset, fsize, src_is_long);
+                    } else if (child->type == AST_DESIGNATED_INIT) {
+                        compile_error("error: array index designator in union initializer\n");
+                        return;
+                    } else {
+                        StructField *f = &st->fields[0];
+                        int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
+                        codegen_expression(cg, child);
+                        int src_is_long = (child->result_type == TYPE_LONG ||
+                                           child->result_type == TYPE_POINTER);
+                        emit_store_local(cg, offset, fsize, src_is_long);
+                    }
+                }
+            } else {
+                emit_local_struct_init(cg, st, offset, list);
+            }
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", offset);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(st);
+            return;
+        }
+        if (node->decl_type == TYPE_ARRAY) {
+            Type *arr_type = node->full_type;
+            ASTNode *list = node->children[0];
+            int length = arr_type->length;
+            int elem_size = arr_type->base->size;
+            int size = arr_type->size;
+            Type *elem_type = arr_type->base;
+            int b;
+            /* Phase 1: zero-fill. */
+            for (b = 0; b < size; b++)
+                fprintf(cg->output, "    mov byte [rbp - %d], 0\n", offset - b);
+            /* Phase 2: cursor-based element initializers. */
+            int cur = 0;
+            int j;
+            for (j = 0; j < list->child_count; j++) {
+                ASTNode *child = list->children[j];
+                ASTNode *elem;
+                if (child->type == AST_DESIGNATED_INIT && child->value == NULL) {
+                    int idx = child->byte_length;
+                    if (idx < 0 || idx >= length) {
+                        compile_error("error: array designator index %d out of bounds\n", idx);
+                        return;
+                    }
+                    cur = idx;
+                    elem = child->children[0];
+                } else if (child->type == AST_DESIGNATED_INIT) {
+                    compile_error("error: member designator in array initializer\n");
+                    return;
+                } else {
+                    elem = child;
+                }
+                if (cur >= length) {
+                    compile_error("error: too many initializers in compound literal\n");
+                    return;
+                }
+                int elem_offset = offset - cur * elem_size;
+                if (elem_type && elem_type->kind == TYPE_STRUCT &&
+                    elem->type == AST_INITIALIZER_LIST) {
+                    emit_local_struct_init(cg, elem_type, elem_offset, elem);
+                } else {
+                    codegen_expression(cg, elem);
+                    int src_is_long = (elem->result_type == TYPE_LONG ||
+                                       elem->result_type == TYPE_POINTER);
+                    emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                }
+                cur++;
+            }
+            /* Array decays to pointer to first element. */
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", offset);
+            node->result_type = TYPE_POINTER;
+            node->full_type = type_pointer(elem_type);
+            return;
+        }
+        /* Scalar compound literal: store value on stack, leave value in rax. */
+        {
+            int sz = type_kind_bytes(node->decl_type);
+            ASTNode *init = node->children[0];
+            codegen_expression(cg, init);
+            int src_is_long = (sz == 8 || node->decl_type == TYPE_LONG ||
+                               node->decl_type == TYPE_LONG_LONG ||
+                               node->decl_type == TYPE_UNSIGNED_LONG_LONG ||
+                               node->decl_type == TYPE_POINTER);
+            emit_store_local(cg, offset, sz, src_is_long);
+            node->result_type = node->decl_type;
+            node->is_unsigned = (node->full_type ? !node->full_type->is_signed : 0);
+            return;
+        }
+    }
 }
 
 /*
@@ -4712,7 +4981,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         }
         int sret_bytes = return_is_memory_struct(node) ? 8 : 0;
         int scratch_bytes = compute_struct_ret_bytes(cg, body);
-        int stack_size = param_bytes + compute_decl_bytes(body) +
+        /* Stage 98: include stack space for compound literals in expression trees. */
+        int compound_lit_bytes = compute_compound_literal_bytes(body);
+        int stack_size = param_bytes + compute_decl_bytes(body) + compound_lit_bytes +
                          scratch_bytes + sret_bytes;
         if (node->is_variadic)
             stack_size += 304;
@@ -4935,6 +5206,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                 }
             }
         }
+
+        /* Stage 98: pre-assign stack offsets to all compound literals in the
+         * function body so they are available before any code is emitted. */
+        scan_expr_compound_literals(cg, body);
 
         /* Generate body statements directly — the function body acts as the outermost scope. */
         for (int i = 0; i < body->child_count; i++) {

@@ -54,6 +54,7 @@ typedef enum {
     AST_ARROW_ACCESS,      /* stage 31: expr "->" identifier */
     AST_INITIALIZER_LIST,  /* stage 32: "{" expr, ... "}" aggregate initializer */
     AST_DESIGNATED_INIT,   /* stage 97: designator + value inside an initializer list */
+    AST_COMPOUND_LITERAL,  /* stage 98: (type-name){ initializer-list } */
     AST_BUILTIN_VA_START,  /* stage 75-03: __builtin_va_start(ap, last) */
     AST_BUILTIN_VA_END,    /* stage 75-03: __builtin_va_end(ap) */
     AST_BUILTIN_VA_COPY,   /* stage 75-03: __builtin_va_copy(dst, src) */

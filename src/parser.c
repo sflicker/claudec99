@@ -1096,7 +1096,10 @@ static Type *parse_type_name(Parser *parser) {
         t = type_pointer(t);
     }
     /* Stage 86: optional array-suffix for sizeof(int[N]) and sizeof(int[N][M]).
-     * Build the array type from right (innermost) to left (outermost). */
+     * Stage 98: the first dimension may be omitted (int[]) in the compound-literal
+     * context; parse_cast detects this and routes to build_compound_literal.
+     * Omitted first dimension is represented as length 0 in the returned type;
+     * callers that disallow it (sizeof, cast, va_arg) check for length == 0. */
     if (parser->current.type == TOKEN_LBRACKET) {
         int dims[MAX_ARRAY_DIMS];
         int dim_count = 0;
@@ -1106,6 +1109,12 @@ static Type *parse_type_name(Parser *parser) {
                         "error: too many array dimensions (max %d)\n", MAX_ARRAY_DIMS);
             }
             parser->current = lexer_next_token(parser->lexer);
+            if (dim_count == 0 && parser->current.type == TOKEN_RBRACKET) {
+                /* Omitted first dimension: stage 98 compound literal (int[]). */
+                parser->current = lexer_next_token(parser->lexer);
+                dims[dim_count++] = 0;
+                continue;
+            }
             if (parser->current.type != TOKEN_INT_LITERAL) {
                 PARSER_ERROR(parser, "error: array size must be an integer literal\n");
             }
@@ -1545,8 +1554,13 @@ static ASTNode *parse_primary(Parser *parser) {
  * [base, index]. Type-driven dispatch (array vs pointer) and the
  * integer-index check happen in codegen.
  */
-static ASTNode *parse_postfix(Parser *parser) {
-    ASTNode *expr = parse_primary(parser);
+/* Stage 98: forward declaration — defined after parse_initializer. */
+static ASTNode *build_compound_literal(Parser *parser, Type *t);
+
+/* Stage 98: apply any trailing postfix suffixes ([expr], .field, ->field,
+ * (args), ++, --) to `base` and return the final expression node.
+ * Extracted from parse_postfix so compound literals can also chain suffixes. */
+static ASTNode *parse_postfix_suffixes(Parser *parser, ASTNode *expr) {
     while (parser->current.type == TOKEN_INCREMENT ||
            parser->current.type == TOKEN_DECREMENT ||
            parser->current.type == TOKEN_LBRACKET ||
@@ -1576,11 +1590,13 @@ static ASTNode *parse_postfix(Parser *parser) {
              * Stage 42: also allow a prior array subscript so that
              * pointer-array element subscripts like names[0][1] work.
              * Stage 78: also allow member/arrow access as subscript base so
-             * that expr.field[i] and expr->field[i] chains work. */
+             * that expr.field[i] and expr->field[i] chains work.
+             * Stage 98: also allow compound literals as subscript base. */
             if (expr->type != AST_VAR_REF && expr->type != AST_DEREF &&
                 expr->type != AST_ARRAY_INDEX &&
                 expr->type != AST_MEMBER_ACCESS &&
-                expr->type != AST_ARROW_ACCESS) {
+                expr->type != AST_ARROW_ACCESS &&
+                expr->type != AST_COMPOUND_LITERAL) {
                 PARSER_ERROR(parser, "error: subscript base must be an identifier\n");
             }
             parser->current = lexer_next_token(parser->lexer);
@@ -1619,6 +1635,51 @@ static ASTNode *parse_postfix(Parser *parser) {
         expr = node;
     }
     return expr;
+}
+
+static ASTNode *parse_postfix(Parser *parser) {
+    ASTNode *base;
+    /* Stage 98: detect compound literals (type-name) { init } so that
+     * constructs like &(T){...} and -(int){val} work — parse_cast handles
+     * the case at the top of the expression tree; parse_postfix handles it
+     * when reached via parse_unary (e.g. operand of a unary operator).
+     * If (type-name) is not followed by { we restore and fall through to
+     * parse_primary, which handles ordinary parenthesised expressions. */
+    if (parser->current.type == TOKEN_LPAREN) {
+        int saved_pos = parser->lexer->pos;
+        Token saved_token = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type == TOKEN_CONST ||
+            parser->current.type == TOKEN_VOLATILE ||
+            parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_BOOL ||
+            parser->current.type == TOKEN_CHAR ||
+            parser->current.type == TOKEN_SHORT ||
+            parser->current.type == TOKEN_INT ||
+            parser->current.type == TOKEN_LONG ||
+            parser->current.type == TOKEN_SIGNED ||
+            parser->current.type == TOKEN_UNSIGNED ||
+            parser->current.type == TOKEN_STRUCT ||
+            parser->current.type == TOKEN_UNION ||
+            (parser->current.type == TOKEN_IDENTIFIER &&
+             parser_find_typedef(parser, parser->current.value))) {
+            Type *t = parse_type_name(parser);
+            if (parser->current.type == TOKEN_RPAREN) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LBRACE) {
+                    base = build_compound_literal(parser, t);
+                    return parse_postfix_suffixes(parser, base);
+                }
+            }
+            /* Saw (type-name) but no { — not a compound literal.  Restore
+             * the lexer to before the '(' and fall through to parse_primary
+             * which handles parenthesised expressions. */
+        }
+        parser->lexer->pos = saved_pos;
+        parser->current = saved_token;
+    }
+    base = parse_primary(parser);
+    return parse_postfix_suffixes(parser, base);
 }
 
 /*
@@ -1665,6 +1726,8 @@ static ASTNode *parse_unary(Parser *parser) {
              parser_find_typedef(parser, parser->current.value))) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
             Type *t = parse_type_name(parser);
+            if (t->kind == TYPE_ARRAY && t->length == 0)
+                PARSER_ERROR(parser, "error: sizeof applied to incomplete array type\n");
             parser_expect(parser, TOKEN_RPAREN);
             ASTNode *node = parser_node(parser, AST_SIZEOF_TYPE, NULL);
             node->decl_type = t->kind;
@@ -1701,11 +1764,13 @@ static ASTNode *parse_unary(Parser *parser) {
         ASTNode *operand = parse_unary(parser);
         /* Stage 13-04: address-of also accepts an array subscript so
          * `&a[i]` produces a pointer to the i-th element.
-         * Stage 91: member access (. and ->) are also addressable lvalues. */
+         * Stage 91: member access (. and ->) are also addressable lvalues.
+         * Stage 98: compound literals are addressable lvalues. */
         if (operand->type != AST_VAR_REF &&
             operand->type != AST_ARRAY_INDEX &&
             operand->type != AST_MEMBER_ACCESS &&
-            operand->type != AST_ARROW_ACCESS) {
+            operand->type != AST_ARROW_ACCESS &&
+            operand->type != AST_COMPOUND_LITERAL) {
             PARSER_ERROR(parser, "error: address-of requires an lvalue\n");
         }
         ASTNode *node = parser_node(parser, AST_ADDR_OF, NULL);
@@ -1744,6 +1809,15 @@ static ASTNode *parse_unary(Parser *parser) {
  * the saved state and fall through to parse_unary — parenthesized
  * expressions are then handled by parse_primary as before.
  */
+/*
+ * <cast_expression> ::= "(" <type_name> ")" "{" <initializer_list> [ "," ] "}"
+ *                     | "(" <type_name> ")" <cast_expression>
+ *                     | <unary_expression>
+ *
+ * Stage 98: after the closing ")" is consumed, check for "{" to detect a
+ * compound literal. If found, delegate to build_compound_literal and apply
+ * postfix suffixes. Otherwise fall through to the regular cast path.
+ */
 static ASTNode *parse_cast(Parser *parser) {
     if (parser->current.type == TOKEN_LPAREN) {
         int saved_pos = parser->lexer->pos;
@@ -1759,10 +1833,20 @@ static ASTNode *parse_cast(Parser *parser) {
             parser->current.type == TOKEN_LONG ||
             parser->current.type == TOKEN_SIGNED ||
             parser->current.type == TOKEN_UNSIGNED ||
+            parser->current.type == TOKEN_STRUCT ||
+            parser->current.type == TOKEN_UNION ||
             (parser->current.type == TOKEN_IDENTIFIER &&
              parser_find_typedef(parser, parser->current.value))) {
             Type *cast_type = parse_type_name(parser);
             parser_expect(parser, TOKEN_RPAREN);
+            if (parser->current.type == TOKEN_LBRACE) {
+                /* Stage 98: compound literal — (type-name) { initializer-list } */
+                ASTNode *lit = build_compound_literal(parser, cast_type);
+                return parse_postfix_suffixes(parser, lit);
+            }
+            /* Regular cast: reject omitted array dimension. */
+            if (cast_type->kind == TYPE_ARRAY && cast_type->length == 0)
+                PARSER_ERROR(parser, "error: array type in cast has omitted size\n");
             ASTNode *operand = parse_cast(parser);
             ASTNode *cast = parser_node(parser, AST_CAST, NULL);
             cast->decl_type = cast_type->kind;
@@ -2074,6 +2158,121 @@ static ASTNode *parse_initializer(Parser *parser) {
     }
     parser->current = lexer_next_token(parser->lexer);
     return list;
+}
+
+/* Stage 98: infer array length from a compound literal's initializer list.
+ * Simulates the element cursor: for each child, if it is an array-index
+ * designator ([N]) the cursor jumps to N; otherwise the cursor advances by 1.
+ * Returns the number of elements implied (= max cursor index reached + 1). */
+static int infer_compound_literal_array_length(ASTNode *list) {
+    int cur = 0;
+    int max_idx = 0;
+    int i;
+    for (i = 0; i < list->child_count; i++) {
+        ASTNode *child = list->children[i];
+        if (child->type == AST_DESIGNATED_INIT && child->value == NULL) {
+            cur = child->byte_length;
+        }
+        if (cur >= max_idx)
+            max_idx = cur;
+        cur++;
+    }
+    return (list->child_count == 0) ? 0 : max_idx + 1;
+}
+
+/* Stage 98: build_compound_literal — called from parse_cast when (type-name)
+ * is followed by "{".  Current token is "{" on entry. */
+static ASTNode *build_compound_literal(Parser *parser, Type *t) {
+    /* Reject unsupported types. */
+    if (t->kind == TYPE_VOID || t->kind == TYPE_FUNCTION) {
+        PARSER_ERROR(parser, "error: invalid type for compound literal\n");
+    }
+
+    /* Build a type-label string for print_ast output. */
+    char label_buf[128];
+    if (t->kind == TYPE_STRUCT) {
+        const char *tname = NULL;
+        size_t ti;
+        for (ti = 0; ti < parser->struct_tags.len; ti++) {
+            StructTag *st = (StructTag *)vec_get(&parser->struct_tags, ti);
+            if (st->type == t) { tname = st->tag; break; }
+        }
+        if (tname)
+            snprintf(label_buf, sizeof(label_buf), "struct %s", tname);
+        else
+            snprintf(label_buf, sizeof(label_buf), "struct <anon>");
+    } else if (t->kind == TYPE_UNION) {
+        const char *tname = NULL;
+        size_t ti;
+        for (ti = 0; ti < parser->union_tags.len; ti++) {
+            UnionTag *ut = (UnionTag *)vec_get(&parser->union_tags, ti);
+            if (ut->type == t) { tname = ut->tag; break; }
+        }
+        if (tname)
+            snprintf(label_buf, sizeof(label_buf), "union %s", tname);
+        else
+            snprintf(label_buf, sizeof(label_buf), "union <anon>");
+    } else if (t->kind == TYPE_ARRAY) {
+        const char *en = t->base ? type_kind_name(t->base->kind) : "?";
+        if (t->length == 0)
+            snprintf(label_buf, sizeof(label_buf), "%s[]", en);
+        else
+            snprintf(label_buf, sizeof(label_buf), "%s[%d]", en, t->length);
+    } else if (t->kind == TYPE_POINTER) {
+        const char *en = (t->base) ? type_kind_name(t->base->kind) : "?";
+        snprintf(label_buf, sizeof(label_buf), "%s *", en);
+    } else {
+        const char *prefix = "";
+        if (!t->is_signed &&
+            t->kind != TYPE_BOOL &&
+            t->kind != TYPE_UNSIGNED_LONG_LONG)
+            prefix = "unsigned ";
+        snprintf(label_buf, sizeof(label_buf), "%s%s", prefix, type_kind_name(t->kind));
+    }
+
+    ASTNode *node = parser_node(parser, AST_COMPOUND_LITERAL,
+        lexer_store_bytes(parser->lexer, label_buf, strlen(label_buf)));
+    node->decl_type = t->kind;
+    node->byte_length = 0;  /* set by pre-scan in codegen */
+
+    if (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION) {
+        node->full_type = t;
+        /* parse_initializer consumes "{ initializer-list }" */
+        ASTNode *list = parse_initializer(parser);
+        ast_add_child(node, list);
+    } else if (t->kind == TYPE_ARRAY) {
+        /* parse_initializer consumes "{ initializer-list }" */
+        ASTNode *list = parse_initializer(parser);
+        if (t->length == 0) {
+            /* Infer array length from the initializer. */
+            int inferred = infer_compound_literal_array_length(list);
+            if (inferred == 0) inferred = 1;  /* at least 1 element */
+            t = type_array(t->base, inferred);
+            /* Update the label to show the inferred length. */
+            const char *en = t->base ? type_kind_name(t->base->kind) : "?";
+            snprintf(label_buf, sizeof(label_buf), "%s[%d]", en, inferred);
+            node->value =
+                lexer_store_bytes(parser->lexer, label_buf, strlen(label_buf));
+        }
+        node->full_type = t;
+        node->is_unsigned = (t->base && !t->base->is_signed &&
+                             t->base->kind != TYPE_BOOL &&
+                             t->base->kind != TYPE_UNSIGNED_LONG_LONG) ? 1 : 0;
+        ast_add_child(node, list);
+    } else {
+        /* Scalar: parse "{ expr }" or bare "{ expr }". */
+        node->full_type = (t->kind == TYPE_POINTER) ? t : NULL;
+        node->is_unsigned = (!t->is_signed && t->kind != TYPE_BOOL &&
+                             t->kind != TYPE_UNSIGNED_LONG_LONG) ? 1 : 0;
+        /* consume { */
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *init = parse_assignment_expression(parser);
+        if (parser->current.type == TOKEN_COMMA)
+            parser->current = lexer_next_token(parser->lexer);
+        parser_expect(parser, TOKEN_RBRACE);
+        ast_add_child(node, init);
+    }
+    return node;
 }
 
 /*
@@ -3364,10 +3563,19 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 }
                 init = parse_initializer(parser);
             } else {
-                init = parse_primary(parser);
+                /* Stage 98: use parse_assignment_expression so the full
+                 * expression grammar (including compound literals) is tried
+                 * before the constant-only check below. */
+                init = parse_assignment_expression(parser);
+                /* Stage 98: compound literal at file scope — detected here so
+                 * the error is more specific than "non-constant initializer". */
+                if (init->type == AST_COMPOUND_LITERAL) {
+                    PARSER_ERROR(parser,
+                            "error: compound literals at file scope are not yet supported\n");
+                }
                 if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
                     init->type != AST_STRING_LITERAL) {
-                    PARSER_ERROR(parser, 
+                    PARSER_ERROR(parser,
                             "error: non-constant initializer for global '%s'\n", d.name);
                 }
                 if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
