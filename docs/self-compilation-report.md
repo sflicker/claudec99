@@ -150,6 +150,26 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 101 self-hosting test
+
+None. The new array/struct/union static-local registration paths use
+`vec_push` (the established pattern), and `codegen_emit_local_statics`
+uses fixed-size `slots[]` arrays bounded by `MAX_ARRAY_ELEMS_DESIGNATED`
+(already present for the global array path). The compiler's own source
+uses block-scope `static` scalars and pointers extensively but no
+`static` array or struct locals, so the bootstrap cycle required no
+source changes. All 1552 tests passed at C0, C1, and C2.
+
+## Result (stage 101)
+
+**Date:** 2026-06-10
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01010000.00819` | `GNU_13_3_0` | 1552/1552 |
+| C1 | `build/ccompiler-c1` | `00.02.01010000.00820` | `ClaudeC99_v00_02_01010000_00819` | 1552/1552 |
+| C2 | `build/ccompiler-c2` | `00.02.01010000.00821` | `ClaudeC99_v00_02_01010000_00820` | 1552/1552 |
+
 ## Issues found during stage 100 self-hosting test
 
 None. The `eval_const_primary` sizeof extension and the `parse_external_declaration` path replacements are purely parser-level changes with no new AST node types, no dynamic allocation, and no codegen changes. All new code uses the existing `parse_type_name` / `type_size` / `lexer_store_bytes` helpers already verified self-hosting. The `sizeof(void *)` fix in `parse_primary` uses `parse_type_name` followed by a `t->kind == TYPE_VOID` check — the same pattern used for array incomplete-type detection. All 1544 tests passed at C0, C1, and C2.
