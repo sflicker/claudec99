@@ -1445,6 +1445,27 @@
 - [x] Tests: 6 valid (uninitialized array, initialized array, uninitialized struct, initialized struct, char-array from string literal, single-element array counter), 2 invalid (non-brace initializer for static array, non-brace initializer for static struct); all 1552 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; no compiler source changes needed; 1552 tests pass at all three stages
 
+## Stage 102 - Complete Static Aggregate Coverage
+
+- [x] `src/codegen.c` `codegen_emit_local_statics()` `.data` loop — Task 1: Replaced Guard A with index-designator handling
+	- [x] `AST_DESIGNATED_INIT` with `value == NULL` (index designator): extract `byte_length` as index, set cursor, assign slot — identical to global array path
+	- [x] `AST_DESIGNATED_INIT` with `value != NULL` (member designator in array context): `compile_error` "member designator in array initializer"
+	- [x] Non-designator children: existing bounds check + `slots[cur++] = child` path
+- [x] `src/codegen.c` `codegen_emit_local_statics()` `.data` slot-emit loop — Task 2+3c: Extended non-NULL and NULL branches
+	- [x] `TYPE_STRUCT` element + `AST_INITIALIZER_LIST`: calls `emit_global_struct(cg, elem_type, elem)`
+	- [x] `TYPE_UNION` element + `AST_INITIALIZER_LIST`: inline first-member init (int/char literal) + byte zero-fill to union size
+	- [x] `TYPE_ARRAY` element + `AST_INITIALIZER_LIST` (2D inner row): emit each scalar with `data_init_directive(scalar_type->kind)`, zero-fill missing columns; error if row element type is itself `TYPE_ARRAY` ("deeper than 2D")
+	- [x] NULL slot zero-fill: byte-fills (`db 0 × size`) for struct/union/array element types; directive+0 for scalars
+- [x] `src/codegen.c` `codegen_emit_local_statics()` `.bss` loop — Task 3a: multidimensional local static arrays
+	- [x] When `sv->full_type->base->kind == TYPE_ARRAY`: emit `label: resb total_bytes` (uses `sv->full_type->size`)
+	- [x] Single-dimension unchanged: `label: resx length`
+- [x] `src/codegen.c` `codegen_emit_bss()` — Task 3b: multidimensional global arrays
+	- [x] Same two-case fix for `gv->full_type->base->kind == TYPE_ARRAY`: emit `name: resb total_bytes`
+	- [x] Single-dimension unchanged
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01020000"`
+- [x] Tests: 7 valid (designated-init array, designated-init persist, struct array uninit, struct array init, 2D array uninit, 2D array init, 2D array persist), 1 invalid (3D static array → "deeper than 2D"); all 1560 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; compiler source uses no block-scope static aggregates of these new types; 1560 tests pass at all three stages
+
 ---
 
 ## TODO
@@ -1472,7 +1493,7 @@
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [x] static storage class (block scope — local static variables, scalar/pointer: Stage 71; arrays/structs/unions: Stage 101)
+- [x] static storage class (block scope — local static variables, scalar/pointer: Stage 71; arrays/structs/unions: Stage 101; designated-init arrays, struct/union element types, 2D arrays: Stage 102)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables

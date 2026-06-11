@@ -150,6 +150,26 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 102 self-hosting test
+
+None. The new designated-init handling, struct/union slot emission, and
+2D row emission in `codegen_emit_local_statics` all use patterns already
+verified in the global array path. The multidimensional `.bss` fixes use
+only `sv->full_type->size` (an existing field) and `resb` (already used
+for struct/union bss). The compiler's own source uses no block-scope
+static arrays of structs, unions, or multiple dimensions, so no compiler
+source changes were needed. All 1560 tests passed at C0, C1, and C2.
+
+## Result (stage 102)
+
+**Date:** 2026-06-11
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01020000.00824` | `GNU_13_3_0` | 1560/1560 |
+| C1 | `build/ccompiler-c1` | `00.02.01020000.00825` | `ClaudeC99_v00_02_01020000_00824` | 1560/1560 |
+| C2 | `build/ccompiler-c2` | `00.02.01020000.00826` | `ClaudeC99_v00_02_01020000_00825` | 1560/1560 |
+
 ## Issues found during stage 101 self-hosting test
 
 None. The new array/struct/union static-local registration paths use

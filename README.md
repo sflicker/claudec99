@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 102 (complete static aggregate coverage):
+
+> Stage 102 closes three codegen gaps deferred from stage 101, enabling designated initializers in static local arrays (e.g., `static int arr[4] = {[2] = 99}`), static arrays of structs and unions, and multidimensional static arrays (both uninitialized in `.bss` and initialized in `.data`). All edits are in `src/codegen.c` only; no parser, AST, or grammar changes. Block-scope `static` local variables now support designated-indexed arrays, all scalar and aggregate element types (except 3D+ nesting), and 2D integer arrays with full initialization and persistence. All 1560 tests pass (887 valid, 251 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with all 1560 tests.
+
 Through stage 101 (block-scope static aggregates):
 
 > Stage 101 enables block-scope `static` local variables to hold aggregate types (arrays, structs, and unions) in addition to scalars and pointers. The feature uses existing infrastructure from stage 71 (static-variable label generation and registration) and extends four codegen sites to handle RIP-relative addressing for aggregate statics. Initialized arrays and structs are populated from brace-list initializers; char arrays can also be initialized from string literals. All 1552 tests pass (880 valid, 250 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no compiler source changes needed.
@@ -621,7 +625,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 101 all tests pass (880 valid, 250 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1552 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 102 all tests pass (887 valid, 251 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1560 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
