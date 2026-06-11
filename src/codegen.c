@@ -5822,10 +5822,17 @@ static void codegen_emit_bss(CodeGen *cg) {
         if (!gv->is_static_linkage)
             fprintf(cg->output, "global %s\n", gv->name);
         if (gv->kind == TYPE_ARRAY && gv->full_type) {
-            fprintf(cg->output, "%s: %s %d\n",
-                    gv->name,
-                    bss_res_directive(gv->full_type->base->kind),
-                    gv->full_type->length);
+            if (gv->full_type->base &&
+                gv->full_type->base->kind == TYPE_ARRAY) {
+                /* Stage 102: multidimensional — use total byte count. */
+                fprintf(cg->output, "%s: resb %d\n",
+                        gv->name, gv->full_type->size);
+            } else {
+                fprintf(cg->output, "%s: %s %d\n",
+                        gv->name,
+                        bss_res_directive(gv->full_type->base->kind),
+                        gv->full_type->length);
+            }
         } else if ((gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
                    gv->full_type) {
             /* Reserve the exact byte count for struct/union globals. */
@@ -5890,23 +5897,119 @@ static void codegen_emit_local_statics(CodeGen *cg) {
                 int jj;
                 for (jj = 0; jj < list->child_count; jj++) {
                     ASTNode *child = list->children[jj];
-                    if (child->type == AST_DESIGNATED_INIT) {
+                    if (child->type == AST_DESIGNATED_INIT &&
+                        child->value == NULL) {
+                        /* Index designator: [N] = value */
+                        int idx = child->byte_length;
+                        if (idx < 0 || idx >= arr_len) {
+                            compile_error(
+                                "error: array designator index %d out of "
+                                "bounds\n", idx);
+                        }
+                        cur = idx;
+                        slots[cur++] = child->children[0];
+                    } else if (child->type == AST_DESIGNATED_INIT) {
+                        /* Member designator in array context */
                         compile_error(
-                            "error: designated initializers in block-scope "
-                            "static array not yet supported\n");
+                            "error: member designator in array initializer\n");
+                    } else {
+                        if (cur >= arr_len) {
+                            compile_error(
+                                "error: too many initializers for static "
+                                "array\n");
+                        }
+                        slots[cur++] = child;
                     }
-                    if (cur >= arr_len) {
-                        compile_error(
-                            "error: too many initializers for static array\n");
-                    }
-                    slots[cur++] = child;
                 }
                 int j;
                 for (j = 0; j < arr_len; j++) {
                     if (j == 0) fprintf(cg->output, "%s:\n", sv->label);
                     ASTNode *elem = slots[j];
                     if (elem != NULL) {
-                        if (elem->type == AST_INT_LITERAL) {
+                        if (elem_type && elem_type->kind == TYPE_STRUCT &&
+                            elem->type == AST_INITIALIZER_LIST) {
+                            /* Stage 102: struct element in static array. */
+                            emit_global_struct(cg, elem_type, elem);
+                        } else if (elem_type && elem_type->kind == TYPE_UNION &&
+                                   elem->type == AST_INITIALIZER_LIST) {
+                            /* Stage 102: union element — first-member init. */
+                            int cur_off = 0;
+                            if (elem->child_count > 1) {
+                                compile_error(
+                                    "error: too many initializers for union "
+                                    "element\n");
+                            }
+                            if (elem->child_count == 1 &&
+                                elem_type->field_count > 0) {
+                                StructField *f = &elem_type->fields[0];
+                                int fsize = f->full_type
+                                            ? f->full_type->size
+                                            : type_kind_bytes(f->kind);
+                                ASTNode *uelem = elem->children[0];
+                                if (uelem->type == AST_INT_LITERAL) {
+                                    long v = strtol(uelem->value, NULL, 10);
+                                    fprintf(cg->output, "    %s %ld\n",
+                                            data_init_directive(f->kind), v);
+                                } else if (uelem->type == AST_CHAR_LITERAL) {
+                                    long v = (long)(unsigned char)uelem->value[0];
+                                    fprintf(cg->output, "    %s %ld\n",
+                                            data_init_directive(f->kind), v);
+                                } else {
+                                    compile_error(
+                                        "error: unsupported initializer for "
+                                        "union element\n");
+                                }
+                                cur_off = fsize;
+                            }
+                            while (cur_off < elem_type->size) {
+                                fprintf(cg->output, "    db 0\n");
+                                cur_off++;
+                            }
+                        } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                                   elem->type == AST_INITIALIZER_LIST) {
+                            /* Stage 102: inner dimension row of a 2D array. */
+                            Type *scalar_type = elem_type->base;
+                            if (scalar_type == NULL ||
+                                scalar_type->kind == TYPE_ARRAY) {
+                                compile_error(
+                                    "error: initialized static arrays deeper "
+                                    "than 2D are not yet supported\n");
+                            }
+                            {
+                                const char *row_dir =
+                                    data_init_directive(scalar_type->kind);
+                                int row_len = elem_type->length;
+                                int provided = elem->child_count;
+                                int ri;
+                                for (ri = 0; ri < row_len; ri++) {
+                                    if (ri < provided) {
+                                        ASTNode *re = elem->children[ri];
+                                        if (re->type == AST_INT_LITERAL) {
+                                            long v = strtol(re->value,
+                                                            NULL, 10);
+                                            fprintf(cg->output,
+                                                    "    %s %ld\n",
+                                                    row_dir, v);
+                                        } else if (re->type ==
+                                                   AST_CHAR_LITERAL) {
+                                            long v = (long)(unsigned char)
+                                                     re->value[0];
+                                            fprintf(cg->output,
+                                                    "    %s %ld\n",
+                                                    row_dir, v);
+                                        } else {
+                                            compile_error(
+                                                "error: unsupported element "
+                                                "in 2D static array "
+                                                "initializer\n");
+                                        }
+                                    } else {
+                                        fprintf(cg->output, "    %s 0\n",
+                                                row_dir);
+                                    }
+                                }
+                            }
+                        } else if (elem->type == AST_INT_LITERAL) {
                             long v = strtol(elem->value, NULL, 10);
                             fprintf(cg->output, "    %s %ld\n", dir, v);
                         } else if (elem->type == AST_CHAR_LITERAL) {
@@ -5918,7 +6021,16 @@ static void codegen_emit_local_statics(CodeGen *cg) {
                                 "block-scope static array\n");
                         }
                     } else {
-                        fprintf(cg->output, "    %s 0\n", dir);
+                        /* Zero-fill missing slots. */
+                        if (elem_type && (elem_type->kind == TYPE_STRUCT ||
+                                          elem_type->kind == TYPE_UNION ||
+                                          elem_type->kind == TYPE_ARRAY)) {
+                            int b;
+                            for (b = 0; b < elem_type->size; b++)
+                                fprintf(cg->output, "    db 0\n");
+                        } else {
+                            fprintf(cg->output, "    %s 0\n", dir);
+                        }
                     }
                 }
             /* Stage 101: struct initialized from brace-list. */
@@ -5973,12 +6085,20 @@ static void codegen_emit_local_statics(CodeGen *cg) {
         for (i = 0; i < cg->local_statics.len; i++) {
             LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
             if (sv->is_initialized) continue;
-            /* Stage 101: array/struct/union bss. */
+            /* Stage 101/102: array/struct/union bss. */
             if (sv->kind == TYPE_ARRAY && sv->full_type) {
-                fprintf(cg->output, "%s: %s %d\n",
-                        sv->label,
-                        bss_res_directive(sv->full_type->base->kind),
-                        sv->full_type->length);
+                if (sv->full_type->base &&
+                    sv->full_type->base->kind == TYPE_ARRAY) {
+                    /* Stage 102: multidimensional — use total byte count. */
+                    fprintf(cg->output, "%s: resb %d\n",
+                            sv->label, sv->full_type->size);
+                } else {
+                    /* Single-dimension: element-directive × length. */
+                    fprintf(cg->output, "%s: %s %d\n",
+                            sv->label,
+                            bss_res_directive(sv->full_type->base->kind),
+                            sv->full_type->length);
+                }
             } else if ((sv->kind == TYPE_STRUCT || sv->kind == TYPE_UNION) &&
                        sv->full_type) {
                 fprintf(cg->output, "%s: resb %d\n", sv->label, sv->full_type->size);
