@@ -161,6 +161,7 @@
 <const_primary>       ::= <integer_literal> 
                        | <character_literal> 
                        | <identifier>    { enum constant lookup }
+                       | "sizeof" "(" <type_name> ")"
                        | "(" <constant_integer_expression> ")"
 
 <case_constant_expr>  ::= <constant_integer_expression>
@@ -418,10 +419,12 @@
 #     (both local and file scope).
 #
 # Initializers:
-#   - File-scope object initializers support: integer and character literals (scalar types),
-#     string literals (pointer types, char *s = "abc"), and brace-enclosed constant lists
-#     for arrays (char s[] = "abc", int a[] = {1,2,3}, char *names[] = {"a","b"}). 
-#     Full constant expressions are not yet supported.
+#   - File-scope object initializers support: compile-time constant integer expressions
+#     (arithmetic, bitwise, shift, unary, sizeof(type-name), enum constants, parenthesized
+#     sub-expressions) for integer-typed scalar globals (stage 100); character literals;
+#     string literals (pointer types, char *s = "abc"); and brace-enclosed constant lists
+#     for arrays (char s[] = "abc", int a[] = {1,2,3}, char *names[] = {"a","b"}).
+#     Pointer-typed globals retain literal-only initialization (null, string literal).
 #   - Struct initializers support brace-enclosed lists (stage 32) and
 #     whole-struct copy from a variable of the same type (stage 33).
 #   - Struct aggregate initializers (brace-enclosed lists) are now supported at both block scope

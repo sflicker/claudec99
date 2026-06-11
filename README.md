@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 100 (file-scope constant expressions):
+
+> Stage 100 enables file-scope integer-typed variables to accept full compile-time constant expressions (arithmetic, bitwise, shift, and unary operators) as initializers, matching the expressiveness already used in `case` labels and enum enumerator values. A new `sizeof(type-name)` operator is added to the constant-expression evaluator to support patterns like `int BUF_SZ = sizeof(int) * 1024;`. Expressions are evaluated at parse time and stored as integer literals in the AST. The evaluator is wired into two sites in the file-scope declarator path: first declarators and multi-declarator lists. Pointer-typed and struct/union-typed globals retain literal-only initialization (null pointers, string literals, etc.). All 1544 tests pass (874 valid, 248 invalid, 86 integration, 50 print-ast, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 99 (typedef enum completion):
 
 > Stage 99 completes the `typedef enum` feature with full support for integer constant-expression enumerator values and forward-declared enum tags. Enumerators now accept arbitrary constant expressions (arithmetic, bitwise, shift operators, parentheses, and references to previously-defined enum constants) instead of just literals. The pattern `typedef enum Status Status;` before the definition now works, enabling idiomatic C99 code. Internally, the three single-operator `eval_case_const_*` helpers were replaced with a unified nine-level constant-expression evaluator (primary → unary → multiplicative → shift → additive → bitwise-and/xor/or) matching C99 precedence rules. All 1531 tests pass (864 valid, 246 invalid, 86 integration, 49 print_ast, 100 print_tokens, 21 print_asm). Self-host C0→C1→C2 cycle passes cleanly.
@@ -501,7 +505,8 @@ Through stage 91 (address-of member lvalues):
   Each anonymous definition creates a unique type; two separately defined anonymous
   structs with identical layouts are not assignment-compatible.
 - **File-scope objects**: file-scope (global) object declarations (scalars,
-  pointers, arrays, structs), both initialized (with constant integer expressions,
+  pointers, arrays, structs), both initialized (integer-typed scalars accept full compile-time
+  constant expressions with arithmetic, bitwise, shift, and unary operators, plus `sizeof(type-name)`;
   string-literal initialization for pointer globals, brace-list initialization for array globals,
   and aggregate-initializer support for struct globals and arrays of structs,
   emitted to `.data` and `.rodata`) and uninitialized (with zero-initialization, emitted to
@@ -612,7 +617,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 99 all tests pass (864 valid, 246 invalid, 86 integration, 49 print-AST, 100 print-tokens, 21 print-asm; 1531 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 100 all tests pass (874 valid, 248 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1544 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

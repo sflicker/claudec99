@@ -1403,6 +1403,24 @@
 - [x] Tests: 9 valid (enum shift, prior-const, complement, paren, case-label-shift, 3 forward-ref, regression), 2 invalid (non-const expression, division-by-zero), 1 print_ast (enum const fold to INT_LITERAL); 2 outdated invalid tests removed; all 1531 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1531 tests pass at all three stages
 
+## Stage 100 - File-Scope Constant Expressions
+
+- [x] `eval_const_primary`: `TOKEN_SIZEOF` handling added for `sizeof(type-name)` in constant-expression contexts
+	- [x] Consumes `sizeof`, requires `(`, checks type-start condition (added `TOKEN_VOID` and `TOKEN_ENUM`), calls `parse_type_name`, returns `(long)type_size(t)`
+	- [x] `TOKEN_ENUM` added (pre-existing gap in `parse_primary`'s sizeof arm; `sizeof(enum Color)` = `sizeof(int)`)
+	- [x] `TOKEN_VOID` added; bare `void` rejected by `t->kind == TYPE_VOID` check after `parse_type_name`
+- [x] `parse_primary` sizeof arm: fixed pre-existing `sizeof(void *)` bug
+	- [x] Removed early `TOKEN_VOID` rejection; added `TOKEN_VOID` to type-start condition
+	- [x] Added `t->kind == TYPE_VOID` check after `parse_type_name` to still reject bare `sizeof(void)`
+- [x] `parse_external_declaration` first-declarator path: replaced literal-only check with `eval_const_expr`
+	- [x] `if (decl->decl_type != TYPE_POINTER && != TYPE_STRUCT && != TYPE_UNION)` → calls `eval_const_expr(parser, "file-scope initializer")` and stores result as `AST_INT_LITERAL` via `lexer_store_bytes`
+	- [x] Pointer/struct/union globals retain original `parse_assignment_expression` + literal-check path
+- [x] `parse_external_declaration` multi-declarator path: replaced `parse_primary` with `eval_const_expr`
+	- [x] `if (k2 != TYPE_POINTER)` → calls `eval_const_expr`; pointer path keeps `parse_primary` with literal check
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01000000"`
+- [x] Tests: 10 valid (arith, bitwise-or, shift, sizeof-void*, sizeof-int*256, sizeof-struct, enum-op, neg, complement, multi-decl), 2 invalid (variable reference, sizeof-no-parens), 1 print_ast (fold to IntLiteral); 2 pre-existing invalid tests renamed to match new error message; all 1544 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1544 tests pass at all three stages
+
 ---
 
 ## TODO
