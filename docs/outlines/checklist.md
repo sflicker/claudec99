@@ -1421,6 +1421,30 @@
 - [x] Tests: 10 valid (arith, bitwise-or, shift, sizeof-void*, sizeof-int*256, sizeof-struct, enum-op, neg, complement, multi-decl), 2 invalid (variable reference, sizeof-no-parens), 1 print_ast (fold to IntLiteral); 2 pre-existing invalid tests renamed to match new error message; all 1544 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1544 tests pass at all three stages
 
+## Stage 101 - Block-Scope Static Arrays and Structs
+
+- [x] `include/codegen.h`: added `ASTNode *init_node` to `LocalStaticVar` struct to carry brace-list and string-literal initializers for aggregate types
+- [x] `src/codegen.c` `codegen_statement` SC_STATIC arm: removed guard that rejected `TYPE_ARRAY`/`TYPE_STRUCT`/`TYPE_UNION`
+	- [x] Added array static registration block: validates initializer (must be `AST_INITIALIZER_LIST` or string literal for char arrays), generates `Lstatic_func_N` label, registers in `cg->locals` with `is_static=1`, pushes `LocalStaticVar` with `init_node` set
+	- [x] Added struct/union static registration block: validates non-zero size (incomplete type check), validates brace-list initializer, same label/registration pattern
+	- [x] Scalar block unchanged; now falls through naturally after array/struct branches return early
+- [x] `codegen_emit_local_statics()`: extended `.data` loop for aggregate statics
+	- [x] `TYPE_ARRAY` + `AST_STRING_LITERAL` → inline `db` bytes (char array from string literal)
+	- [x] `TYPE_ARRAY` + `AST_INITIALIZER_LIST` → slots-map pattern (same as global array emit); error if slots `> MAX_ARRAY_ELEMS_DESIGNATED`; error on designated init (not yet supported in this context); each slot emits directive+value or zero-fill
+	- [x] `TYPE_STRUCT` + `AST_INITIALIZER_LIST` → calls `emit_global_struct(cg, sv->full_type, sv->init_node)`
+	- [x] `TYPE_UNION` + `AST_INITIALIZER_LIST` → inline first-member logic (same as global union emit)
+	- [x] Scalar fallthrough: existing `data_init_directive` / `init_value` path
+- [x] `codegen_emit_local_statics()`: extended `.bss` loop
+	- [x] `TYPE_ARRAY` → `label: resx length` (using `bss_res_directive` of the element kind)
+	- [x] `TYPE_STRUCT` / `TYPE_UNION` → `label: resb total_size`
+	- [x] Scalar fallthrough unchanged
+- [x] `codegen_expression` VAR_REF `TYPE_ARRAY` branch: added `is_static` guard → `lea rax, [rel label]` instead of `lea rax, [rbp - offset]`
+- [x] `emit_array_index_addr()`: added `is_static` guard → `lea rax, [rel label]`; removed stale comment that claimed array statics were always rejected
+- [x] `emit_member_addr()` local-struct branch: added `is_static` guard → `lea rax, [rel label + offset]` (or `[rel label]` when offset is 0)
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01010000"`
+- [x] Tests: 6 valid (uninitialized array, initialized array, uninitialized struct, initialized struct, char-array from string literal, single-element array counter), 2 invalid (non-brace initializer for static array, non-brace initializer for static struct); all 1552 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; no compiler source changes needed; 1552 tests pass at all three stages
+
 ---
 
 ## TODO
@@ -1448,7 +1472,7 @@
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [x] static storage class (block scope — local static variables) (Stage 71)
+- [x] static storage class (block scope — local static variables, scalar/pointer: Stage 71; arrays/structs/unions: Stage 101)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables

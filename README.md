@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 101 (block-scope static aggregates):
+
+> Stage 101 enables block-scope `static` local variables to hold aggregate types (arrays, structs, and unions) in addition to scalars and pointers. The feature uses existing infrastructure from stage 71 (static-variable label generation and registration) and extends four codegen sites to handle RIP-relative addressing for aggregate statics. Initialized arrays and structs are populated from brace-list initializers; char arrays can also be initialized from string literals. All 1552 tests pass (880 valid, 250 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no compiler source changes needed.
+
 Through stage 100 (file-scope constant expressions):
 
 > Stage 100 enables file-scope integer-typed variables to accept full compile-time constant expressions (arithmetic, bitwise, shift, and unary operators) as initializers, matching the expressiveness already used in `case` labels and enum enumerator values. A new `sizeof(type-name)` operator is added to the constant-expression evaluator to support patterns like `int BUF_SZ = sizeof(int) * 1024;`. Expressions are evaluated at parse time and stored as integer literals in the AST. The evaluator is wired into two sites in the file-scope declarator path: first declarators and multi-declarator lists. Pointer-typed and struct/union-typed globals retain literal-only initialization (null pointers, string literals, etc.). All 1544 tests pass (874 valid, 248 invalid, 86 integration, 50 print-ast, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
@@ -398,7 +402,7 @@ Through stage 91 (address-of member lvalues):
   (arithmetic, bitwise, shift operators, parentheses, and references to previously-defined enum constants);
   enum constants are available as compile-time integer values throughout the translation unit.
   Forward-declared enum tags (`typedef enum Status Status;` before the body) are supported.
-  Block-scope `static` variables (scalar and pointer types) persist values across function calls and are stored in .bss or .data with constant-only initializers.
+  Block-scope `static` variables (scalar, pointer, array, and struct/union types) persist values across function calls and are stored in .bss or .data with constant-only initializers.
 - **Integer types**: `char`, `short`, `int`, `long` and their `unsigned` variants
   (`unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, plain `unsigned`).
   `signed` keyword support (`signed char`, `signed short`, `signed int`, `signed long`,
@@ -587,7 +591,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`; block-scope `static` arrays and structs;
+Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`;
 floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
 compound literals at file scope; `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
@@ -617,7 +621,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 100 all tests pass (874 valid, 248 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1544 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 101 all tests pass (880 valid, 250 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1552 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
