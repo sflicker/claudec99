@@ -150,6 +150,20 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 100 self-hosting test
+
+None. The `eval_const_primary` sizeof extension and the `parse_external_declaration` path replacements are purely parser-level changes with no new AST node types, no dynamic allocation, and no codegen changes. All new code uses the existing `parse_type_name` / `type_size` / `lexer_store_bytes` helpers already verified self-hosting. The `sizeof(void *)` fix in `parse_primary` uses `parse_type_name` followed by a `t->kind == TYPE_VOID` check — the same pattern used for array incomplete-type detection. All 1544 tests passed at C0, C1, and C2.
+
+## Result (stage 100)
+
+**Date:** 2026-06-10
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01000000.00812` | `GNU_13_3_0` | 1544/1544 |
+| C1 | `build/ccompiler-c1` | `00.02.01000000.00813` | `ClaudeC99_v00_02_01000000_00812` | 1544/1544 |
+| C2 | `build/ccompiler-c2` | `00.02.01000000.00814` | `ClaudeC99_v00_02_01000000_00813` | 1544/1544 |
+
 ## Issues found during stage 99 self-hosting test
 
 None. The extended `eval_const_expr` evaluator is purely recursive arithmetic with no dynamic allocation and no new AST nodes, so it compiled cleanly under C0. The forward-declaration enum tag path uses `vec_push` exactly as existing struct/union tag paths do. All 1531 tests passed at C0, C1, and C2.
