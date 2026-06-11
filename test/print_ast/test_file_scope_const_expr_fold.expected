@@ -1,0 +1,7 @@
+TranslationUnit:
+  VariableDeclaration: int x
+    IntLiteral: 3
+  FunctionDecl: int main
+    Block
+      ReturnStmt:
+        VariableExpression: x

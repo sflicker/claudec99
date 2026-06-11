@@ -1698,10 +1698,8 @@ static ASTNode *parse_unary(Parser *parser) {
         }
         /* Peek past '(' to distinguish sizeof(type) from sizeof(expression) */
         parser->current = lexer_next_token(parser->lexer); /* consume '(' */
-        if (parser->current.type == TOKEN_VOID) {
-            PARSER_ERROR(parser, "error: sizeof applied to void type\n");
-        }
-        if (parser->current.type == TOKEN_CONST ||
+        if (parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_CONST ||
             parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
@@ -1716,6 +1714,8 @@ static ASTNode *parse_unary(Parser *parser) {
              parser_find_typedef(parser, parser->current.value))) {
             /* <sizeof_expression> ::= "sizeof" "(" <type_name> ")" */
             Type *t = parse_type_name(parser);
+            if (t->kind == TYPE_VOID)
+                PARSER_ERROR(parser, "error: sizeof applied to void type\n");
             if (t->kind == TYPE_ARRAY && t->length == 0)
                 PARSER_ERROR(parser, "error: sizeof applied to incomplete array type\n");
             parser_expect(parser, TOKEN_RPAREN);
@@ -2608,6 +2608,41 @@ static long eval_const_primary(Parser *parser, const char *context) {
         long v = eval_const_expr(parser, context);
         parser_expect(parser, TOKEN_RPAREN);
         return v;
+    }
+    if (parser->current.type == TOKEN_SIZEOF) {
+        /* Stage 100: sizeof(type-name) in constant expression context. */
+        parser->current = lexer_next_token(parser->lexer);
+        if (parser->current.type != TOKEN_LPAREN)
+            PARSER_ERROR(parser,
+                "error: sizeof requires a parenthesized type name in a constant expression\n");
+        parser->current = lexer_next_token(parser->lexer); /* consume '(' */
+        if (parser->current.type == TOKEN_VOID      ||
+            parser->current.type == TOKEN_CONST     ||
+            parser->current.type == TOKEN_VOLATILE  ||
+            parser->current.type == TOKEN_BOOL      ||
+            parser->current.type == TOKEN_CHAR      ||
+            parser->current.type == TOKEN_SHORT     ||
+            parser->current.type == TOKEN_INT       ||
+            parser->current.type == TOKEN_LONG      ||
+            parser->current.type == TOKEN_SIGNED    ||
+            parser->current.type == TOKEN_UNSIGNED  ||
+            parser->current.type == TOKEN_STRUCT    ||
+            parser->current.type == TOKEN_UNION     ||
+            parser->current.type == TOKEN_ENUM      ||
+            (parser->current.type == TOKEN_IDENTIFIER &&
+             parser_find_typedef(parser, parser->current.value))) {
+            Type *t = parse_type_name(parser);
+            if (t->kind == TYPE_VOID)
+                PARSER_ERROR(parser,
+                    "error: sizeof applied to void type in constant expression\n");
+            if (t->kind == TYPE_ARRAY && t->length == 0)
+                PARSER_ERROR(parser,
+                    "error: sizeof applied to incomplete array type in constant expression\n");
+            parser_expect(parser, TOKEN_RPAREN);
+            return (long)type_size(t);
+        }
+        PARSER_ERROR(parser,
+            "error: sizeof requires a type name in a constant expression context\n");
     }
     PARSER_ERROR(parser,
         "error: %s is not an integer constant expression\n", context);
@@ -3639,13 +3674,18 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                             d.name);
                 }
                 init = parse_initializer(parser);
+            } else if (decl->decl_type != TYPE_POINTER &&
+                       decl->decl_type != TYPE_STRUCT &&
+                       decl->decl_type != TYPE_UNION) {
+                /* Stage 100: integer-typed global — evaluate as compile-time constant. */
+                long val = eval_const_expr(parser, "file-scope initializer");
+                char init_buf[32];
+                snprintf(init_buf, sizeof(init_buf), "%ld", val);
+                init = parser_node(parser, AST_INT_LITERAL,
+                           lexer_store_bytes(parser->lexer, init_buf, strlen(init_buf)));
             } else {
-                /* Stage 98: use parse_assignment_expression so the full
-                 * expression grammar (including compound literals) is tried
-                 * before the constant-only check below. */
+                /* Pointer or aggregate global — keep literal/expression path. */
                 init = parse_assignment_expression(parser);
-                /* Stage 98: compound literal at file scope — detected here so
-                 * the error is more specific than "non-constant initializer". */
                 if (init->type == AST_COMPOUND_LITERAL) {
                     PARSER_ERROR(parser,
                             "error: compound literals at file scope are not yet supported\n");
@@ -3654,10 +3694,6 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     init->type != AST_STRING_LITERAL) {
                     PARSER_ERROR(parser,
                             "error: non-constant initializer for global '%s'\n", d.name);
-                }
-                if (init->type == AST_STRING_LITERAL && decl->decl_type != TYPE_POINTER) {
-                    PARSER_ERROR(parser, 
-                            "error: string literal can only initialize a pointer\n");
                 }
             }
             ast_add_child(decl, init);
@@ -3707,10 +3743,20 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             }
             if (parser->current.type == TOKEN_ASSIGN) {
                 parser->current = lexer_next_token(parser->lexer);
-                ASTNode *init2 = parse_primary(parser);
-                if (init2->type != AST_INT_LITERAL && init2->type != AST_CHAR_LITERAL) {
-                    PARSER_ERROR(parser, 
-                            "error: non-constant initializer for global '%s'\n", d2.name);
+                ASTNode *init2;
+                if (k2 != TYPE_POINTER) {
+                    /* Stage 100: integer-typed — evaluate as compile-time constant. */
+                    long val2 = eval_const_expr(parser, "file-scope initializer");
+                    char init2_buf[32];
+                    snprintf(init2_buf, sizeof(init2_buf), "%ld", val2);
+                    init2 = parser_node(parser, AST_INT_LITERAL,
+                                lexer_store_bytes(parser->lexer, init2_buf, strlen(init2_buf)));
+                } else {
+                    init2 = parse_primary(parser);
+                    if (init2->type != AST_INT_LITERAL && init2->type != AST_CHAR_LITERAL) {
+                        PARSER_ERROR(parser,
+                                "error: non-constant initializer for global '%s'\n", d2.name);
+                    }
                 }
                 ast_add_child(next_decl, init2);
             }
