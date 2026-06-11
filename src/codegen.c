@@ -984,9 +984,10 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     if (lv) {
         if (lv->kind == TYPE_ARRAY) {
             element = lv->full_type->base;
-            /* Array statics are rejected at declaration time; is_static is
-             * always false here, so no static-label branch needed. */
-            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+            if (lv->is_static)
+                fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
+            else
+                fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
         } else if (lv->kind == TYPE_POINTER) {
             element = lv->full_type->base;
             /* Stage 38: subscript on void * is not allowed. */
@@ -1187,7 +1188,15 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
             compile_error( "error: '%s' has no member '%s'\n",
                     type_kind_name(lv->kind), field_name);
         }
-        fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset - f->offset);
+        if (lv->is_static) {
+            if (f->offset != 0)
+                fprintf(cg->output, "    lea rax, [rel %s + %d]\n",
+                        lv->static_label, f->offset);
+            else
+                fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
+        } else {
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset - f->offset);
+        }
         return f;
     }
     /* Stage 44: fall back to global struct/union variable. */
@@ -2066,7 +2075,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
              * assignment is still rejected by the AST_ASSIGNMENT path,
              * which checks the LHS name before reaching this code. */
             if (lv->kind == TYPE_ARRAY) {
-                fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
+                if (lv->is_static)
+                    fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
+                else
+                    fprintf(cg->output, "    lea rax, [rbp - %d]\n", lv->offset);
                 node->result_type = TYPE_POINTER;
                 node->full_type = type_pointer(lv->full_type->base);
                 return;
@@ -4276,12 +4288,93 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         }
         /* Stage 71: block-scope static variable. */
         if (node->storage_class == SC_STATIC) {
-            if (node->decl_type == TYPE_ARRAY || node->decl_type == TYPE_STRUCT ||
-                node->decl_type == TYPE_UNION) {
-                compile_error(
-                        "error: static local arrays, structs and unions are not yet supported\n");
+            /* Stage 101: array static. */
+            if (node->decl_type == TYPE_ARRAY && node->full_type) {
+                ASTNode *init_node = node->child_count > 0 ? node->children[0] : NULL;
+                int is_initialized = (init_node != NULL);
+                if (init_node != NULL) {
+                    int is_string = (node->full_type->base &&
+                                     node->full_type->base->kind == TYPE_CHAR &&
+                                     init_node->type == AST_STRING_LITERAL);
+                    if (init_node->type != AST_INITIALIZER_LIST && !is_string) {
+                        compile_error(
+                            "error: initializer for block-scope static '%s' "
+                            "must be a brace-enclosed constant list\n",
+                            node->value);
+                    }
+                }
+                char label[256];
+                snprintf(label, sizeof(label), "Lstatic_%s_%d",
+                         cg->current_func, cg->label_count++);
+                const char *label_ptr = codegen_intern(cg, label);
+                LocalVar new_static_lv;
+                new_static_lv.name = node->value;
+                new_static_lv.offset = 0;
+                new_static_lv.size = type_kind_bytes(node->full_type->base->kind);
+                new_static_lv.kind = TYPE_ARRAY;
+                new_static_lv.full_type = node->full_type;
+                new_static_lv.is_const = node->is_const;
+                new_static_lv.is_unsigned = 0;
+                new_static_lv.is_static = 1;
+                new_static_lv.static_label = label_ptr;
+                vec_push(&cg->locals, &new_static_lv);
+                LocalStaticVar new_sv;
+                new_sv.label = label_ptr;
+                new_sv.kind = TYPE_ARRAY;
+                new_sv.full_type = node->full_type;
+                new_sv.size = node->full_type->size;
+                new_sv.is_initialized = is_initialized;
+                new_sv.init_value = 0;
+                new_sv.is_unsigned = 0;
+                new_sv.init_node = init_node;
+                vec_push(&cg->local_statics, &new_sv);
+                return;
             }
-            /* Validate that the initializer (if any) is a compile-time constant. */
+            /* Stage 101: struct/union static. */
+            if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION) &&
+                node->full_type) {
+                if (node->full_type->size == 0) {
+                    compile_error(
+                        "error: variable '%s' has incomplete %s type\n",
+                        node->value, type_kind_name(node->decl_type));
+                }
+                ASTNode *init_node = node->child_count > 0 ? node->children[0] : NULL;
+                int is_initialized = (init_node != NULL);
+                if (init_node != NULL &&
+                    init_node->type != AST_INITIALIZER_LIST) {
+                    compile_error(
+                        "error: initializer for block-scope static '%s' "
+                        "must be a brace-enclosed constant list\n",
+                        node->value);
+                }
+                char label[256];
+                snprintf(label, sizeof(label), "Lstatic_%s_%d",
+                         cg->current_func, cg->label_count++);
+                const char *label_ptr = codegen_intern(cg, label);
+                LocalVar new_static_lv;
+                new_static_lv.name = node->value;
+                new_static_lv.offset = 0;
+                new_static_lv.size = node->full_type->size;
+                new_static_lv.kind = node->decl_type;
+                new_static_lv.full_type = node->full_type;
+                new_static_lv.is_const = node->is_const;
+                new_static_lv.is_unsigned = 0;
+                new_static_lv.is_static = 1;
+                new_static_lv.static_label = label_ptr;
+                vec_push(&cg->locals, &new_static_lv);
+                LocalStaticVar new_sv;
+                new_sv.label = label_ptr;
+                new_sv.kind = node->decl_type;
+                new_sv.full_type = node->full_type;
+                new_sv.size = node->full_type->size;
+                new_sv.is_initialized = is_initialized;
+                new_sv.init_value = 0;
+                new_sv.is_unsigned = 0;
+                new_sv.init_node = init_node;
+                vec_push(&cg->local_statics, &new_sv);
+                return;
+            }
+            /* Scalar static: validate that the initializer (if any) is a compile-time constant. */
             long init_value = 0;
             int is_initialized = 0;
             if (node->child_count > 0) {
@@ -4331,6 +4424,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             new_sv.is_initialized = is_initialized;
             new_sv.init_value = init_value;
             new_sv.is_unsigned = node->is_unsigned;
+            new_sv.init_node = NULL;
             vec_push(&cg->local_statics, &new_sv);
             return;
         }
@@ -5760,8 +5854,118 @@ static void codegen_emit_local_statics(CodeGen *cg) {
         for (i = 0; i < cg->local_statics.len; i++) {
             LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
             if (!sv->is_initialized) continue;
-            fprintf(cg->output, "%s: %s %ld\n",
-                    sv->label, data_init_directive(sv->kind), sv->init_value);
+            /* Stage 101: char array initialized from string literal. */
+            if (sv->kind == TYPE_ARRAY && sv->init_node &&
+                sv->init_node->type == AST_STRING_LITERAL) {
+                ASTNode *str = sv->init_node;
+                int arr_len = sv->full_type ? sv->full_type->length
+                                            : str->byte_length + 1;
+                int j;
+                fprintf(cg->output, "%s: db ", sv->label);
+                for (j = 0; j < arr_len; j++) {
+                    unsigned char b = (j < str->byte_length)
+                                      ? (unsigned char)str->value[j] : 0;
+                    if (j > 0) fprintf(cg->output, ", ");
+                    fprintf(cg->output, "%d", b);
+                }
+                fprintf(cg->output, "\n");
+            /* Stage 101: array initialized from brace-list. */
+            } else if (sv->kind == TYPE_ARRAY && sv->init_node &&
+                       sv->init_node->type == AST_INITIALIZER_LIST) {
+                ASTNode *list = sv->init_node;
+                int arr_len = sv->full_type ? sv->full_type->length
+                                            : list->child_count;
+                Type *elem_type = sv->full_type ? sv->full_type->base : NULL;
+                TypeKind elem_kind = elem_type ? elem_type->kind : TYPE_INT;
+                const char *dir = data_init_directive(elem_kind);
+                if (arr_len > MAX_ARRAY_ELEMS_DESIGNATED) {
+                    compile_error(
+                        "error: array too large for designated initializer "
+                        "emission\n");
+                }
+                ASTNode *slots[MAX_ARRAY_ELEMS_DESIGNATED];
+                int si;
+                for (si = 0; si < arr_len; si++) slots[si] = NULL;
+                int cur = 0;
+                int jj;
+                for (jj = 0; jj < list->child_count; jj++) {
+                    ASTNode *child = list->children[jj];
+                    if (child->type == AST_DESIGNATED_INIT) {
+                        compile_error(
+                            "error: designated initializers in block-scope "
+                            "static array not yet supported\n");
+                    }
+                    if (cur >= arr_len) {
+                        compile_error(
+                            "error: too many initializers for static array\n");
+                    }
+                    slots[cur++] = child;
+                }
+                int j;
+                for (j = 0; j < arr_len; j++) {
+                    if (j == 0) fprintf(cg->output, "%s:\n", sv->label);
+                    ASTNode *elem = slots[j];
+                    if (elem != NULL) {
+                        if (elem->type == AST_INT_LITERAL) {
+                            long v = strtol(elem->value, NULL, 10);
+                            fprintf(cg->output, "    %s %ld\n", dir, v);
+                        } else if (elem->type == AST_CHAR_LITERAL) {
+                            long v = (long)(unsigned char)elem->value[0];
+                            fprintf(cg->output, "    %s %ld\n", dir, v);
+                        } else {
+                            compile_error(
+                                "error: unsupported initializer element in "
+                                "block-scope static array\n");
+                        }
+                    } else {
+                        fprintf(cg->output, "    %s 0\n", dir);
+                    }
+                }
+            /* Stage 101: struct initialized from brace-list. */
+            } else if (sv->kind == TYPE_STRUCT && sv->init_node) {
+                fprintf(cg->output, "%s:\n", sv->label);
+                emit_global_struct(cg, sv->full_type, sv->init_node);
+            /* Stage 101: union initialized from brace-list. */
+            } else if (sv->kind == TYPE_UNION && sv->init_node) {
+                fprintf(cg->output, "%s:\n", sv->label);
+                {
+                    ASTNode *list = sv->init_node;
+                    int cur_off = 0;
+                    if (list->child_count > 1) {
+                        compile_error(
+                            "error: too many initializers for static union\n");
+                    }
+                    if (list->child_count == 1 &&
+                        sv->full_type->field_count > 0) {
+                        StructField *f = &sv->full_type->fields[0];
+                        int fsize = f->full_type ? f->full_type->size
+                                                 : type_kind_bytes(f->kind);
+                        ASTNode *elem = list->children[0];
+                        if (elem->type == AST_INT_LITERAL) {
+                            long v = strtol(elem->value, NULL, 10);
+                            fprintf(cg->output, "    %s %ld\n",
+                                    data_init_directive(f->kind), v);
+                        } else if (elem->type == AST_CHAR_LITERAL) {
+                            long v = (long)(unsigned char)elem->value[0];
+                            fprintf(cg->output, "    %s %ld\n",
+                                    data_init_directive(f->kind), v);
+                        } else {
+                            compile_error(
+                                "error: unsupported initializer for static "
+                                "union\n");
+                        }
+                        cur_off = fsize;
+                    }
+                    while (cur_off < sv->full_type->size) {
+                        fprintf(cg->output, "    db 0\n");
+                        cur_off++;
+                    }
+                }
+            } else {
+                /* Scalar fallthrough. */
+                fprintf(cg->output, "%s: %s %ld\n",
+                        sv->label, data_init_directive(sv->kind), sv->init_value);
+            }
         }
     }
     if (has_bss) {
@@ -5769,8 +5973,19 @@ static void codegen_emit_local_statics(CodeGen *cg) {
         for (i = 0; i < cg->local_statics.len; i++) {
             LocalStaticVar *sv = (LocalStaticVar *)vec_get(&cg->local_statics, i);
             if (sv->is_initialized) continue;
-            fprintf(cg->output, "%s: %s 1\n",
-                    sv->label, bss_res_directive(sv->kind));
+            /* Stage 101: array/struct/union bss. */
+            if (sv->kind == TYPE_ARRAY && sv->full_type) {
+                fprintf(cg->output, "%s: %s %d\n",
+                        sv->label,
+                        bss_res_directive(sv->full_type->base->kind),
+                        sv->full_type->length);
+            } else if ((sv->kind == TYPE_STRUCT || sv->kind == TYPE_UNION) &&
+                       sv->full_type) {
+                fprintf(cg->output, "%s: resb %d\n", sv->label, sv->full_type->size);
+            } else {
+                fprintf(cg->output, "%s: %s 1\n",
+                        sv->label, bss_res_directive(sv->kind));
+            }
         }
     }
 }

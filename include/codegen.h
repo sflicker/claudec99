@@ -41,6 +41,9 @@ typedef struct {
     int is_initialized;
     long init_value;
     int is_unsigned;
+    /* Stage 101: array/struct brace-list or string-literal initializer node;
+     * NULL for scalars and for any uninitialized (.bss) entry. */
+    struct ASTNode *init_node;
 } LocalStaticVar;
 
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative
