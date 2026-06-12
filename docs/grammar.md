@@ -142,17 +142,27 @@
                       | "case" <case_constant_expr> ":" <statement>
                       | "default" ":" <statement>
 
-<constant_integer_expression> ::= <const_bitwise_or>
+<constant_integer_expression> ::= <const_conditional>
+
+<const_conditional>   ::= <const_logical_or> [ "?" <constant_integer_expression> ":" <const_conditional> ]
+
+<const_logical_or>    ::= <const_logical_and> { "||" <const_logical_and> }
+
+<const_logical_and>   ::= <const_bitwise_or> { "&&" <const_bitwise_or> }
 
 <const_bitwise_or>    ::= <const_bitwise_xor> { "|" <const_bitwise_xor> }
 
 <const_bitwise_xor>   ::= <const_bitwise_and> { "^" <const_bitwise_and> }
 
-<const_bitwise_and>   ::= <const_additive> { "&" <const_additive> }
+<const_bitwise_and>   ::= <const_equality> { "&" <const_equality> }
 
-<const_additive>      ::= <const_shift> { ("+" | "-") <const_shift> }
+<const_equality>      ::= <const_relational> { ("==" | "!=") <const_relational> }
 
-<const_shift>         ::= <const_multiplicative> { ("<<" | ">>") <const_multiplicative> }
+<const_relational>    ::= <const_shift> { ("<" | "<=" | ">" | ">=") <const_shift> }
+
+<const_shift>         ::= <const_additive> { ("<<" | ">>") <const_additive> }
+
+<const_additive>      ::= <const_multiplicative> { ("+" | "-") <const_multiplicative> }
 
 <const_multiplicative> ::= <const_unary> { ("*" | "/" | "%") <const_unary> }
 

@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 104 (complete constant-expression evaluators):
+
+> Stage 104 extends both compile-time constant-expression evaluators (token-stream in parser.c for case labels, enum values, array designators, and file-scope initializers; AST-based in codegen.c for block-scope static scalars) to support the complete C99 integer constant expression operator set: relational operators (<, <=, >, >=), equality operators (==, !=), logical AND (&&), logical OR (||), and the ternary conditional operator (?:). Also fixes a pre-existing precedence bug where eval_const_additive and eval_const_shift had their call order inverted, making 3+1<<2 evaluate as 7 instead of 16. No new tokens, AST node types, or grammar rules. All 1584 tests pass (909 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 103 (block-scope static scalar constant-expression initializers):
 
 > Stage 103 extends block-scope static scalar initializers to accept the full set of compile-time constant expressions — arithmetic, bitwise, shift, unary, and `sizeof(type-name)` — matching the expressiveness already supported for `case` labels, enum values, and file-scope globals. Previously only integer literals, character literals, and negated literals were accepted. The implementation adds a recursive `eval_const_init` helper in `src/codegen.c` that evaluates parsed AST subtrees; the helper mirrors the parser's `eval_const_expr` function but operates post-parsing on the code-generator AST. No parser, AST, or grammar changes. Two bugs discovered during testing: hex literals require `strtol` base 0 (auto-detect) rather than base 10, and scalar `sizeof` requires a fallback to `type_kind_bytes` when `full_type` is NULL. All 1569 tests pass (894 valid, 253 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with all 1569 tests.
@@ -625,7 +629,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 103 all tests pass (894 valid, 253 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1569 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 104 all tests pass (909 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1584 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

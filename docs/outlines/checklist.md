@@ -1507,6 +1507,23 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 7 valid (various constant expressions), 2 invalid (non-constant, div-by-zero); all 1569 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1569/1569 tests pass at each step
 
+## Stage 104 - Complete Constant-Expression Evaluator
+
+- [x] `src/parser.c` — token-stream evaluator (`eval_const_expr`) extended:
+	- [x] Fix additive/shift precedence bug: swap call order so `eval_const_additive` calls `eval_const_multiplicative` and `eval_const_shift` calls `eval_const_additive` (was inverted — `3+1<<2` now correctly evaluates to 16)
+	- [x] Add `eval_const_relational`: handles `<`, `<=`, `>`, `>=`
+	- [x] Add `eval_const_equality`: handles `==`, `!=`; update `eval_const_bitwise_and` to call `eval_const_equality`
+	- [x] Add `eval_const_logical_and`: handles `&&`
+	- [x] Add `eval_const_logical_or`: handles `||`
+	- [x] Add `eval_const_conditional`: handles `?:` (right-associative; true branch via `eval_const_expr`, false branch recurses `eval_const_conditional`)
+	- [x] Update `eval_const_expr` to call `eval_const_conditional`; update grammar comment block
+- [x] `src/codegen.c` — AST evaluator (`eval_const_init`) extended:
+	- [x] Add `<`, `<=`, `>`, `>=`, `==`, `!=`, `&&`, `||` to `AST_BINARY_OP` block (eager evaluation — correct for constants)
+	- [x] Add `AST_CONDITIONAL_EXPR` case with lazy evaluation (only evaluates selected branch)
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01040000"`
+- [x] Tests: 13 valid (enum/file-scope/block-static × relational/equality/logical/ternary + precedence fix + switch case), 2 invalid; all 1584 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1584/1584 tests pass at each step
+
 ---
 
 ## TODO
@@ -1560,7 +1577,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Hex (\xNN) and octal (\NNN) character/string escapes (Stage 88)
 - [x] Address-of on member/subscript lvalues: &s.m, &p->m, &a[i].m (Stage 91)
 - [x] Compound assignment and ++/-- on general lvalues (Stages 79, 80)
-- [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type)) — Stages 77, 99–103
+- [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type), relational, equality, logical, ternary) — Stages 77, 99–104
 - [ ] Floating-point constant expressions
 - [ ] Lvalue conversion rules for all expression contexts
 - [ ] Unary + on floating-point
@@ -1571,7 +1588,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] For-loop initializer declarations (Stage 76)
 - [ ] switch with long / char / short discriminant (after promotion)
 - [ ] Case labels with unsigned and long constant values
-- [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions)
+- [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions; Stage 104: extended to relational, equality, logical, and ternary)
 - [ ] goto across declarations (only legal in C under restrictions)
 
 ### Functions
@@ -1614,7 +1631,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Calling convention for struct arguments and return values (SysV: register-class ≤16 bytes, memory-class via hidden pointer; enabled self-hosting) (Stage 91-01)
 - [ ] Floating-point ABI (xmm registers for float/double arguments)
 - [ ] Tail-call opportunities
-- [ ] Constant folding for integer expressions
+- [x] Constant folding for integer expressions — relational, equality, logical, and ternary operators in constant-expression contexts (Stage 104)
+- [ ] Constant folding in general expression codegen (optimizer)
 - [ ] Dead code elimination
 - [ ] Unreachable code warning
 - [ ] Callee-saved register preservation (rbx, rbp, r12–r15)
