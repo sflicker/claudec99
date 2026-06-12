@@ -4316,6 +4316,21 @@ static long eval_const_init(ASTNode *node, const char *varname) {
         if (strcmp(node->value, "&")  == 0) return lhs & rhs;
         if (strcmp(node->value, "^")  == 0) return lhs ^ rhs;
         if (strcmp(node->value, "|")  == 0) return lhs | rhs;
+        if (strcmp(node->value, "<")  == 0) return lhs <  rhs;
+        if (strcmp(node->value, "<=") == 0) return lhs <= rhs;
+        if (strcmp(node->value, ">")  == 0) return lhs >  rhs;
+        if (strcmp(node->value, ">=") == 0) return lhs >= rhs;
+        if (strcmp(node->value, "==") == 0) return lhs == rhs;
+        if (strcmp(node->value, "!=") == 0) return lhs != rhs;
+        if (strcmp(node->value, "&&") == 0) return (lhs && rhs) ? 1 : 0;
+        if (strcmp(node->value, "||") == 0) return (lhs || rhs) ? 1 : 0;
+    }
+    if (node->type == AST_CONDITIONAL_EXPR && node->child_count == 3) {
+        long cond = eval_const_init(node->children[0], varname);
+        if (cond)
+            return eval_const_init(node->children[1], varname);
+        else
+            return eval_const_init(node->children[2], varname);
     }
     compile_error(
         "error: initializer for block-scope static '%s' must be a "

@@ -2563,21 +2563,28 @@ static ASTNode *parse_for_statement(Parser *parser) {
 }
 
 /*
- * Stage 99: Compile-time integer constant expression evaluator.
+ * Stage 99–104: Compile-time integer constant expression evaluator.
  *
  * Grammar (loosest to tightest):
- *   const_expr            := const_bitwise_or
- *   const_bitwise_or      := const_bitwise_xor ( '|' const_bitwise_xor )*
- *   const_bitwise_xor     := const_bitwise_and ( '^' const_bitwise_and )*
- *   const_bitwise_and     := const_additive    ( '&' const_additive    )*
- *   const_additive        := const_shift       ( ('+' | '-') const_shift )*
- *   const_shift           := const_mult        ( ('<<' | '>>') const_mult )*
- *   const_mult            := const_unary       ( ('*' | '/' | '%') const_unary )*
- *   const_unary           := ('+' | '-' | '~' | '!') const_unary | const_primary
- *   const_primary         := INT_LITERAL | CHAR_LITERAL | enum-const-IDENTIFIER
- *                          | '(' const_expr ')'
+ *   const_expr         := const_conditional
+ *   const_conditional  := const_logical_or ( '?' const_expr ':' const_conditional )?
+ *   const_logical_or   := const_logical_and ( '||' const_logical_and )*
+ *   const_logical_and  := const_bitwise_or  ( '&&' const_bitwise_or  )*
+ *   const_bitwise_or   := const_bitwise_xor ( '|'  const_bitwise_xor )*
+ *   const_bitwise_xor  := const_bitwise_and ( '^'  const_bitwise_and )*
+ *   const_bitwise_and  := const_equality    ( '&'  const_equality    )*
+ *   const_equality     := const_relational  ( ('==' | '!=') const_relational )*
+ *   const_relational   := const_shift       ( ('<' | '<=' | '>' | '>=') const_shift )*
+ *   const_shift        := const_additive    ( ('<<' | '>>') const_additive )*
+ *   const_additive     := const_mult        ( ('+' | '-') const_mult )*
+ *   const_mult         := const_unary       ( ('*' | '/' | '%') const_unary )*
+ *   const_unary        := ('+' | '-' | '~' | '!') const_unary | const_primary
+ *   const_primary      := INT_LITERAL | CHAR_LITERAL | enum-const-IDENTIFIER
+ *                       | sizeof '(' type-name ')'
+ *                       | '(' const_expr ')'
  *
- * context is "case label expression", "enumerator value", or "array designator index".
+ * context is "case label expression", "enumerator value",
+ * "array designator index", or "file-scope initializer".
  * Calls PARSER_ERROR (does not return) if a non-constant operand is found.
  */
 static long eval_const_primary(Parser *parser, const char *context) {
@@ -2689,37 +2696,67 @@ static long eval_const_multiplicative(Parser *parser, const char *context) {
     return val;
 }
 
-static long eval_const_shift(Parser *parser, const char *context) {
-    long val = eval_const_multiplicative(parser, context);
-    while (parser->current.type == TOKEN_LEFT_SHIFT ||
-           parser->current.type == TOKEN_RIGHT_SHIFT) {
-        int op = parser->current.type;
-        parser->current = lexer_next_token(parser->lexer);
-        long rhs = eval_const_multiplicative(parser, context);
-        if (op == TOKEN_LEFT_SHIFT) val <<= rhs;
-        else                        val >>= rhs;
-    }
-    return val;
-}
-
 static long eval_const_additive(Parser *parser, const char *context) {
-    long val = eval_const_shift(parser, context);
+    long val = eval_const_multiplicative(parser, context);
     while (parser->current.type == TOKEN_PLUS ||
            parser->current.type == TOKEN_MINUS) {
         int op = parser->current.type;
         parser->current = lexer_next_token(parser->lexer);
-        long rhs = eval_const_shift(parser, context);
+        long rhs = eval_const_multiplicative(parser, context);
         if (op == TOKEN_PLUS) val += rhs;
         else                  val -= rhs;
     }
     return val;
 }
 
-static long eval_const_bitwise_and(Parser *parser, const char *context) {
+static long eval_const_shift(Parser *parser, const char *context) {
     long val = eval_const_additive(parser, context);
+    while (parser->current.type == TOKEN_LEFT_SHIFT ||
+           parser->current.type == TOKEN_RIGHT_SHIFT) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_additive(parser, context);
+        if (op == TOKEN_LEFT_SHIFT) val <<= rhs;
+        else                        val >>= rhs;
+    }
+    return val;
+}
+
+static long eval_const_relational(Parser *parser, const char *context) {
+    long val = eval_const_shift(parser, context);
+    while (parser->current.type == TOKEN_LT ||
+           parser->current.type == TOKEN_LE ||
+           parser->current.type == TOKEN_GT ||
+           parser->current.type == TOKEN_GE) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_shift(parser, context);
+        if      (op == TOKEN_LT) val = val <  rhs;
+        else if (op == TOKEN_LE) val = val <= rhs;
+        else if (op == TOKEN_GT) val = val >  rhs;
+        else                     val = val >= rhs;
+    }
+    return val;
+}
+
+static long eval_const_equality(Parser *parser, const char *context) {
+    long val = eval_const_relational(parser, context);
+    while (parser->current.type == TOKEN_EQ ||
+           parser->current.type == TOKEN_NE) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_relational(parser, context);
+        if (op == TOKEN_EQ) val = val == rhs;
+        else                val = val != rhs;
+    }
+    return val;
+}
+
+static long eval_const_bitwise_and(Parser *parser, const char *context) {
+    long val = eval_const_equality(parser, context);
     while (parser->current.type == TOKEN_AMPERSAND) {
         parser->current = lexer_next_token(parser->lexer);
-        val &= eval_const_additive(parser, context);
+        val &= eval_const_equality(parser, context);
     }
     return val;
 }
@@ -2742,8 +2779,39 @@ static long eval_const_bitwise_or(Parser *parser, const char *context) {
     return val;
 }
 
+static long eval_const_logical_and(Parser *parser, const char *context) {
+    long val = eval_const_bitwise_or(parser, context);
+    while (parser->current.type == TOKEN_AND_AND) {
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_bitwise_or(parser, context);
+        val = (val && rhs) ? 1 : 0;
+    }
+    return val;
+}
+
+static long eval_const_logical_or(Parser *parser, const char *context) {
+    long val = eval_const_logical_and(parser, context);
+    while (parser->current.type == TOKEN_OR_OR) {
+        parser->current = lexer_next_token(parser->lexer);
+        long rhs = eval_const_logical_and(parser, context);
+        val = (val || rhs) ? 1 : 0;
+    }
+    return val;
+}
+
+static long eval_const_conditional(Parser *parser, const char *context) {
+    long cond = eval_const_logical_or(parser, context);
+    if (parser->current.type != TOKEN_QUESTION)
+        return cond;
+    parser->current = lexer_next_token(parser->lexer); /* consume '?' */
+    long true_val  = eval_const_expr(parser, context);
+    parser_expect(parser, TOKEN_COLON);
+    long false_val = eval_const_conditional(parser, context);
+    return cond ? true_val : false_val;
+}
+
 static long eval_const_expr(Parser *parser, const char *context) {
-    return eval_const_bitwise_or(parser, context);
+    return eval_const_conditional(parser, context);
 }
 
 /*
