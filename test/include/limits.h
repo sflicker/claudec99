@@ -6,6 +6,9 @@
 #define SCHAR_MIN (-128)
 #define SCHAR_MAX 127
 #define UCHAR_MAX 255
+#define CHAR_MIN SCHAR_MIN
+#define CHAR_MAX SCHAR_MAX
+#define MB_LEN_MAX 16
 
 #define SHRT_MIN (-32768)
 #define SHRT_MAX 32767

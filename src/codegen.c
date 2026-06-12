@@ -2459,6 +2459,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             /* Pointer RHS values are already in full rax — skip the
              * 32-to-64 sign-extend that integer values would need. */
             int rhs_is_long = (node->children[0]->result_type == TYPE_LONG ||
+                               node->children[0]->result_type == TYPE_LONG_LONG ||
+                               node->children[0]->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                node->children[0]->result_type == TYPE_POINTER);
             /* Stage 63: _Bool assignment normalizes any nonzero value to 1. */
             if (lv->kind == TYPE_BOOL)
@@ -2518,6 +2520,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             }
         }
         int rhs_is_long_g = (node->children[0]->result_type == TYPE_LONG ||
+                             node->children[0]->result_type == TYPE_LONG_LONG ||
+                             node->children[0]->result_type == TYPE_UNSIGNED_LONG_LONG ||
                              node->children[0]->result_type == TYPE_POINTER);
         /* Stage 63: _Bool assignment normalizes any nonzero value to 1. */
         if (gv->kind == TYPE_BOOL)
@@ -4091,6 +4095,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
                         codegen_expression(cg, elem);
                         int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_LONG_LONG ||
+                                           elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                            elem->result_type == TYPE_POINTER);
                         emit_store_local(cg, offset, fsize, src_is_long);
                     } else if (child->type == AST_DESIGNATED_INIT) {
@@ -4101,6 +4107,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         int fsize = f->full_type ? f->full_type->size : type_kind_bytes(f->kind);
                         codegen_expression(cg, child);
                         int src_is_long = (child->result_type == TYPE_LONG ||
+                                           child->result_type == TYPE_LONG_LONG ||
+                                           child->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                            child->result_type == TYPE_POINTER);
                         emit_store_local(cg, offset, fsize, src_is_long);
                     }
@@ -4155,6 +4163,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 } else {
                     codegen_expression(cg, elem);
                     int src_is_long = (elem->result_type == TYPE_LONG ||
+                                       elem->result_type == TYPE_LONG_LONG ||
+                                       elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                        elem->result_type == TYPE_POINTER);
                     emit_store_local(cg, elem_offset, elem_size, src_is_long);
                 }
@@ -4269,6 +4279,8 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
             }
             codegen_expression(cg, elem);
             int src_is_long = (elem->result_type == TYPE_LONG ||
+                               elem->result_type == TYPE_LONG_LONG ||
+                               elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                elem->result_type == TYPE_POINTER);
             emit_store_local(cg, foffset, fsize, src_is_long);
         }
@@ -4523,6 +4535,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         ASTNode *elem = list->children[0];
                         codegen_expression(cg, elem);
                         int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_LONG_LONG ||
+                                           elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                            elem->result_type == TYPE_POINTER);
                         emit_store_local(cg, offset, fsize, src_is_long);
                     }
@@ -4623,6 +4637,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                     } else {
                         codegen_expression(cg, elem);
                         int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_LONG_LONG ||
+                                           elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
                                            elem->result_type == TYPE_POINTER);
                         emit_store_local(cg, elem_offset, elem_size, src_is_long);
                     }
@@ -4696,6 +4712,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
              * Stage 40: unsigned 32-bit values are already zero-extended
              * in rax by x86-64 semantics, so also skip movsxd. */
             int rhs_is_long = (init_kind == TYPE_LONG ||
+                               init_kind == TYPE_LONG_LONG ||
+                               init_kind == TYPE_UNSIGNED_LONG_LONG ||
                                init_kind == TYPE_POINTER ||
                                rhs_is_null_ptr ||
                                (size == 8 && node->children[0]->is_unsigned));

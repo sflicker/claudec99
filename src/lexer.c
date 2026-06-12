@@ -559,6 +559,7 @@ Token lexer_next_token(Lexer *lexer) {
         else if (strcmp(ident_buf.data, "void")     == 0) { token.type = TOKEN_VOID;     token.value = "void";     token.value_len = 4; }
         else if (strcmp(ident_buf.data, "const")    == 0) { token.type = TOKEN_CONST;    token.value = "const";    token.value_len = 5; }
         else if (strcmp(ident_buf.data, "volatile") == 0) { token.type = TOKEN_VOLATILE; token.value = "volatile"; token.value_len = 8; }
+        else if (strcmp(ident_buf.data, "restrict") == 0) { token.type = TOKEN_RESTRICT; token.value = "restrict"; token.value_len = 8; }
         else if (strcmp(ident_buf.data, "signed")   == 0) { token.type = TOKEN_SIGNED;   token.value = "signed";   token.value_len = 6; }
         else if (strcmp(ident_buf.data, "unsigned") == 0) { token.type = TOKEN_UNSIGNED; token.value = "unsigned"; token.value_len = 8; }
         else if (strcmp(ident_buf.data, "_Bool")    == 0) { token.type = TOKEN_BOOL;     token.value = "_Bool";    token.value_len = 5; }
@@ -617,6 +618,7 @@ const char *token_display_name(TokenType type) {
         case TOKEN_BOOL:             return "'_Bool'";
         case TOKEN_CONST:            return "'const'";
         case TOKEN_VOLATILE:         return "'volatile'";
+        case TOKEN_RESTRICT:         return "'restrict'";
         case TOKEN_SIGNED:           return "'signed'";
         case TOKEN_UNSIGNED:         return "'unsigned'";
         case TOKEN_IDENTIFIER:       return "identifier";

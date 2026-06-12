@@ -1082,9 +1082,10 @@ static Type *parse_type_name(Parser *parser) {
      * by optional "const" or "volatile" qualifiers (pointer-level). */
     while (parser->current.type == TOKEN_STAR) {
         parser->current = lexer_next_token(parser->lexer);
-        /* Consume optional const/volatile after each star. */
-        if (parser->current.type == TOKEN_CONST ||
-            parser->current.type == TOKEN_VOLATILE)
+        /* Consume optional const/volatile/restrict after each star. */
+        while (parser->current.type == TOKEN_CONST   ||
+               parser->current.type == TOKEN_VOLATILE ||
+               parser->current.type == TOKEN_RESTRICT)
             parser->current = lexer_next_token(parser->lexer);
         t = type_pointer(t);
     }
@@ -1160,15 +1161,15 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
         /* Stage 66: consume optional "const" qualifier after each star.
          * Stage 82-04: also consume optional "volatile" qualifier.
-         * The last such qualifier marks the pointer itself as const. */
-        if (parser->current.type == TOKEN_CONST) {
-            pointer_is_const = 1;
+         * Stage 106: also consume optional "restrict" qualifier.
+         * The last const qualifier marks the pointer itself as const. */
+        while (parser->current.type == TOKEN_CONST   ||
+               parser->current.type == TOKEN_VOLATILE ||
+               parser->current.type == TOKEN_RESTRICT) {
+            if (parser->current.type == TOKEN_CONST)
+                pointer_is_const = 1;
+            /* volatile and restrict: consume and ignore */
             parser->current = lexer_next_token(parser->lexer);
-        } else if (parser->current.type == TOKEN_VOLATILE) {
-            pointer_is_const = 0;
-            parser->current = lexer_next_token(parser->lexer);
-        } else {
-            pointer_is_const = 0;
         }
     }
     d.pointer_is_const = pointer_is_const;
@@ -1229,9 +1230,11 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                                     " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
                         }
                         /* Stage 39: consume optional const qualifier.
-                         * Stage 82-04: also consume optional volatile qualifier. */
-                        if (parser->current.type == TOKEN_CONST ||
-                            parser->current.type == TOKEN_VOLATILE)
+                         * Stage 82-04: also consume optional volatile qualifier.
+                         * Stage 106: also consume optional restrict qualifier. */
+                        while (parser->current.type == TOKEN_CONST   ||
+                               parser->current.type == TOKEN_VOLATILE ||
+                               parser->current.type == TOKEN_RESTRICT)
                             parser->current = lexer_next_token(parser->lexer);
                         Type *pt = parse_type_specifier(parser, NULL);
                         int stars = 0;
@@ -3297,9 +3300,11 @@ static ASTNode *parse_statement(Parser *parser) {
  */
 static ASTNode *parse_parameter_declaration(Parser *parser) {
     /* Stage 39: consume optional leading const qualifier on parameter types.
-     * Stage 82-04: also consume optional volatile qualifier. */
-    if (parser->current.type == TOKEN_CONST ||
-        parser->current.type == TOKEN_VOLATILE)
+     * Stage 82-04: also consume optional volatile qualifier.
+     * Stage 106: also consume optional restrict qualifier. */
+    if (parser->current.type == TOKEN_CONST   ||
+        parser->current.type == TOKEN_VOLATILE ||
+        parser->current.type == TOKEN_RESTRICT)
         parser->current = lexer_next_token(parser->lexer);
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
@@ -3326,6 +3331,13 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     while (parser->current.type == TOKEN_STAR) {
         leading_stars++;
         parser->current = lexer_next_token(parser->lexer);
+        /* Stage 106: consume optional pointer qualifiers after each star so
+         * that patterns like "char * restrict s" parse correctly when the
+         * leading stars are pre-consumed before parse_declarator is called. */
+        while (parser->current.type == TOKEN_CONST   ||
+               parser->current.type == TOKEN_VOLATILE ||
+               parser->current.type == TOKEN_RESTRICT)
+            parser->current = lexer_next_token(parser->lexer);
     }
     if (leading_stars > 0 &&
         (parser->current.type == TOKEN_COMMA ||

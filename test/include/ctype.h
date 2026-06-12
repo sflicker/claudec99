@@ -7,6 +7,10 @@ int isalpha(int);
 int isdigit(int);
 int isspace(int);
 int isxdigit(int);
+int iscntrl(int);
+int isgraph(int);
+int isprint(int);
+int ispunct(int);
 
 int islower(int);
 int isupper(int);
