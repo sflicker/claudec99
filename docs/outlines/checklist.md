@@ -1466,6 +1466,47 @@
 - [x] Tests: 7 valid (designated-init array, designated-init persist, struct array uninit, struct array init, 2D array uninit, 2D array init, 2D array persist), 1 invalid (3D static array → "deeper than 2D"); all 1560 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; compiler source uses no block-scope static aggregates of these new types; 1560 tests pass at all three stages
 
+## Stage 100 - File-Scope Constant Expressions
+
+- [x] Parser: extended `eval_const_expr` with `sizeof(type-name)` support in `eval_const_primary`
+	- [x] Integer-typed file-scope globals now accept full arithmetic/bitwise/shift/unary constant expressions instead of literal-only
+	- [x] `TOKEN_SIZEOF` handling added; consumes `sizeof`, requires `(`, checks type-start condition, calls `parse_type_name`, returns `(long)type_size(t)`
+	- [x] `TOKEN_ENUM` and `TOKEN_VOID` added to type-start detection in `eval_const_primary` and `parse_primary` sizeof arm
+- [x] No AST/codegen changes
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01000000"`
+- [x] Tests: 10 valid (arith, bitwise-or, shift, sizeof-void*, sizeof-int*256, sizeof-struct, enum-op, neg, complement, multi-decl), 2 invalid (variable reference, sizeof-no-parens), 1 print-ast; all 1544 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues
+
+## Stage 101 - Block-Scope Static Aggregates
+
+- [x] AST: added `init_node` field to `LocalStaticVar` to carry brace-list and string-literal initializers for aggregate types
+- [x] Codegen: SC_STATIC arm in `codegen_statement` handles TYPE_ARRAY/TYPE_STRUCT/TYPE_UNION
+	- [x] Array static registration: validates initializer (AST_INITIALIZER_LIST or string literal for char arrays), generates label, registers with init_node set
+	- [x] Struct/union static registration: validates non-zero size, validates brace-list initializer, same label/registration pattern
+- [x] `codegen_emit_local_statics` extended for aggregate types with RIP-relative addressing
+	- [x] Aggregate statics in `.data` and `.bss` sections
+	- [x] Array-to-pointer decay and member addressing work correctly
+- [x] `is_static` branches in array decay, subscript addressing, struct member addressing
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01010000"`
+- [x] Tests: 6 valid (uninitialized array, initialized array, uninitialized struct, initialized struct, char-array from string literal, single-element array counter), 2 invalid; all 1552 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues
+
+## Stage 102 (continued) - Complete Static Aggregate Coverage
+
+Additional improvements for designated-init and multidimensional static arrays (see above).
+
+## Stage 103 - Block-Scope Static Scalar Constant-Expression Initializers
+
+- [x] Codegen only: add `eval_const_init(ASTNode *node, const char *varname)` static helper in `src/codegen.c` before `codegen_statement`
+	- [x] Replaces 3-case ad-hoc check (AST_INT_LITERAL, AST_CHAR_LITERAL, negated-literal) with a single `eval_const_init` call
+	- [x] Handles: AST_INT_LITERAL (strtol base 0 for hex), AST_CHAR_LITERAL, AST_SIZEOF_TYPE (type_size if full_type, else type_kind_bytes for scalars)
+	- [x] Handles unary ops: `-` (negation), `~` (bitwise complement), `!` (logical not), `+` (unary plus)
+	- [x] Handles binary ops: `+`, `-`, `*`, `/`, `%` (with div-by-zero guard), `<<`, `>>`, `&`, `^`, `|`
+	- [x] Full constant-expression support for block-scope static scalar initializers
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01030000"`
+- [x] Tests: 7 valid (various constant expressions), 2 invalid (non-constant, div-by-zero); all 1569 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1569/1569 tests pass at each step
+
 ---
 
 ## TODO
@@ -1493,7 +1534,7 @@
 - [ ] Type compatibility and composite type rules
 
 ### Declarations and Scope
-- [x] static storage class (block scope — local static variables, scalar/pointer: Stage 71; arrays/structs/unions: Stage 101; designated-init arrays, struct/union element types, 2D arrays: Stage 102)
+- [x] static storage class (block scope — local static variables: scalar/pointer Stage 71; arrays/structs/unions Stage 101; designated-init arrays, struct/union element types, 2D arrays Stage 102; full constant-expression initializers Stage 103)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
 - [ ] Tentative definitions for file-scope variables
@@ -1512,12 +1553,14 @@
 - [ ] Pointer comparison operators (< <= > >= on pointers)
 - [ ] Pointer equality with non-null constants
 - [x] Integer constant expressions in case labels (Stage 77; Stage 99: extended to full bitwise/shift/multiplicative operators)
+- [x] Integer constant expressions in file-scope initializers (Stage 100)
+- [x] Integer constant expressions in block-scope static scalar initializers (Stage 103)
 - [x] Hexadecimal integer literals: 0x/0X prefix (Stage 90)
 - [x] Adjacent string literal concatenation (Stage 89)
 - [x] Hex (\xNN) and octal (\NNN) character/string escapes (Stage 88)
 - [x] Address-of on member/subscript lvalues: &s.m, &p->m, &a[i].m (Stage 91)
 - [x] Compound assignment and ++/-- on general lvalues (Stages 79, 80)
-- [ ] General integer constant expressions (evaluated at compile time)
+- [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type)) — Stages 77, 99–103
 - [ ] Floating-point constant expressions
 - [ ] Lvalue conversion rules for all expression contexts
 - [ ] Unary + on floating-point
