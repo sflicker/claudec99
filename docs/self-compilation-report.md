@@ -150,6 +150,27 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 106 self-hosting test
+
+None. The `restrict` keyword changes (TOKEN_RESTRICT in lexer/parser) and the
+stub header additions are pure C-source-visible changes — the compiler's own
+source code does not use `restrict`, and the new header declarations add no
+code to the compiler binary. The `long long` return-value bug fix (adding
+TYPE_LONG_LONG/TYPE_UNSIGNED_LONG_LONG to rhs_is_long checks in six codegen
+sites) produces no behavioural change on the compiler's own source because the
+compiler's internal functions do not return `long long`. All 1607 tests passed
+at C0, C1, and C2 with no source changes needed during the bootstrap.
+
+## Result (stage 106)
+
+**Date:** 2026-06-12
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01060000.00848` | `GNU_13_3_0` | 1607/1607 |
+| C1 | `build/ccompiler-c1` | `00.02.01060000.00849` | `ClaudeC99_v00_02_01060000_00848` | 1607/1607 |
+| C2 | `build/ccompiler-c2` | `00.02.01060000.00850` | `ClaudeC99_v00_02_01060000_00849` | 1607/1607 |
+
 ## Issues found during stage 104 self-hosting test
 
 None. The new constant-expression evaluator functions (`eval_const_relational`,
