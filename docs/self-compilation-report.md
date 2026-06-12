@@ -150,6 +150,24 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 103 self-hosting test
+
+None. The new `eval_const_init` helper is purely recursive arithmetic with no dynamic
+allocation and no new AST node types. The compiler's own source uses block-scope `static`
+scalars exclusively with simple literals (0, 1, -1, NULL), all of which go through the
+`AST_INT_LITERAL` branch — identical behavior to the old code. All 1569 tests passed at
+C0, C1, and C2.
+
+## Result (stage 103)
+
+**Date:** 2026-06-11
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01030000.00831` | `GNU_13_3_0` | 1569/1569 |
+| C1 | `build/ccompiler-c1` | `00.02.01030000.00832` | `ClaudeC99_v00_02_01030000_00831` | 1569/1569 |
+| C2 | `build/ccompiler-c2` | `00.02.01030000.00833` | `ClaudeC99_v00_02_01030000_00832` | 1569/1569 |
+
 ## Issues found during stage 102 self-hosting test
 
 None. The new designated-init handling, struct/union slot emission, and
