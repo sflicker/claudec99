@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 106 (C99 header completion and restrict keyword):
+
+> Stage 106 completes C99 header support by adding the `restrict` type qualifier (parsed and discarded, matching the `volatile` pattern) and comprehensively filling in four primary system headers: `<ctype.h>` (4 classifiers), `<string.h>` (11 functions), `<stdlib.h>` (3 typedefs, 4 macros, 21 functions), and `<stdio.h>` (1 typedef, 7 macros, 31 functions). Minor fixes to `<stdbool.h>`, `<stddef.h>`, and `<limits.h>`. Discovered and fixed a pre-existing code generation bug where `TYPE_LONG_LONG` and `TYPE_UNSIGNED_LONG_LONG` were missing from six return-value type checks, causing long-long function returns to be incorrectly sign-extended. All 1607 tests pass (922 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 104 (complete constant-expression evaluators):
 
 > Stage 104 extends both compile-time constant-expression evaluators (token-stream in parser.c for case labels, enum values, array designators, and file-scope initializers; AST-based in codegen.c for block-scope static scalars) to support the complete C99 integer constant expression operator set: relational operators (<, <=, >, >=), equality operators (==, !=), logical AND (&&), logical OR (||), and the ternary conditional operator (?:). Also fixes a pre-existing precedence bug where eval_const_additive and eval_const_shift had their call order inverted, making 3+1<<2 evaluate as 7 instead of 16. No new tokens, AST node types, or grammar rules. All 1584 tests pass (909 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
@@ -629,7 +633,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 104 all tests pass (909 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1584 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 106 all tests pass (922 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1607 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

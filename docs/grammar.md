@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 99)
+# Claude C99 Grammar (Current through Stage 106)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -18,7 +18,7 @@
 
 <sign_specifier> ::= "signed" | "unsigned"
 
-<type_qualifier> ::= "const" | "volatile"
+<type_qualifier> ::= "const" | "volatile" | "restrict"
 
 <storage_class_specifier>   ::= "extern" | "static" | "typedef"
 

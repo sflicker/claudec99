@@ -1,0 +1,532 @@
+# ClaudeC99 Project Status — Through Stage 106
+
+_As of 2026-06-12 (commit 21ca41c)_
+
+## Overview
+
+ClaudeC99 is a from-scratch C99 subset compiler written in C, targeting
+x86_64 Linux via NASM (Intel syntax). The compiler is built incrementally
+through small, spec-driven stages — each stage is a self-contained
+specification followed by a kickoff, implementation, and milestone /
+transcript record. Output is single-file assembly that is assembled with
+`nasm -f elf64` and linked with `gcc -no-pie` (so crt0 / libc are
+available for declared libc calls such as `puts` and `printf`).
+
+Since stage 83 the compiler's **own source compiles as strict ISO C99**
+(`-std=c99 -pedantic-errors`), and **as of stage 92 the compiler is fully
+self-hosting**: C0 (the gcc-built compiler) compiles its own source to
+produce C1, and C1 compiles itself to produce C2 — both C1 and C2 pass the
+entire test suite, confirming bootstrap stability (see
+`docs/self-compilation-report.md`). Stage 93 adds a multi-mode build
+workflow (`build.sh`); stage 94 adds a repeatable `--mode=self-host` C0→C1→C2
+cycle. Stages 95-02 through 95-12 are an internal **dynamic-storage refactor**:
+new `Vec` and `StrBuf` containers replace the parser/codegen fixed-capacity
+tables, and all token/AST/parser/codegen name and label text moves from
+`char[MAX_NAME_LEN]` buffers into `const char *` pointers backed by a
+lexer-owned string pool.
+
+**Stage 96** adds **multi-file compilation**: the driver (`src/compiler.c`)
+now accepts one or more positional source-file arguments, compiling each
+through a fresh Lexer/Parser/CodeGen/AST cycle with full per-file heap
+teardown (`parser_free`, `codegen_free`, `lexer_free`, `ast_free`).
+
+**Stage 97** adds **designated initializers** (C99 §6.7.8): both
+`.member = value` member designators (for struct/union initializers) and
+`[index] = value` array index designators.
+
+**Stage 98** adds **compound literals** (C99 §6.5.2.5): the `(type-name){ initializer-list }`
+syntax creates unnamed temporary objects on the stack. Both struct/union and
+array compound literals are supported, along with scalar compound literals
+(`(int){ 7 }`).
+
+**Stage 99** completes the **`typedef enum`** feature: (1) enumerator values
+now accept full integer constant expressions (arithmetic, bitwise `& ^ |`,
+shift `<< >>`, multiplicative `* / %`, unary `~ !`, parenthesized
+sub-expressions, and references to previously-defined enum constants) instead
+of bare integer/character literals only; (2) forward-declared enum tags
+(`typedef enum Status Status;` before the body) are now accepted as
+placeholders that return `type_int()`. Internally, the old three-function
+`eval_case_const_*` chain is replaced by a nine-level recursive descent
+evaluator (`eval_const_expr`) that is also used for `case` labels and array
+designator indices.
+
+**Stage 100** adds **file-scope constant expressions**: integer-typed global variable 
+initializers now accept full compile-time constant expressions (arithmetic, bitwise, shift, 
+unary operators) plus `sizeof(type-name)`, using the shared `eval_const_expr` evaluator.
+
+**Stage 101** lifts the block-scope static aggregate restriction: `static int arr[8]` and 
+`static struct Point p = {1, 2}` are now fully supported with RIP-relative `.bss`/`.data` 
+emission.
+
+**Stage 102** completes static aggregate coverage: block-scope static designated-initializer 
+arrays, struct/union element types, and 2D arrays all work.
+
+**Stage 103** extends block-scope static scalar initializers to accept full compile-time constant 
+expressions, matching the expressiveness of `case` labels, enum values, and file-scope globals.
+
+**Stage 104** completes the **integer constant-expression evaluator**: both the parser-level 
+`eval_const_expr` and the codegen-level `eval_const_init` now support the full C99 operator set 
+— relational (`< <= > >=`), equality (`== !=`), logical AND/OR (`&&`/`||`), and the ternary 
+operator. A pre-existing additive/shift precedence bug is also fixed.
+
+**Stage 105** adds **C99 preprocessor completion**: `#pragma` (unknown pragmas silently ignored; 
+`#pragma once` tracks seen files), `_Pragma("str")` operator, `#line` directives (with optional 
+filename override for `__FILE__`), the null directive, and the `__func__` predefined identifier.
+
+**Stage 106** completes **C99 stub headers** for `<ctype.h>`, `<string.h>`, `<stdlib.h>`, and 
+`<stdio.h>`, adds the `restrict` type qualifier (parse-and-ignore), and fixes a pre-existing 
+codegen bug where `TYPE_LONG_LONG`/`TYPE_UNSIGNED_LONG_LONG` were missing from `rhs_is_long` 
+checks in 8 code paths, causing `long long` return values to be truncated via `movsxd`.
+
+**Stages completed: 213** (stage-01 through stage-106, including substages).
+
+## Build & Test
+
+| Component                     | Count          |
+|-------------------------------|----------------|
+| Source files (`src/*.c`)      | 12             |
+| Header files (`include/`)     | 13             |
+| Total LOC (src + include)     | 15,265         |
+| Valid runtime tests           | 922            |
+| Invalid (compile-error) tests | 255            |
+| Integration tests             | 86             |
+| Print-AST golden tests        | 50             |
+| Print-tokens golden tests     | 100            |
+| Print-asm golden tests        | 21             |
+| Unit tests                    | 165            |
+| **Total tests**               | **1,607**      |
+| Git commits                   | 851            |
+
+All 1,607 tests pass with no regressions — under the gcc-built compiler and
+under the self-compiled C1/C2 bootstrap binaries alike.
+
+## Language Features Implemented
+
+### Preprocessing
+
+The compiler ships a full preprocessing pipeline that runs before
+lexical analysis.
+
+- **Line splicing**: backslash-newline sequences are joined before any
+  other processing.
+- **Comment removal**: `//` and `/* */` comments are stripped (replaced
+  with a single space to preserve token separation).
+- **`#include "file.h"`**: local quoted includes resolved relative to the
+  including file's directory; recursion depth limited to 64.
+- **`#include <file.h>`**: angle-bracket includes resolved via `-I`
+  search paths in command-line order.
+- **Object-like macros**: `#define NAME replacement`; identifier
+  expansion in ordinary source; compatible redefinitions accepted,
+  incompatible ones rejected.
+- **Function-like macros**: `#define NAME(params) replacement`; exact
+  argument count validated; arguments pre-expanded before substitution;
+  nested macro invocations recursively expanded.
+- **Variadic macros**: `#define M(...)` and `#define M(x, ...)`;
+  `__VA_ARGS__` substituted with extra comma-separated arguments.
+- **Stringification** (`#param`) and **token pasting** (`##`).
+- **`#undef NAME`**.
+- **Conditional compilation**: `#ifdef` / `#ifndef` / `#if` / `#elif` /
+  `#else` / `#endif`; nesting up to 64 levels; first-true-wins
+  `#elif` chains.
+- **Preprocessor conditional expressions**: full evaluator for
+  `#if` / `#elif` supporting integer literals, `defined(NAME)`,
+  object-like macro expansion, undefined-identifier-as-0, unary
+  `!` / `-` / `+` / `~`, parentheses, `==` / `!=` / `<` / `<=` /
+  `>` / `>=`, `&&` / `||`, `+` / `-` / `*` / `/` / `%`, `&` / `^` /
+  `|`, `<<` / `>>`.
+- **`#error message`**.
+- **`#pragma` (unknown pragmas silently ignored; `#pragma once` tracks 
+  canonical paths)**.
+- **`_Pragma("str")` operator** (recognized in identifier expansion; 
+  `"once"` triggers `#pragma once`; others ignored).
+- **`#line N ["file"]` directives** (sets current line; optional filename 
+  overrides `__FILE__` expansion).
+- **Null directive** (bare `#` followed by whitespace+newline → silently 
+  ignored per C99 §6.10.7).
+- **Predefined macros — standard**: `__FILE__`, `__LINE__`, `__DATE__`,
+  `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`,
+  `__CLAUDEC99__`.
+- **Predefined macros — ABI/target**: `__x86_64__`, `__linux__`,
+  `__unix__`, `__LP64__`, `_LP64`, `__CHAR_BIT__`, and the full
+  `__SIZEOF_*__` family (including `__SIZEOF_LONG_LONG__`).
+- **`__func__` predefined identifier** (synthesized `char []` containing 
+  the enclosing function name; error at file scope).
+- **Command-line flags**: `-DNAME` / `-DNAME=VALUE`; `-I<dir>` /
+  `-I <dir>`; `--sysroot=<dir>`.
+- **Stub system headers** in `test/include/` (see below).
+
+### Stub system headers
+
+`test/include/` provides a broad set of controlled stub headers so that
+real-world-shaped programs preprocess, parse, and compile without host
+system headers:
+
+- **`stdio.h`** — complete stub: opaque `FILE`, `fpos_t`, `EOF`, `stdin`/`stdout`/`stderr`; 
+  macros `BUFSIZ`, `FOPEN_MAX`, `FILENAME_MAX`, `L_tmpnam`, `TMP_MAX`, `_IOFBF`/`_IOLBF`/`_IONBF`, 
+  `SEEK_*`; functions `fopen`/`fclose`/`fgetc`/`fgets`/`fprintf`/`snprintf`/`puts`/`printf`/`putchar`, 
+  variadic-forwarding family `vfprintf`/`vprintf`/`vsnprintf`, `fseek`/`ftell`/`fread`/`fwrite`, 
+  and 31 additional functions (`remove`, `rename`, `tmpfile`, `tmpnam`, `freopen`, `fflush`, 
+  `setbuf`, `setvbuf`, `sprintf`, `vsprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, 
+  `vsscanf`, `fputc`, `fputs`, `putc`, `getc`, `getchar`, `gets`, `ungetc`, `fgetpos`, `fsetpos`, 
+  `rewind`, `clearerr`, `feof`, `ferror`, `perror`).
+- **`stdlib.h`** — complete stub: `malloc`, `calloc`, `free`, `realloc`, `exit`, `strtol`, `strtoul`; 
+  macros `EXIT_SUCCESS`/`EXIT_FAILURE`/`RAND_MAX`/`MB_CUR_MAX`; typedefs `div_t`/`ldiv_t`/`lldiv_t`; 
+  functions `abort`, `atexit`, `_Exit`, `system`, `getenv`, `rand`, `srand`, `abs`, `labs`, `llabs`, 
+  `div`, `ldiv`, `lldiv`, `atoi`, `atol`, `atoll`, `strtoll`, `strtoull`, `bsearch`, `qsort`.
+- **`string.h`** — complete stub: `strlen`, `strcmp`, `strcpy`, `memcpy`, `memset`, `memcmp`, 
+  `strchr`; plus `strncat`/`strncmp`/`strncpy`/`strrchr`; plus `memmove`, `memchr`, `strcat`, 
+  `strcoll`, `strcspn`, `strspn`, `strpbrk`, `strstr`, `strtok`, `strerror`, `strxfrm` 
+  (with `restrict` qualifiers per C99).
+- **`stddef.h`** — `NULL`, `size_t`, `ptrdiff_t`.
+- **`stdint.h`** — exact-width, pointer-size, fast, and least integer typedefs.
+- **`limits.h`** — full set including `LLONG_MIN`/`LLONG_MAX`/`ULLONG_MAX`, `CHAR_MIN`/`CHAR_MAX`, 
+  `MB_LEN_MAX`.
+- **`stdbool.h`** — `bool`, `true`, `false`, `__bool_true_false_are_defined`.
+- **`ctype.h`** — character classification: `isalpha`, `isdigit`, `isspace`, `isupper`, `islower`, 
+  `isalnum`, `isxdigit`, `iscntrl`, `isgraph`, `isprint`, `ispunct`.
+- **`errno.h`** — `errno`, `ERANGE`, `EINVAL`, etc.
+- **`time.h`** — `time_t` and time functions.
+- **`setjmp.h`** — non-local jump support.
+- **`stdarg.h`** — `va_list` typedef and the `va_start`/`va_end`/`va_copy`/`va_arg` macros.
+
+### Core program shape
+- Translation unit with one or more external declarations.
+- Function definitions and forward declarations (return-type and
+  parameter-type compatibility checking across redeclarations).
+- Multiple functions per translation unit; recursive calls.
+- Variadic function **declarations, external calls, and definitions**;
+  callee-side `<stdarg.h>` access (see Variadic functions below).
+- **Struct/union arguments and return values passed by value** per the
+  System V AMD64 ABI (see Struct/union by value below).
+- `main` entry point; SysV AMD64 calling convention.
+- Calls into libc emitted via NASM `extern`, resolved by `gcc -no-pie`.
+- `extern`-declared **objects** (e.g. `extern FILE *stdout;`) register an
+  `is_extern` global and emit an `extern` directive instead of `.bss`/
+  `.data` storage; non-static file-scope definitions emit a NASM `global`
+  directive so they are visible across the bootstrap link.
+- **Multiple source files per invocation**: `ccompiler file1.c file2.c …`
+  compiles each file independently through a fresh Lexer/Parser/CodeGen/AST
+  pipeline with full per-file heap teardown — stage 96.
+
+### Statements
+- `return <expr>;` and bare `return;`.
+- `if` / `else`, `while`, `do … while`, `for` — including **C99
+  `for`-loop initializer declarations** (`for (int i = 0; …)`) scoped to
+  the loop.
+- `switch` / `case` / `default` (linear dispatch; nested switches OK).
+  **`case` labels accept full compile-time integer constant expressions** —
+  integer/character literals, enum constants, and all of `* / % << >> + - & ^ |`
+  with unary `~ !`, parenthesized sub-expressions, relational `< <= > >=`, 
+  equality `== !=`, and logical AND/OR `&&` `||` and ternary `?:` 
+  (stage 77; extended stage 99; further extended stage 104).
+- `break`, `continue`, `goto` + labeled statement.
+- Compound block statements with lexical scoping and shadowing.
+- Expression statements.
+
+### Declarations & types
+- Integer base types `char`/`short`/`int`/`long`, all unsigned variants,
+  `long long` / `unsigned long long`, the `signed` keyword forms, and
+  trailing-`int` forms.
+- `_Bool` with value-normalization and integer promotion.
+- Integer literal forms: decimal and **`0x`/`0X` hexadecimal** literals,
+  with suffixes `U`/`L`/`UL`/`LL`/`ULL` and overflow-aware typing.
+- `void` and generic `void *`.
+- `const` qualifier on base-type scalars, **pointer-level `const`
+  enforcement**, and **`const` in struct/union members and type-name
+  contexts** (`sizeof`, casts, `va_arg`). Writes through a `const *`,
+  reassignment of a const pointer, assignment to a `const` member
+  (directly, via subscript, or through a pointer to a const-qualified
+  object), and const-discarding conversions are diagnosed.
+- **Minimal `volatile` handling**: the qualifier is tokenized, parsed at
+  every position `const` is accepted, and tracked on `Type` /
+  `StructField`, but has no code-generation effect yet.
+- **`restrict` qualifier** (stage 106): tokenized and parsed at every 
+  pointer-qualifier position (`parse_declarator`, `parse_type_name`, 
+  `parse_parameter_declaration`); silently discarded with no semantic or 
+  code-generation effect — same pattern as `volatile`.
+- Pointer types of arbitrary depth; array types; **multidimensional
+  arrays** (declarations, indexing, member access, and `sizeof`, up to
+  `MAX_ARRAY_DIMS = 8`); multi-level subscript.
+- Function pointer types in local, parameter, file-scope, static, and
+  extern positions; indirect calls.
+- Parenthesized and abstract declarators; array-to-pointer decay for
+  array-typedef function parameters and for **struct/union array members**
+  in value contexts.
+- Comma-separated init-declarator lists; brace and string initializers
+  (local and file scope, including **char-array struct members from
+  string literals**) with size inference; **designated initializers**
+  (`.member = value` and `[index] = value`) at local and global scope
+  for both arrays and structs — stage 97.
+- **Compound literals** (`(type-name){ initializer-list }`) — unnamed
+  temporary objects allocated on the stack (stage 98; see below).
+- File-scope (global) variable declarations (`.bss` / `.data`,
+  RIP-relative addressing).
+- Storage-class specifiers `extern` and `static` at file scope, **plus
+  block-scope `static` local variables** that persist across calls and
+  are emitted to `.bss` (uninitialized) or `.data` (initialized) with
+  RIP-relative `[rel Lstatic_func_N]` addressing (stage 101-103).
+- `typedef` aliases for scalar / pointer / array / function-pointer and
+  complete struct / union types; block-scope shadowing.
+- Struct definitions, member access, brace initializers (including
+  **designated member initializers** — `.field = value` — at local and
+  global scope), whole-struct assignment/copy, pointer-to-struct mutation,
+  nested structs, arrays of structs, typedef aliases, and incomplete
+  forward declarations.
+- **Named unions** (`union Tag { … }`): layout sized to the largest
+  member, member access via `.` / `->`, nested types, whole-union
+  assignment, first-member brace initialization, and globals.
+- **Anonymous struct/union type declarations** without a tag: each
+  definition allocates a fresh unique `Type*`; type identity is by
+  pointer, so structurally identical anonymous types are distinct.
+- **Enum declarations** with compile-time constant folding; `NULL`.
+  Enumerator values accept full integer constant expressions
+  (arithmetic, shift, bitwise, unary `~ !`, parentheses, relational, 
+  equality, logical AND/OR, ternary operator, and references to 
+  previously-defined enum constants) — stage 99 and extended stage 104.
+  Forward-declared enum tags (`typedef enum Status Status;` before the
+  body) are supported — stage 99.
+
+### Integer constant expressions (stage 77; extended stages 99 & 104)
+
+A unified thirteen-level evaluator (`eval_const_expr`) is used for:
+- **`case` labels**: `case 1 << 2:` (evaluates to 4), `case PERM_READ | PERM_WRITE:`, 
+  `case x > 5 ? 10 : 20:`.
+- **Enumerator values**: `FLAG_READ = 1 << 0`, `STEP = BASE + 5`, `ALL = ~0`,
+  `SMALL = (4 * 8)`, `FLAG = a < b ? 1 : 0`.
+- **Array designator indices**: `[2 + 1] = value`.
+- **File-scope and block-scope static initializers**: `int x = 1 + 2;`, `static int y = 3 * 4;`.
+
+Operators supported (loosest to tightest): `?:` (ternary); `||` (logical OR); 
+`&&` (logical AND); `|` (bitwise OR); `^` (bitwise XOR); `&` (bitwise AND); 
+`==` `!=` (equality); `< <= > >=` (relational); `<< >>` (shift); `+ -` (additive); 
+`* / %` (multiplicative); unary `+ - ~ !`; parenthesized sub-expressions; 
+integer/character literals; enum constants by name; `sizeof(type-name)`.
+
+Division-by-zero or modulo-by-zero produces a `PARSER_ERROR`.
+
+### Designated initializers (C99 §6.7.8)
+- **`.member = value`** member designators in struct brace initializers
+  at both local and global scope.
+- **`[index] = value`** array index designators at both local and global
+  scope; the index must be a non-negative constant integer expression.
+- Mixing designated and non-designated elements is supported.
+- Chained designators and context mismatches are diagnosed.
+
+### Compound literals (C99 §6.5.2.5)
+- **Struct and union compound literals** on the stack.
+- **Array compound literals** with explicit or inferred (from initializer)
+  length; `[N]` index designators.
+- **Scalar compound literals** (`(int){ 7 }`); modifiable lvalues.
+- **Postfix chaining**: `.field` and `[index]` on compound literals.
+- **Address-of**: `&(T){ … }` for all compound literal kinds.
+- Compound literals at file scope are detected and rejected.
+
+### Struct/union by value (System V AMD64 ABI)
+- **Register-class aggregates** (≤16 bytes) travel in `rax`/`rdx` and
+  integer argument registers.
+- **Memory-class aggregates** (>16 bytes) travel through a hidden pointer
+  (`rdi` for returns / `sret`).
+- Whole-struct assignment and declaration-initialization accept struct
+  rvalues from any target form (subscript, dot, arrow, deref).
+
+### Variadic functions (`<stdarg.h>`)
+- `va_start` / `va_end` / `va_arg` for GP-class types (int, long, pointers).
+- `va_copy` is recognized but its codegen is still a no-op stub.
+
+### Expressions
+- Integer (decimal/hex), string, and character literals; adjacent
+  string-literal concatenation; hex/octal escapes; variable references.
+- All eleven assignment operators on any modifiable lvalue.
+- Arithmetic, bitwise, shift, equality/relational, and logical operators.
+- Pointer arithmetic including difference (`long`).
+- Casts; integer promotions and UAC.
+- `sizeof(type)` and `sizeof expr` (operand not evaluated).
+- Address-of on any addressable lvalue; dereference; subscript.
+- Compound literals; conditional (ternary) operator; comma operator.
+- Function calls with any number of arguments.
+
+### Code generation
+- Single-pass walk from AST to NASM Intel-syntax assembly.
+- Integer promotions, UAC, and LP64-aware conversions at every binary op.
+- `movzx`/`movsx` sized loads; `div`/`idiv`; `shr`/`sar`.
+- String literals in `.rodata`; struct/union member addressing and block
+  struct copies (`rep movsb`); `.data`/`.bss` globals.
+- Struct/union by-value marshalling; designated and compound literal init.
+- Per-file codegen teardown; dynamic Vec/StrBuf storage (no fixed caps).
+- Correct `long long` / `unsigned long long` handling in return values and 
+  assignments (stage 106: fixed missing `rhs_is_long` checks in 8 code paths).
+
+### Tooling & diagnostics
+- `--version`, `--print-ast`, `--print-tokens`, `--print-asm` modes.
+- `--max-errors=N` multiple-error collection with parser recovery.
+- Multi-mode build workflow (`build.sh`): `--mode=normal` / `bootstrap` /
+  `fallback` / `self-host` (C0→C1→C2 with test runs and checkpoint commits).
+- Strict ISO C99 source; CMake build with `-Wall -Wextra -pedantic`.
+
+## Stage-by-Stage Timeline (76–106)
+
+Stages 01–65 are catalogued in `project-status-through-stage-65.md`, and
+66–75 in `project-status-through-stage-75-06.md`; new stages since:
+
+| Stage      | Focus                                                         |
+|------------|---------------------------------------------------------------|
+| 76         | `for`-loop initializer declarations (C99)                     |
+| 77         | Enum / constant-expression `case` labels                      |
+| 78         | General postfix expression chaining                           |
+| 79         | General-lvalue compound assignment                            |
+| 80         | Prefix/postfix `++`/`--` on general lvalues                   |
+| 81         | Header updates (`putchar`, `calloc`); `!` on pointers; limits |
+| 82-01      | `const` qualifiers in struct/union members                    |
+| 82-02      | const-qualified member lvalue (subscript) rules               |
+| 82-03      | `const` in type-name contexts (sizeof/cast/va_arg)            |
+| 82-04      | Minimal `volatile` handling                                   |
+| 82-05      | const member / pointer-to-const-struct diagnostics            |
+| 83         | Project source converted to strict ISO C99                   |
+| 84         | Standard streams `stdin`/`stdout`/`stderr`; extern objects    |
+| 84-02      | `stdlib.h` `exit()` declaration                               |
+| 85         | Member-array to pointer decay; char-member string init        |
+| 85-01      | `string.h` additional declarations                            |
+| 86         | Multidimensional array support                                |
+| 87         | `stdio.h` file-position / read stubs (`fseek`/`ftell`/`fread`)|
+| 88         | Hex (`\xNN`) and octal (`\NNN`) character/string escapes      |
+| 89         | Adjacent string-literal concatenation                         |
+| 90         | Hexadecimal integer literals                                  |
+| 91         | Address-of member lvalues                                     |
+| 91-01      | Struct/union by-value parameters and returns (SysV ABI)       |
+| 92         | Self-compilation validation — **full self-hosting achieved**  |
+| 93         | Bootstrap build workflow; `VERSION_BUILTBY`                   |
+| 94         | Self-host validation; `build.sh --mode=self-host` C0→C1→C2    |
+| 95-01      | Fixed-capacity inventory (docs only)                          |
+| 95-02      | `Vec` generic growable-array module                           |
+| 95-03      | `StrBuf` dynamic string-buffer module                         |
+| 95-04      | Low-risk static arrays → `Vec`                                |
+| 95-05      | Medium-risk static arrays → `Vec`                             |
+| 95-06      | High-risk static arrays → `Vec` (two latent bugs fixed)       |
+| 95-07      | Remaining static usages → `Vec`; call-layout bounds guard     |
+| 95-08      | Token text → pointer + length (255-byte string cap removed)   |
+| 95-09      | `ASTNode.value` → `const char *`                              |
+| 95-10      | parser.h name/tag fields → `const char *`                     |
+| 95-11      | codegen.h name/label fields → `const char *`                  |
+| 95-12      | `#if` unary buffer → `StrBuf`; switch labels → `Vec`          |
+| 96         | Multi-file compilation; per-file teardown                     |
+| 97         | Designated initializers (`.member =`, `[index] =`)            |
+| 98         | Compound literals `(T){ … }` — struct, array, scalar          |
+| 99         | `typedef enum` completion — const expr evaluator + forward refs|
+| 100        | File-scope constant-expression initializers                   |
+| 101        | Block-scope static arrays and structs                         |
+| 102        | Complete static aggregate coverage (2D arrays, element types, designated init) |
+| 103        | Block-scope static scalar constant-expression initializers    |
+| 104        | Complete constant-expression evaluator (relational, equality, logical, ternary) |
+| 105        | C99 preprocessor completion (`#pragma`/once, `_Pragma`, `#line`, `__func__`) |
+| **106**    | **C99 header completion (`restrict` qualifier; ctype/string/stdlib/stdio stubs) (current)** |
+
+## Recently Shipped (Stages 100–106)
+
+**Stages 100–104: Static local improvements and constant-expression evaluator completion.**
+
+Stages 100 through 104 progressively enhance the constant-expression evaluator
+and lift restrictions on static local variables. Stage 100 wires `eval_const_expr`
+into the file-scope global initializer path, allowing expressions like `int x = 1 + 2;`
+and `int a = sizeof(int);`. Stages 101–103 remove the restriction on block-scope
+`static` aggregates (arrays and structs) and extend static scalar initializers to
+accept the full evaluator, enabling `static int arr[8]` and `static struct Point p = {1, 2};`
+with proper RIP-relative `.bss`/`.data` emission. Stage 104 completes the evaluator
+by adding relational (`<`, `<=`, `>`, `>=`), equality (`==`, `!=`), logical AND/OR
+(`&&`, `||`), and ternary (`?:`) operators, bringing the precedence tree from 9 levels
+to 13 levels and fixing a pre-existing bug in additive/shift precedence. Case labels
+and enumerator values can now use the full C99 operator set.
+
+**Stage 105: C99 preprocessor completion.**
+
+Stage 105 adds four preprocessor features. `#pragma` directives are tokenized and
+dispatched; unknown pragmas are silently ignored, while `#pragma once` tracks the
+canonical path of a file to prevent re-inclusion. The `_Pragma("str")` operator is
+recognized during identifier expansion and behaves like an inline `#pragma`. The
+`#line N ["file"]` directive sets the compiler's notion of the current line and
+optionally overrides the expansion of `__FILE__`. The null directive (a bare `#`
+followed by whitespace and a newline) is recognized and ignored per C99 §6.10.7.
+Additionally, the `__func__` predefined identifier is synthesized as a `char[]`
+containing the enclosing function's name at each function scope, with a compile
+error if used at file scope.
+
+**Stage 106: C99 header completion and `restrict` qualifier.**
+
+Stage 106 completes the set of C99 stub system headers. `<ctype.h>` now exports
+the full character classification function set (`isalpha`, `isdigit`, `isspace`,
+`isupper`, `islower`, `isalnum`, `isxdigit`, `iscntrl`, `isgraph`, `isprint`,
+`ispunct`). `<string.h>` is expanded to include `memmove`, `memchr`, `strcat`,
+`strcoll`, `strcspn`, `strspn`, `strpbrk`, `strstr`, `strtok`, `strerror`, and
+`strxfrm`, all with `restrict` qualifiers per C99. `<stdlib.h>` gains `div_t`,
+`ldiv_t`, and `lldiv_t` typedefs, `EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX`,
+and `MB_CUR_MAX` macros, and functions for memory management, numeric conversion,
+searching, sorting, and pseudo-random generation (`abs`, `labs`, `llabs`, `div`,
+`ldiv`, `lldiv`, `atoi`, `atol`, `atoll`, `strtoll`, `strtoull`, `rand`, `srand`,
+`bsearch`, `qsort`, plus the existing `malloc`/`calloc`/`free`/`realloc`/`exit`/
+`strtol`/`strtoul`). `<stdio.h>` is completed with file-position and extended I/O
+functions (`fpos_t`, `fwrite`, and 31 additional functions like `remove`, `rename`,
+`tmpfile`, `tmpnam`, `freopen`, `fflush`, `setbuf`, `setvbuf`, `sprintf`, `vsprintf`,
+`scanf`, `fscanf`, `sscanf`, and the variadic `vscanf`, `vfscanf`, `vsscanf` family).
+The `restrict` qualifier is now parsed at every pointer-qualifier position, with
+no semantic or code-generation effect (same pattern as `volatile`). As a bonus,
+stage 106 fixes a pre-existing codegen bug where `TYPE_LONG_LONG` and
+`TYPE_UNSIGNED_LONG_LONG` were missing from eight `rhs_is_long` checks in the
+code generator, causing `long long` values to be incorrectly truncated via `movsxd`.
+
+## Out of Scope (Not Yet Implemented)
+
+- Floating-point types (`float`, `double`) and all FP
+  arithmetic/literals/conversions.
+- `va_arg` for floating-point and struct-by-value types; `va_copy`
+  codegen (still a no-op stub).
+- Multi-character constants (`'ab'`); wide-character literals.
+- Compound literals at file scope.
+- Bit-fields, flexible array members.
+- `volatile` code-generation semantics (currently parsed and tracked only).
+- Chained designators (`.a.b`, `.arr[0]`); designated union init for
+  non-first members.
+- Functions returning function pointers; pointer-to-array declarators
+  (`(*p)[10]`); old-style (K&R) function definitions; `__attribute__`
+  specifiers.
+- `#elifdef` / `#elifndef`.
+- GNU variadic macro extensions (`__VA_OPT__`, named variadic args,
+  comma deletion).
+- Object-file (`.o`) emission and separate linking; header-only precompilation.
+
+## Architecture
+
+```
+src/
+├── preprocessor.c       Two-phase preprocessor (splicing, comments, directives, macros)
+├── lexer.c              Tokenizer (line/col positions; hex literals; hex/octal escapes)
+├── parser.c             Recursive-descent parser, builds AST; setjmp/longjmp recovery
+├── ast.c                AST node lifecycle helpers (dynamic children array; ast_clone)
+├── ast_pretty_printer.c --print-ast renderer
+├── type.c               Type system (singletons + heap pointer chains; const/volatile copies)
+├── codegen.c            Single-pass walker → NASM Intel-syntax asm; SysV struct-by-value ABI
+├── compiler.c           Driver (multi-file loop; compile_one_file; per-file teardown)
+├── version.c            Build/version identifier (VERSION_BUILTBY)
+├── vec.c                Generic growable-array container (stage 95-02)
+├── strbuf.c             Dynamic character/string buffer (stage 95-03)
+└── util.c               Misc helpers; compile_error_at / compile_warning_at; reset_error_state
+```
+
+The grammar is documented in `docs/grammar.md`, the parser call hierarchy
+in `docs/other/stage-106-parse-tree.md`, and the feature checklist in
+`docs/outlines/checklist.md` — each updated alongside any stage that
+touches it. The bootstrap workflow is driven by `build.sh`; the
+self-compilation findings are recorded in `docs/self-compilation-report.md`.
+
+## Process
+
+Each stage produces, in order:
+1. **Spec** in `docs/stages/`.
+2. **Kickoff** in `docs/kickoffs/` — summary, change list, and
+   spec-issue callouts before code is written.
+3. **Implementation** committed in a single stage-scoped commit.
+4. **Milestone summary** in `docs/milestones/`.
+5. **Transcript** in `docs/sessions/` following
+   `transcript-format.md`.
+
+Tests live next to the runners in `test/valid`, `test/invalid`,
+`test/print_ast`, `test/print_tokens`, `test/print_asm`, and
+`test/integration/`, each driven by a `run_tests.sh` script.

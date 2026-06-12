@@ -1553,6 +1553,28 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 7 valid (pragma ignored, line directive ×2, null directive, _Pragma ignored, __func__ ×2), 1 invalid (__func__ at file scope), 2 integration (#pragma once, _Pragma once); all 1594 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1594/1594 tests pass at each step
 
+## Stage 106 - C99 Header Completion
+
+- [x] `include/token.h` — add `TOKEN_RESTRICT` keyword token (after `TOKEN_VOLATILE`)
+- [x] `src/lexer.c` — recognize `"restrict"` identifier → `TOKEN_RESTRICT`; add token display name `"'restrict'"`
+- [x] `src/parser.c` — extend all pointer-qualifier positions to consume `TOKEN_RESTRICT` (parse-and-ignore):
+	- [x] `parse_declarator` leading-star loop: changed `if` → `while`; added `TOKEN_RESTRICT`
+	- [x] `parse_type_name` abstract-declarator star loop: added `TOKEN_RESTRICT`
+	- [x] `parse_declarator` fp-param-types loop: added `TOKEN_RESTRICT`
+	- [x] `parse_parameter_declaration` leading-qualifier check: added `TOKEN_RESTRICT`
+	- [x] `parse_parameter_declaration` pre-consume stars loop: add inner qualifier loop after each `*`
+- [x] `test/include/ctype.h` — add `iscntrl`, `isgraph`, `isprint`, `ispunct`
+- [x] `test/include/string.h` — add `memmove`, `memchr`, `strcat`, `strcoll`, `strcspn`, `strspn`, `strpbrk`, `strstr`, `strtok`, `strerror`, `strxfrm` (with `restrict` qualifiers per C99)
+- [x] `test/include/stdlib.h` — complete rewrite: `div_t`/`ldiv_t`/`lldiv_t` typedefs; `EXIT_SUCCESS`/`EXIT_FAILURE`/`RAND_MAX`/`MB_CUR_MAX` macros; 21 functions (`abort`, `atexit`, `_Exit`, `system`, `getenv`, `rand`, `srand`, `abs`, `labs`, `llabs`, `div`, `ldiv`, `lldiv`, `atoi`, `atol`, `atoll`, `strtoll`, `strtoull`, `bsearch`, `qsort`)
+- [x] `test/include/stdio.h` — complete rewrite: `fpos_t` typedef; 7 macros (`BUFSIZ`, `FOPEN_MAX`, `FILENAME_MAX`, `L_tmpnam`, `TMP_MAX`, `_IOFBF`/`_IOLBF`/`_IONBF`); 31 functions including `fwrite`, formatted I/O, character I/O, file positioning, error handling
+- [x] `test/include/stdbool.h` — fix `__Bool_true_false_are_defined` → `__bool_true_false_are_defined`
+- [x] `test/include/stddef.h` — add `typedef long ptrdiff_t`
+- [x] `test/include/limits.h` — add `CHAR_MIN`/`CHAR_MAX`/`MB_LEN_MAX`
+- [x] `src/codegen.c` — fix pre-existing bug: add `TYPE_LONG_LONG` and `TYPE_UNSIGNED_LONG_LONG` to 8 `rhs_is_long` checks (declaration initializer, local/global assignment, union/array compound literals, struct field, local array init); prevented 64-bit `long long` return values from being truncated via `movsxd`
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01060000"`
+- [x] Tests: 13 new valid tests (EXIT codes, `labs`/`llabs`, `atoi`, `qsort`, `strtoll`/`strtoull`, `memmove`, `strstr`, `strcat`, `strtok`, `sprintf`, ctype classifiers, restrict parsing); all 1607 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1607/1607 tests pass at each step
+
 ---
 
 ## TODO
@@ -1574,7 +1596,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Flexible array members in structs
 - [x] Compound literals: `(Type){ ... }` (Stage 98; file-scope and designated union non-first-member not yet supported)
 - [x] volatile qualifier (Stage 82-04; parsed and tracked, no codegen effect yet)
-- [ ] restrict qualifier on pointers
+- [x] restrict qualifier on pointers (Stage 106; parse-and-ignore, no codegen effect)
 - [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)
 - [x] const in struct/union members and type-name contexts (Stage 82-01/02/03/05)
 - [ ] Type compatibility and composite type rules
@@ -1637,15 +1659,15 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] <stdint.h>: full exact-width, least-width, fast, and pointer-size integer typedefs (stub complete)
 - [x] <limits.h>: full set including `LLONG_MIN`, `LLONG_MAX`, `ULLONG_MAX` (stub complete)
 - [x] <stdbool.h>: `bool`, `true`, `false` (stub complete)
-- [x] <stdio.h>: expanded with opaque `FILE`, `EOF`, `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf` (Stage 67, 75-04); `putchar` (Stage 81); `stdin`/`stdout`/`stderr` streams (Stage 84); `fseek`/`ftell`/`fread` + `SEEK_*` (Stage 87); `fwrite` still pending
-- [x] <stdlib.h>: `calloc` (Stage 81); `exit` (Stage 84-02)
-- [x] <string.h>: `strncat`, `strncmp`, `strncpy`, `strrchr`, … (Stage 85-01)
-- [x] <ctype.h>: classification functions (`isalpha`, `isdigit`, `isspace`, …) (Stage 74)
+- [x] <stdio.h>: expanded with opaque `FILE`, `EOF`, `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf` (Stage 67, 75-04); `putchar` (Stage 81); `stdin`/`stdout`/`stderr` streams (Stage 84); `fseek`/`ftell`/`fread` + `SEEK_*` (Stage 87); complete rewrite Stage 106: `fpos_t`, 7 macros, 31 functions (`fwrite`, `remove`, `rename`, `tmpfile`, `tmpnam`, `freopen`, `fflush`, `setbuf`, `setvbuf`, `sprintf`, `vsprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf`, `fputc`, `fputs`, `putc`, `getc`, `getchar`, `gets`, `ungetc`, `fwrite`, `fgetpos`, `fsetpos`, `rewind`, `clearerr`, `feof`, `ferror`, `perror`)
+- [x] <stdlib.h>: `calloc` (Stage 81); `exit` (Stage 84-02); complete rewrite Stage 106: `div_t`/`ldiv_t`/`lldiv_t`, `EXIT_SUCCESS`/`EXIT_FAILURE`/`RAND_MAX`/`MB_CUR_MAX`, 21 functions (`abort`, `atexit`, `_Exit`, `system`, `getenv`, `rand`, `srand`, `abs`, `labs`, `llabs`, `div`, `ldiv`, `lldiv`, `atoi`, `atol`, `atoll`, `strtoll`, `strtoull`, `bsearch`, `qsort`)
+- [x] <string.h>: `strncat`, `strncmp`, `strncpy`, `strrchr`, … (Stage 85-01); Stage 106: `memmove`, `memchr`, `strcat`, `strcoll`, `strcspn`, `strspn`, `strpbrk`, `strstr`, `strtok`, `strerror`, `strxfrm`
+- [x] <ctype.h>: classification functions (`isalpha`, `isdigit`, `isspace`, …) (Stage 74); Stage 106: `iscntrl`, `isgraph`, `isprint`, `ispunct`
 - [x] <errno.h>: `errno`, `ERANGE`, `EINVAL`, etc. (Stage 74)
 - [x] <time.h>: `time_t`, time functions (Stage 74)
 - [x] <setjmp.h>: non-local jump support (Stage 74)
 - [x] <stdarg.h>: `va_list`, `va_start`, `va_end`, `va_arg`, `va_copy` macros (Stage 75-02)
-- [ ] <stdio.h>: remaining stub `fwrite`
+- [x] <stdio.h>: remaining stub `fwrite` (Stage 106)
 - [ ] <math.h>: basic floating-point math functions
 - [ ] <assert.h>: assert macro
 
