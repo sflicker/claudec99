@@ -4276,6 +4276,53 @@ static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
     }
 }
 
+static long eval_const_init(ASTNode *node, const char *varname) {
+    if (node->type == AST_INT_LITERAL)
+        return strtol(node->value, NULL, 0);
+    if (node->type == AST_CHAR_LITERAL)
+        return (long)(unsigned char)node->value[0];
+    if (node->type == AST_SIZEOF_TYPE) {
+        if (node->full_type)
+            return (long)type_size(node->full_type);
+        return (long)type_kind_bytes(node->decl_type);
+    }
+    if (node->type == AST_UNARY_OP && node->child_count == 1) {
+        long v = eval_const_init(node->children[0], varname);
+        if (strcmp(node->value, "-") == 0) return -v;
+        if (strcmp(node->value, "~") == 0) return ~v;
+        if (strcmp(node->value, "!") == 0) return !v;
+        if (strcmp(node->value, "+") == 0) return v;
+    }
+    if (node->type == AST_BINARY_OP && node->child_count == 2) {
+        long lhs = eval_const_init(node->children[0], varname);
+        long rhs = eval_const_init(node->children[1], varname);
+        if (strcmp(node->value, "+")  == 0) return lhs + rhs;
+        if (strcmp(node->value, "-")  == 0) return lhs - rhs;
+        if (strcmp(node->value, "*")  == 0) return lhs * rhs;
+        if (strcmp(node->value, "/")  == 0) {
+            if (rhs == 0)
+                compile_error("error: division by zero in initializer for "
+                              "static '%s'\n", varname);
+            return lhs / rhs;
+        }
+        if (strcmp(node->value, "%")  == 0) {
+            if (rhs == 0)
+                compile_error("error: division by zero in initializer for "
+                              "static '%s'\n", varname);
+            return lhs % rhs;
+        }
+        if (strcmp(node->value, "<<") == 0) return lhs << rhs;
+        if (strcmp(node->value, ">>") == 0) return lhs >> rhs;
+        if (strcmp(node->value, "&")  == 0) return lhs & rhs;
+        if (strcmp(node->value, "^")  == 0) return lhs ^ rhs;
+        if (strcmp(node->value, "|")  == 0) return lhs | rhs;
+    }
+    compile_error(
+        "error: initializer for block-scope static '%s' must be a "
+        "constant expression\n", varname);
+    return 0; /* unreachable */
+}
+
 static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
     cg_mark(node);
     if (node->type == AST_DECLARATION) {
@@ -4374,28 +4421,12 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 vec_push(&cg->local_statics, &new_sv);
                 return;
             }
-            /* Scalar static: validate that the initializer (if any) is a compile-time constant. */
+            /* Scalar static: evaluate the initializer as a compile-time constant. */
             long init_value = 0;
             int is_initialized = 0;
             if (node->child_count > 0) {
-                ASTNode *init = node->children[0];
-                if (init->type == AST_INT_LITERAL) {
-                    init_value = strtol(init->value, NULL, 10);
-                    is_initialized = 1;
-                } else if (init->type == AST_CHAR_LITERAL) {
-                    init_value = (long)(unsigned char)init->value[0];
-                    is_initialized = 1;
-                } else if (init->type == AST_UNARY_OP &&
-                           strcmp(init->value, "-") == 0 &&
-                           init->child_count > 0 &&
-                           init->children[0]->type == AST_INT_LITERAL) {
-                    init_value = -strtol(init->children[0]->value, NULL, 10);
-                    is_initialized = 1;
-                } else {
-                    compile_error(
-                            "error: initializer for block-scope static '%s' must be a constant expression\n",
-                            node->value);
-                }
+                init_value = eval_const_init(node->children[0], node->value);
+                is_initialized = 1;
             }
             /* Generate a unique label: Lstatic_<func>_<counter>. */
             char label[256];
