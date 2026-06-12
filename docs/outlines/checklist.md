@@ -1524,12 +1524,41 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 13 valid (enum/file-scope/block-static × relational/equality/logical/ternary + precedence fix + switch case), 2 invalid; all 1584 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1584/1584 tests pass at each step
 
+## Stage 105 - C99 Preprocessor Completion
+
+- [x] `src/preprocessor.c` — extend `MacroTable` for `#pragma once` tracking:
+	- [x] Add `once_paths` / `once_count` / `once_cap` fields to `MacroTable` struct
+	- [x] `macro_table_init`: zero-initialize new fields; `macro_table_free`: free `once_paths` array
+	- [x] Add `macro_table_add_once(t, path)` and `macro_table_is_once(t, path)` helpers
+- [x] `src/preprocessor.c` — `preprocess_file`: early-return empty string when path is already in `once_paths`
+- [x] `src/preprocessor.c` — `#pragma` directive handler:
+	- [x] Match `pragma` keyword (with non-identifier-char guard); skip unknown pragmas silently
+	- [x] Recognize `#pragma once`: call `macro_table_add_once(macros, source_path)`
+- [x] `src/preprocessor.c` — `#line` directive handler:
+	- [x] Add `current_file_override` local (`char *`, NULL by default; freed on return)
+	- [x] Parse required digit sequence; set `current_line = new_line - 1` (newline adds 1)
+	- [x] Parse optional quoted filename into a `GrowBuf`; assign to `current_file_override`
+	- [x] Update `__FILE__` expansion to use `current_file_override` when non-NULL
+- [x] `src/preprocessor.c` — null directive: bare `#` followed by whitespace+newline → `continue` (C99 §6.10.7)
+- [x] `src/preprocessor.c` — `_Pragma(string)` operator in identifier expansion:
+	- [x] Parse `_Pragma("str")`: destringize content; recognize `"once"` → `macro_table_add_once`; ignore everything else
+	- [x] `_Pragma(...)` replaced by nothing (zero preprocessing tokens)
+- [x] `include/parser.h` — add `current_func_name` field to `Parser` struct (after `current_func_is_variadic`)
+- [x] `src/parser.c` — `parser_init`: initialize `current_func_name = NULL`
+- [x] `src/parser.c` — function definition: save/restore `current_func_name = d.name` around `parse_block`
+- [x] `src/parser.c` — `parse_primary`: handle `__func__` before `__builtin_va_*` check:
+	- [x] Error if `current_func_name == NULL` ("used outside of a function body")
+	- [x] Synthesize `AST_STRING_LITERAL` with `lexer_store_bytes(fname, len)`, `byte_length=len`, `full_type=type_array(type_char(), len+1)`
+- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01050000"`
+- [x] Tests: 7 valid (pragma ignored, line directive ×2, null directive, _Pragma ignored, __func__ ×2), 1 invalid (__func__ at file scope), 2 integration (#pragma once, _Pragma once); all 1594 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1594/1594 tests pass at each step
+
 ---
 
 ## TODO
 
 ### Preprocessor
-- [ ] #pragma (at minimum #pragma once)
+- [x] `#pragma` (unknown pragmas silently ignored; `#pragma once` supported) (Stage 105)
 - [ ] #elifdef / #elifndef
 - [ ] GNU extension: `__VA_OPT__` and named variadic args
 

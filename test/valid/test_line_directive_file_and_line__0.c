@@ -1,0 +1,4 @@
+#line 1 "virtual.c"
+int main(void) {
+    return (__LINE__ == 2) ? 0 : 1;
+}
