@@ -150,6 +150,29 @@ All 1483 tests passed at C0, C1, and C2.
 
 None. The designated-initializer implementation (parser, codegen for local/global structs and arrays) compiled cleanly under C0. All new codegen code uses fixed-size arrays (`MAX_STRUCT_FIELDS_DESIGNATED = 64`, `MAX_ARRAY_ELEMS_DESIGNATED = 1024`) rather than VLAs to maintain self-hosting compatibility. All 1501 tests passed at C0, C1, and C2.
 
+## Issues found during stage 104 self-hosting test
+
+None. The new constant-expression evaluator functions (`eval_const_relational`,
+`eval_const_equality`, `eval_const_logical_and`, `eval_const_logical_or`,
+`eval_const_conditional`) are purely token-stream recursive arithmetic with no dynamic
+allocation and no new AST node types. The `eval_const_init` additions (`<`, `<=`, `>`,
+`>=`, `==`, `!=`, `&&`, `||`, `AST_CONDITIONAL_EXPR`) are pure integer comparisons on
+values already evaluated. The compiler's own constant expressions (case labels, enum
+values, block-scope statics) use none of the new operators, so no compiler source changes
+were needed. The additive/shift precedence fix does not change evaluated values in the
+compiler's own source (no existing use mixes `+`/`-` with `<<`/`>>` without parentheses).
+All 1584 tests passed at C0, C1, and C2.
+
+## Result (stage 104)
+
+**Date:** 2026-06-11
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01040000.00837` | `GNU_13_3_0` | 1584/1584 |
+| C1 | `build/ccompiler-c1` | `00.02.01040000.00838` | `ClaudeC99_v00_02_01040000_00837` | 1584/1584 |
+| C2 | `build/ccompiler-c2` | `00.02.01040000.00839` | `ClaudeC99_v00_02_01040000_00838` | 1584/1584 |
+
 ## Issues found during stage 103 self-hosting test
 
 None. The new `eval_const_init` helper is purely recursive arithmetic with no dynamic
