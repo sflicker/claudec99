@@ -79,12 +79,18 @@ typedef struct {
     MacroDef *defs;
     size_t    count;
     size_t    cap;
+    char    **once_paths;   /* canonical paths where #pragma once was seen */
+    size_t    once_count;
+    size_t    once_cap;
 } MacroTable;
 
 static void macro_table_init(MacroTable *t) {
-    t->defs  = NULL;
-    t->count = 0;
-    t->cap   = 0;
+    t->defs        = NULL;
+    t->count       = 0;
+    t->cap         = 0;
+    t->once_paths  = NULL;
+    t->once_count  = 0;
+    t->once_cap    = 0;
 }
 
 static void macro_table_free(MacroTable *t) {
@@ -98,6 +104,27 @@ static void macro_table_free(MacroTable *t) {
         }
     }
     free(t->defs);
+    for (size_t i = 0; i < t->once_count; i++)
+        free(t->once_paths[i]);
+    free(t->once_paths);
+}
+
+static void macro_table_add_once(MacroTable *t, const char *path) {
+    if (t->once_count >= t->once_cap) {
+        size_t new_cap = t->once_cap == 0 ? 8 : t->once_cap * 2;
+        char **np = realloc(t->once_paths, new_cap * sizeof(char *));
+        if (!np) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+        t->once_paths = np;
+        t->once_cap   = new_cap;
+    }
+    t->once_paths[t->once_count++] = util_strdup(path);
+}
+
+static int macro_table_is_once(const MacroTable *t, const char *path) {
+    for (size_t i = 0; i < t->once_count; i++)
+        if (strcmp(t->once_paths[i], path) == 0)
+            return 1;
+    return 0;
 }
 
 static MacroDef *macro_find(MacroTable *t, const char *name, size_t len) {
@@ -205,6 +232,13 @@ static char *expand_macros_text(const char *text, MacroTable *macros);
 
 static char *preprocess_file(const char *path, int depth, MacroTable *macros,
                               const char **include_dirs, int n_include_dirs) {
+    /* #pragma once: return empty string for a file already processed */
+    if (macro_table_is_once(macros, path)) {
+        char *empty = malloc(1);
+        if (!empty) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+        empty[0] = '\0';
+        return empty;
+    }
     FILE *f = fopen(path, "r");
     if (!f) {
         fprintf(stderr, "error: cannot open include file '%s'\n", path);
@@ -1117,7 +1151,8 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
     size_t in = 0;
     int line_has_content = 0;
-    int current_line = 1;
+    int   current_line          = 1;
+    char *current_file_override = NULL;
 
     while (s[in]) {
         char c = s[in];
@@ -1639,6 +1674,63 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 free(out.data); free(spliced); exit(1);
             }
 
+            /* #line digit-sequence ["filename"] */
+            if (strncmp(s + in, "line", 4) == 0 &&
+                !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {
+                in += 4;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                if (!isdigit((unsigned char)s[in])) {
+                    fprintf(stderr, "error: #line requires a positive integer\n");
+                    free(out.data); free(spliced); free(current_file_override); exit(1);
+                }
+                long new_line = 0;
+                while (isdigit((unsigned char)s[in]))
+                    new_line = new_line * 10 + (s[in++] - '0');
+                /* The \n ending this directive will increment current_line by 1,
+                 * so set it to new_line - 1 so it reaches new_line after the \n. */
+                current_line = (int)(new_line - 1);
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                if (s[in] == '"') {
+                    in++; /* skip opening '"' */
+                    GrowBuf fbuf;
+                    gbuf_init(&fbuf, 32);
+                    while (s[in] && s[in] != '"' && s[in] != '\n') {
+                        if (s[in] == '\\' && s[in + 1]) {
+                            in++;
+                            gbuf_push(&fbuf, s[in]);
+                        } else {
+                            gbuf_push(&fbuf, s[in]);
+                        }
+                        in++;
+                    }
+                    if (s[in] == '"') in++;
+                    gbuf_push(&fbuf, '\0');
+                    free(current_file_override);
+                    current_file_override = fbuf.data; /* fbuf.data now owned here */
+                }
+                while (s[in] && s[in] != '\n') in++;
+                continue;
+            }
+
+            /* #pragma ... */
+            if (strncmp(s + in, "pragma", 6) == 0 &&
+                !isalnum((unsigned char)s[in + 6]) && s[in + 6] != '_') {
+                in += 6;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+                if (strncmp(s + in, "once", 4) == 0 &&
+                    (s[in + 4] == '\n' || s[in + 4] == '\0' ||
+                     s[in + 4] == ' '  || s[in + 4] == '\t')) {
+                    if (source_path)
+                        macro_table_add_once(macros, source_path);
+                }
+                while (s[in] && s[in] != '\n') in++;
+                continue;
+            }
+
+            /* Null directive: '#' followed by optional whitespace then newline — C99 §6.10.7. */
+            if (s[in] == '\n' || s[in] == '\0')
+                continue;
+
             /* All other directives are unsupported. */
             fprintf(stderr, "error: unsupported preprocessor directive\n");
             free(out.data);
@@ -1694,8 +1786,9 @@ static char *preprocess_internal(const char *source, const char *source_path,
             size_t id_len = in - id_start;
             if (emitting) {
                 if (id_len == 8 && strncmp(s + id_start, "__FILE__", 8) == 0) {
+                    const char *fname = current_file_override ? current_file_override : source_path;
                     gbuf_push(&out, '"');
-                    for (const char *fp = source_path; fp && *fp; fp++) {
+                    for (const char *fp = fname; fp && *fp; fp++) {
                         if (*fp == '"' || *fp == '\\') gbuf_push(&out, '\\');
                         gbuf_push(&out, *fp);
                     }
@@ -1704,6 +1797,48 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     char lbuf[32];
                     int llen = snprintf(lbuf, sizeof(lbuf), "%d", current_line);
                     gbuf_append(&out, lbuf, (size_t)llen);
+                } else if (id_len == 7 && strncmp(s + id_start, "_Pragma", 7) == 0) {
+                    /* C99 §6.10.9: _Pragma("string") — destringize and apply as pragma,
+                     * replace the entire _Pragma(...) expression with nothing. */
+                    size_t peek = in;
+                    while (s[peek] == ' ' || s[peek] == '\t') peek++;
+                    if (s[peek] != '(') {
+                        fprintf(stderr, "error: expected '(' after _Pragma\n");
+                        free(out.data); free(spliced); free(current_file_override); exit(1);
+                    }
+                    in = peek + 1; /* skip '(' */
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != '"') {
+                        fprintf(stderr, "error: _Pragma argument must be a string literal\n");
+                        free(out.data); free(spliced); free(current_file_override); exit(1);
+                    }
+                    in++; /* skip opening '"' */
+                    GrowBuf pbuf;
+                    gbuf_init(&pbuf, 32);
+                    while (s[in] && s[in] != '"' && s[in] != '\n') {
+                        if (s[in] == '\\' && s[in + 1] == '"') {
+                            gbuf_push(&pbuf, '"');
+                            in += 2;
+                        } else if (s[in] == '\\' && s[in + 1] == '\\') {
+                            gbuf_push(&pbuf, '\\');
+                            in += 2;
+                        } else {
+                            gbuf_push(&pbuf, s[in++]);
+                        }
+                    }
+                    if (s[in] == '"') in++;
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    if (s[in] != ')') {
+                        fprintf(stderr, "error: expected ')' after _Pragma string\n");
+                        free(pbuf.data); free(out.data); free(spliced);
+                        free(current_file_override); exit(1);
+                    }
+                    in++; /* skip ')' */
+                    gbuf_push(&pbuf, '\0');
+                    if (strcmp(pbuf.data, "once") == 0 && source_path)
+                        macro_table_add_once(macros, source_path);
+                    free(pbuf.data);
+                    /* _Pragma(...) is replaced by nothing. */
                 } else {
                     MacroDef *def = macro_find(macros, s + id_start, id_len);
                     if (def && def->param_count == -1) {
@@ -1838,6 +1973,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
         exit(1);
     }
     gbuf_push(&out, '\0');
+    free(current_file_override);
     free(spliced);
     return out.data;
 }

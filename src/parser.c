@@ -86,6 +86,8 @@ void parser_init(Parser *parser, Lexer *lexer) {
     vec_init(&parser->enum_tags, sizeof(EnumTag));
     vec_init(&parser->struct_tags, sizeof(StructTag));
     vec_init(&parser->union_tags, sizeof(UnionTag));
+    parser->current_func_is_variadic = 0;
+    parser->current_func_name        = NULL;
 }
 
 /* Stage 96: release all Vec backing buffers owned by the parser.
@@ -1404,6 +1406,23 @@ static ASTNode *parse_primary(Parser *parser) {
         return node;
     }
     if (parser->current.type == TOKEN_IDENTIFIER) {
+        /* C99 §6.4.2.2: __func__ predefined identifier — the name of the
+         * lexically-enclosing function as a static const char array. */
+        if (strcmp(parser->current.value, "__func__") == 0) {
+            if (!parser->current_func_name)
+                PARSER_ERROR(parser,
+                    "error: '__func__' used outside of a function body\n");
+            parser->current = lexer_next_token(parser->lexer);
+            const char *fname = parser->current_func_name;
+            int len = (int)strlen(fname);
+            ASTNode *node = parser_node(parser, AST_STRING_LITERAL,
+                                        lexer_store_bytes(parser->lexer,
+                                                          fname, (size_t)len));
+            node->byte_length = len;
+            node->decl_type   = TYPE_ARRAY;
+            node->full_type   = type_array(type_char(), len + 1);
+            return node;
+        }
         /* Stage 75-03: recognize __builtin_va_* intrinsics before general
          * identifier resolution.  Each form has fixed argument counts and
          * specific rules; all produce typed AST nodes. */
@@ -3908,10 +3927,13 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         /* Stage 75-03: expose the variadic flag to nested expression parsers
          * so __builtin_va_start can enforce its "must be inside variadic
          * function" rule. */
-        int saved_variadic = parser->current_func_is_variadic;
+        int         saved_variadic  = parser->current_func_is_variadic;
+        const char *saved_func_name = parser->current_func_name;
         parser->current_func_is_variadic = func->is_variadic;
+        parser->current_func_name        = d.name;
         ast_add_child(func, parse_block(parser));
         parser->current_func_is_variadic = saved_variadic;
+        parser->current_func_name        = saved_func_name;
     } else {
         parser_expect(parser, TOKEN_SEMICOLON);
     }

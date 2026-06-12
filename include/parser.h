@@ -89,6 +89,9 @@ typedef struct {
     /* Stage 75-03: set while parsing the body of a variadic function
      * definition so __builtin_va_start can verify its context. */
     int current_func_is_variadic;
+    /* Stage 105: set to the enclosing function name while parsing a function
+     * body, so __func__ can be resolved to a string literal. */
+    const char *current_func_name;
 } Parser;
 
 void parser_init(Parser *parser, Lexer *lexer);
