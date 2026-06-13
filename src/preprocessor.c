@@ -1306,6 +1306,76 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 continue;
             }
 
+            /* #elifdef NAME  (C23 §6.10.1 / GCC/Clang extension) */
+            if (strncmp(s + in, "elifdef", 7) == 0 &&
+                !isalnum((unsigned char)s[in + 7]) && s[in + 7] != '_') {
+                in += 7;
+                if (cond_depth == 0) {
+                    fprintf(stderr, "error: #elifdef without conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                CondFrame *top = &cond_stack[cond_depth - 1];
+                if (top->seen_else) {
+                    fprintf(stderr, "error: #elifdef after #else\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int cond_val = 0;
+                if (top->parent_emitting && !top->branch_taken) {
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    size_t name_start = in;
+                    while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                        in++;
+                    size_t name_len = in - name_start;
+                    cond_val = (macro_find(macros, s + name_start, name_len) != NULL);
+                }
+                while (s[in] && s[in] != '\n') in++;
+                if (top->parent_emitting) {
+                    if (!top->branch_taken && cond_val) {
+                        top->emitting = 1;
+                        top->branch_taken = 1;
+                    } else {
+                        top->emitting = 0;
+                    }
+                }
+                emitting = top->emitting;
+                continue;
+            }
+
+            /* #elifndef NAME  (C23 §6.10.1 / GCC/Clang extension) */
+            if (strncmp(s + in, "elifndef", 8) == 0 &&
+                !isalnum((unsigned char)s[in + 8]) && s[in + 8] != '_') {
+                in += 8;
+                if (cond_depth == 0) {
+                    fprintf(stderr, "error: #elifndef without conditional\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                CondFrame *top = &cond_stack[cond_depth - 1];
+                if (top->seen_else) {
+                    fprintf(stderr, "error: #elifndef after #else\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                int cond_val = 0;
+                if (top->parent_emitting && !top->branch_taken) {
+                    while (s[in] == ' ' || s[in] == '\t') in++;
+                    size_t name_start = in;
+                    while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
+                        in++;
+                    size_t name_len = in - name_start;
+                    cond_val = (macro_find(macros, s + name_start, name_len) == NULL);
+                }
+                while (s[in] && s[in] != '\n') in++;
+                if (top->parent_emitting) {
+                    if (!top->branch_taken && cond_val) {
+                        top->emitting = 1;
+                        top->branch_taken = 1;
+                    } else {
+                        top->emitting = 0;
+                    }
+                }
+                emitting = top->emitting;
+                continue;
+            }
+
             /* #elif <integer> */
             if (strncmp(s + in, "elif", 4) == 0 &&
                 !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {
