@@ -1628,6 +1628,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 8 new valid (float/double arithmetic, casts, UAC); all 1635 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1635 tests at each step
 
+## Stage 111 — float/double Comparisons and Boolean Contexts
+
+- [x] FP comparison operators (==, !=, <, <=, >, >=) via ucomiss/ucomisd with NaN-correct set* sequences
+- [x] `==` uses sete+setnp+and (NaN==NaN is false per C99 §6.5.9p4)
+- [x] `!=` uses setne+setp+or (NaN!=NaN is true per C99 §6.5.9p4)
+- [x] FP values in boolean contexts (if/while/for/do-while conditions) via emit_fp_bool_to_rax helper
+- [x] FP values in ternary operator (AST_CONDITIONAL_EXPR) condition
+- [x] Logical NOT on FP (`!fp`) via sete+setnp+and (zero AND not-NaN → 1)
+- [x] Mixed FP/int comparisons: integer side promoted via cvtsi2ss/cvtsi2sd
+- [x] `VERSION_STAGE` bumped to "01110000"
+- [x] Tests: 8 new valid (<, ==, !=, if-condition, while-loop, logical-not, ternary, mixed-cmp); all 1643 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1643 tests at each step
+
 ---
 
 ## TODO
@@ -1639,9 +1652,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ### Types
 - [x] float and double types (Stage 109: declaration, initialization, assignment, struct members, globals)
-- [ ] Floating-point arithmetic and comparisons
+- [x] Floating-point arithmetic (Stage 110) and comparisons (Stage 111)
 - [x] Floating-point literals (decimal, leading-dot, exponent forms; f/F suffix) (Stage 109)
-- [ ] Floating-point conversions (int ↔ float ↔ double)
+- [x] Floating-point conversions (int ↔ float ↔ double) (Stage 110)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [x] Union types (Stage 72; anonymous unions Stage 73-01)
 - [x] Multidimensional arrays (Stage 86; up to 8 dimensions)

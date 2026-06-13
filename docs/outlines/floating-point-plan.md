@@ -133,9 +133,11 @@ compiles and produces correct results. ✓
 
 ---
 
-## Stage 111 — FP Comparisons and Boolean Contexts
+## Stage 111 — FP Comparisons and Boolean Contexts ✓ COMPLETED
 
 **Spec**: `docs/stages/ClaudeC99-spec-stage-111-float-double-comparisons.md`
+**Milestone**: `docs/milestones/stage-111-milestone.md`
+**Status**: Complete — 1643/1643 tests pass; C0→C1→C2 self-host verified.
 
 **Scope**: using float/double in comparison expressions and control-flow
 conditions.
@@ -157,10 +159,28 @@ conditions.
 - **Boolean context** (`if`, `while`, `for`, `?:` condition on FP value):
   `xorpd xmm1, xmm1` (zero); `ucomisd xmm0, xmm1`; `setne al; setp cl;
   or al, cl`; `movzx rax, al`.
-- **Logical `!` on FP**: same as boolean context, then `xor al, 1`.
+- **Logical `!` on FP**: via helper function `emit_fp_bool_to_rax` for condition test, not "xor al, 1".
 
-**Deliverable**: FP comparisons and control-flow work; a bubble-sort over
-a `double[]` compiles and produces correct results.
+**Deliverable**: FP comparisons and control-flow work; bubble-sort over
+a `double[]` compiles and produces correct results. ✓
+
+**Implementation notes** (actual vs. plan):
+- **Helper function placement**: `emit_fp_bool_to_rax()` was initially placed
+  at the end of `src/codegen.c`, but it is called inside `codegen_expression()`
+  which appears earlier in the file. This triggered a C99 implicit-declaration
+  error during bootstrap. Fix: moved the function to the FP helper section
+  immediately after `emit_fp_widen_if_needed`.
+- **Operand order after save/restore**: following Stage 110's convention, left
+  is saved to stack, right is evaluated into xmm0, left is restored to xmm1.
+  After restore, `xmm1 = left`, `xmm0 = right`; the instruction is thus
+  `ucomisd xmm1, xmm0` (left cmp right).
+- **Logical NOT on FP**: spec used `sete al; setnp cl; and al, cl` (from
+  `emit_fp_bool_to_rax`), not the plan's "xor al, 1" variant. Both are
+  semantically equivalent for normal values, but the spec version correctly
+  gives `!NaN = 0` (the XOR variant would give 1, which is incorrect per C99).
+- **Condition handling**: both `emit_cond_cmp_zero()` and `AST_CONDITIONAL_EXPR`
+  were updated to detect FP condition types and call `emit_fp_bool_to_rax()`
+  before the existing integer condition test.
 
 ---
 

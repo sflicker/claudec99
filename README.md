@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 110 (float/double arithmetic, conversions, and casts):
+Through stage 111 (float/double comparisons and boolean contexts):
 
-> Stage 110 adds floating-point arithmetic and explicit casts. Usual arithmetic conversions (UAC) now handle mixed FP and integer operands: if either operand is `double`, the result is `double`; else if either is `float`, the result is `float`; else standard integer UAC applies. Unary minus on FP types emits xorps/xorpd with sign-bit masks (16-byte-aligned) from `.rodata`. Binary arithmetic (+, -, *, /) on FP operands uses a save/restore convention: left operand stored to stack, right operand evaluated into xmm0, left restored to xmm1, and operation executed. Mixed int/float operands are widened inline via cvtsi2ss/cvtsi2sd (int→FP), cvtss2sd/cvtsd2ss (float↔double), or cvttss2si/cvttsd2si (FP→int). Explicit casts between all scalar types (int, float, double) are now code-generated. All 1635 tests pass (950 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no source changes needed during bootstrap.
+> Stage 111 adds float/double values in comparison expressions, logical operators, and control-flow conditions. The six relational and equality operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) on FP operands use SSE2 `ucomiss`/`ucomisd` with NaN-correct `set*` sequences: `==` requires `sete+setnp+and` (NaN==NaN is false per C99), `!=` requires `setne+setp+or` (NaN!=NaN is true). FP values in `if`/`while`/`for`/`do-while` conditions and ternary `?:` are converted to 0/1 in `rax` via a new `emit_fp_bool_to_rax` helper. Logical NOT (`!`) on FP uses `sete+setnp+and` so `!NaN==0`. Mixed FP/int comparisons promote the integer side via `cvtsi2ss`/`cvtsi2sd`. All 1643 tests pass (958 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no source changes needed during bootstrap.
 
 Through stage 108 (#elifdef / #elifndef):
 
@@ -613,7 +613,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; float/double comparisons and function parameters/return values (Stages 111–112); block-scope `extern`;
+Anonymous struct/union members (C11 feature), bit-fields; float/double function parameters/return values (Stage 112); block-scope `extern`;
 floating-point variadic arguments; floating-point `va_arg` arguments;
 compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
@@ -643,7 +643,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 110 all tests pass (950 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1635 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 111 all tests pass (958 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1643 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
