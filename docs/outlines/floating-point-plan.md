@@ -1,6 +1,6 @@
 # ClaudeC99 Floating-Point Implementation Plan — Stages 109–112
 
-_Drafted 2026-06-13 — Stage 109 completed 2026-06-13_
+_Drafted 2026-06-13 — Stage 109 completed 2026-06-13 — Stage 110 completed 2026-06-13_
 
 ## Overview
 
@@ -64,9 +64,11 @@ no arithmetic, no comparisons, no function calls.
 
 ---
 
-## Stage 110 — FP Arithmetic, Conversions, and Casts
+## Stage 110 — FP Arithmetic, Conversions, and Casts ✓ COMPLETED
 
 **Spec**: `docs/stages/ClaudeC99-spec-stage-110-float-double-arithmetic.md`
+**Milestone**: `docs/milestones/stage-110-milestone.md`
+**Status**: Complete — 1635/1635 tests pass; C0→C1→C2 self-host verified.
 
 **Scope**: expressions involving float/double operands; implicit and
 explicit conversions between integer and FP types.
@@ -92,7 +94,42 @@ explicit conversions between integer and FP types.
 - **`sizeof(float)` = 4, `sizeof(double)` = 8** (already from Stage 109).
 
 **Deliverable**: `double d = (double)n / 3.0; float f = (float)d + 1.5f;`
-compiles and produces correct results.
+compiles and produces correct results. ✓
+
+**Implementation notes** (actual vs. plan):
+- **`expr_result_type` bug** (not anticipated): the type-inference helper
+  used size-based fallback for `AST_VAR_REF` locals and globals, returning
+  `TYPE_INT` for 4-byte floats and `TYPE_LONG` for 8-byte doubles. Without
+  fixing this, `type_is_fp()` was always false and the FP arithmetic path
+  was never entered — all FP binary ops fell through to integer codegen. Fix:
+  added `type_is_fp(lv->kind)` guards for local and global var-ref paths in
+  `expr_result_type`, plus `AST_FLOAT_LITERAL` handling and FP-first UAC
+  checks in `AST_BINARY_OP`/`AST_UNARY_OP`. The same fixes applied to
+  `sizeof_type_of_expr`.
+- **Operand order after save/restore**: after the left-operand save/right-
+  operand eval/left-restore sequence, `xmm0` holds the right operand and
+  `xmm1` holds the left. For commutative ops (`+`, `*`) the op is emitted
+  directly (`addsd xmm0, xmm1`); for non-commutative ops the result must be
+  moved: `subsd xmm1, xmm0` then `movsd xmm0, xmm1` (analogously for
+  division). The plan described the final state as "left in `xmm0`, right in
+  `xmm1`" but the actual post-restore state is inverted.
+- **Sign-mask alignment** (bug found during implementation): `xorps`/`xorpd`
+  read 16 bytes and require 16-byte-aligned operands. Initial emission placed
+  the 4-byte `DD 0x80000000` mask immediately after an arbitrary-sized
+  `.rodata` entry, causing a General Protection Fault (SIGSEGV). Fixed by
+  emitting `align 16` before each mask and padding to the full 16 bytes:
+  `Lfp_smask_f32: dd 0x80000000, 0, 0, 0` (float) and
+  `Lfp_smask_f64: dq 0x8000000000000000, 0` (double).
+- **Sign-mask label names**: `Lfp_smask_f32` and `Lfp_smask_f64` (the plan
+  wrote `Lsign_mask_f64`; the actual names include the `fp_` prefix and the
+  `_f32`/`_f64` suffix to distinguish float from double).
+- **Sign masks emitted on demand**: two new `CodeGen` flags
+  (`fp_sign_mask_f32_emitted`, `fp_sign_mask_f64_emitted`) are set the first
+  time each mask is needed; `codegen_emit_fp_literals` emits only the masks
+  actually used.
+- **`fp_common_arith_kind` helper** added to `src/codegen.c` alongside the
+  existing `common_arith_kind` to implement FP UAC: double wins over float
+  wins over any integer kind.
 
 ---
 
