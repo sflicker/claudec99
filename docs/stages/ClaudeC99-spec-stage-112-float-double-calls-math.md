@@ -478,3 +478,4 @@ Expected exit: 0.
   `float`/`double` in TODO.
 - Run the **`update-supplemental-docs`** skill.
 - **`docs/self-compilation-report.md`** — record Stage 112 self-host run.
+- **`docs/outlines/floating-point-plan.md`** - record stage 112 and any implementation notes (plan vs. actual etc.)

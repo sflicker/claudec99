@@ -312,3 +312,4 @@ Expected exit: 0.
 - **`docs/outlines/checklist.md`** — add Stage 111 section.
 - Run the **`update-supplemental-docs`** skill.
 - **`docs/self-compilation-report.md`** — record Stage 111 self-host run.
+- **`docs/outlines/floating-point-plan.md`** - record stage 111 and any implementation notes (plan vs. actual etc.)
