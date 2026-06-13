@@ -48,11 +48,20 @@ for src in "$SCRIPT_DIR"/*.c; do
         continue
     fi
 
+    # Optional .libs companion file: extra -l flags for this test
+    # (e.g. test_fp_sqrt__0.libs containing "-lm").
+    libs_file="$SCRIPT_DIR/${name}.libs"
+    if [ -f "$libs_file" ]; then
+        extra_libs=($(cat "$libs_file"))
+    else
+        extra_libs=()
+    fi
+
     # Link — gcc -no-pie pulls in crt0 (which calls `main` from `_start`)
     # and libc, so external libc symbols like `puts` resolve. Our
     # generated `main` exits via direct syscall, which is compatible
     # with crt0 (it never returns to `_start`).
-    if ! gcc -no-pie "$WORK_DIR/${name}.o" -o "$WORK_DIR/${name}" 2>/dev/null; then
+    if ! gcc -no-pie "$WORK_DIR/${name}.o" "${extra_libs[@]}" -o "$WORK_DIR/${name}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue

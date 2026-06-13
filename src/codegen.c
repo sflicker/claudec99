@@ -102,8 +102,9 @@ typedef struct {
     int is_struct;   /* argument is a struct/union value */
     int mem;         /* passed on the stack (memory class or out of registers) */
     int nbytes;      /* object size in bytes (8 for scalars/pointers) */
-    int gp_start;    /* first GP register index (0=rdi..5=r9), or -1 if on stack */
+    int gp_start;    /* first GP register index (0=rdi..5=r9), or -1 if not GP */
     int gp_count;    /* number of GP registers consumed (>=1) when in registers */
+    int xmm_idx;     /* Stage 112: XMM register index (0-7) for FP args, else -1 */
     int stack_off;   /* byte offset within the outgoing stack-arg area if on stack */
 } ArgSlot;
 
@@ -117,10 +118,14 @@ typedef struct {
 /*
  * Compute argument placement for a call to `fn_decl` (which may be NULL for an
  * undeclared/libc callee) with `nargs` actual arguments. Struct/union value
- * parameters are classified per their declared full type; arguments beyond the
- * declared parameters (variadic extras) are treated as scalar GP eightbytes.
+ * parameters are classified per their declared full type; FP parameters go in
+ * XMM registers (xmm0–xmm7); arguments beyond the declared parameters
+ * (variadic extras) are classified by `actual_types[i]` (caller-supplied
+ * from expr_result_type); NULL means default GP for all extras.
  */
-static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
+static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs,
+                                ASTNode *call_node,
+                                const TypeKind *actual_types) {
     if (nargs > MAX_CALL_LAYOUT_ITEMS) {
         compile_error("error: call has %d arguments; max supported is %d\n",
                 nargs, MAX_CALL_LAYOUT_ITEMS);
@@ -129,13 +134,25 @@ static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
     L->sret = return_is_memory_struct(fn_decl);
     L->count = nargs;
     int gp_next = L->sret ? 1 : 0;
+    int xmm_next = 0;
     int stack_off = 0;
     for (int i = 0; i < nargs; i++) {
         ArgSlot *s = &L->items[i];
-        s->gp_start = -1; s->gp_count = 0; s->stack_off = -1; s->mem = 0;
+        s->gp_start = -1; s->gp_count = 0; s->xmm_idx = -1;
+        s->stack_off = -1; s->mem = 0;
         ASTNode *p = (i < num_params) ? fn_decl->children[i] : NULL;
+
+        /* For variadic extras (p==NULL), use caller-supplied actual_types. */
+        TypeKind actual_kind = TYPE_LONG; /* default GP for unknown extras */
+        if (!p && actual_types)
+            actual_kind = actual_types[i];
+        else if (!p && call_node && i < call_node->child_count)
+            actual_kind = call_node->children[i]->decl_type;
+
         int is_struct = p && is_struct_or_union_kind(p->decl_type);
+        int is_fp = p ? type_is_fp(p->decl_type) : type_is_fp(actual_kind);
         s->is_struct = is_struct;
+
         if (is_struct) {
             int sz = p->full_type ? p->full_type->size : 0;
             int ebs = struct_reg_eightbytes(p->full_type);
@@ -146,6 +163,13 @@ static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
                 s->mem = 1;
                 s->stack_off = stack_off;
                 stack_off += (sz + 7) & ~7;
+            }
+        } else if (is_fp) {
+            s->nbytes = p ? type_kind_bytes(p->decl_type) : 8;
+            if (xmm_next < 8) {
+                s->xmm_idx = xmm_next++;
+            } else {
+                s->mem = 1; s->stack_off = stack_off; stack_off += 8;
             }
         } else {
             s->nbytes = 8;
@@ -426,6 +450,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
     cg->variadic_named_gp_params = 0;
+    cg->variadic_named_xmm_params = 0;
     cg->variadic_named_stack_params = 0;
     cg->current_sret_offset = 0;
     cg->struct_ret_scratch_base = 0;
@@ -3398,24 +3423,50 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     } \
 } while (0)
 
-        /* Stage 91-01: does this call pass a struct by value, or return one?
-         * Only then take the general SysV marshalling path below; otherwise
-         * keep the existing scalar push/pop path byte-for-byte. */
-        int involves_struct = 0;
+        /* Stage 91-01/112: does this call involve a struct/union or FP arg/return?
+         * If so, take the general SysV marshalling path; otherwise keep the
+         * existing scalar push/pop path byte-for-byte. */
+        int involves_special = 0;
         if (callee) {
-            if (is_struct_or_union_kind(callee->decl_type))
-                involves_struct = 1;
+            if (is_struct_or_union_kind(callee->decl_type) ||
+                    type_is_fp(callee->decl_type))
+                involves_special = 1;
             int np_chk = count_params(callee);
-            for (int i = 0; i < np_chk && i < nargs; i++)
-                if (is_struct_or_union_kind(callee->children[i]->decl_type))
-                    involves_struct = 1;
+            for (int i = 0; i < np_chk && i < nargs; i++) {
+                if (is_struct_or_union_kind(callee->children[i]->decl_type) ||
+                        type_is_fp(callee->children[i]->decl_type))
+                    involves_special = 1;
+            }
         }
-        if (involves_struct) {
+        /* Also check actual argument types for undeclared callees and variadic extras. */
+        if (!involves_special) {
+            int i;
+            for (i = 0; i < nargs; i++) {
+                TypeKind akt = expr_result_type(cg, node->children[i]);
+                if (type_is_fp(akt)) { involves_special = 1; break; }
+            }
+        }
+        if (involves_special) {
             CallLayout L;
-            compute_call_layout(&L, callee, nargs);
+            /* Compute actual arg types so variadic extras classify correctly. */
+            TypeKind actual_types[MAX_CALL_LAYOUT_ITEMS + 2];
+            {
+                int _i;
+                for (_i = 0; _i < nargs; _i++)
+                    actual_types[_i] = expr_result_type(cg, node->children[_i]);
+            }
+            compute_call_layout(&L, callee, nargs, node, actual_types);
+
+            /* Count XMM registers used (for variadic al register). */
+            int xmm_arg_count = 0;
+            {
+                int ci;
+                for (ci = 0; ci < nargs; ci++)
+                    if (L.items[ci].xmm_idx >= 0) xmm_arg_count++;
+            }
 
             /* Allocate a scratch slot for a struct return result (any class). */
-            int ret_struct = is_struct_or_union_kind(callee->decl_type);
+            int ret_struct = callee && is_struct_or_union_kind(callee->decl_type);
             int ret_size   = ret_struct ? callee->full_type->size : 0;
             int ret_temp   = ret_struct ? claim_struct_ret_temp(cg, ret_size) : 0;
 
@@ -3439,23 +3490,37 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     fprintf(cg->output, "    mov rsi, rax\n");
                     fprintf(cg->output, "    lea rdi, [rsp + %d]\n", s->stack_off);
                     emit_struct_copy(cg, sz);
-                } else {
+                } else if (s->xmm_idx < 0) {
+                    /* GP stack arg. */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
                     fprintf(cg->output, "    mov [rsp + %d], rax\n", s->stack_off);
+                } else {
+                    /* FP stack arg (overflow beyond xmm7). */
+                    codegen_expression(cg, node->children[i]);
+                    EMIT_ARG_CONVERT(node, callee, i);
+                    if (s->nbytes == 4)
+                        fprintf(cg->output, "    movss [rsp + %d], xmm0\n", s->stack_off);
+                    else
+                        fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
                 }
             }
 
-            /* Phase 2: evaluate register-passed arguments, spilling each
-             * eightbyte to the stack; the hidden sret pointer (if any) is the
-             * first spill and maps to rdi. */
-            int spill_regs[8];   /* gp register index per spilled eightbyte */
+            /* Phase 2: evaluate register-passed arguments, spilling each to the
+             * temporary stack. The hidden sret pointer (if any) is first. */
+            /* Spill descriptor: {is_xmm, reg_idx, is_float} */
+            int spill_is_xmm[MAX_CALL_LAYOUT_ITEMS + 2];
+            int spill_reg[MAX_CALL_LAYOUT_ITEMS + 2];
+            int spill_is_float[MAX_CALL_LAYOUT_ITEMS + 2];
             int nspill = 0;
             if (L.sret) {
                 fprintf(cg->output, "    lea rax, [rbp - %d]\n", ret_temp);
                 fprintf(cg->output, "    push rax\n");
                 cg->push_depth++;
-                spill_regs[nspill++] = 0;
+                spill_is_xmm[nspill] = 0;
+                spill_reg[nspill] = 0;
+                spill_is_float[nspill] = 0;
+                nspill++;
             }
             for (int i = 0; i < nargs; i++) {
                 ArgSlot *s = &L.items[i];
@@ -3466,33 +3531,67 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     fprintf(cg->output, "    mov rax, [r11]\n");
                     fprintf(cg->output, "    push rax\n");
                     cg->push_depth++;
-                    spill_regs[nspill++] = s->gp_start;
+                    spill_is_xmm[nspill] = 0;
+                    spill_reg[nspill] = s->gp_start;
+                    spill_is_float[nspill] = 0;
+                    nspill++;
                     if (s->gp_count == 2) {
                         fprintf(cg->output, "    mov rax, [r11 + 8]\n");
                         fprintf(cg->output, "    push rax\n");
                         cg->push_depth++;
-                        spill_regs[nspill++] = s->gp_start + 1;
+                        spill_is_xmm[nspill] = 0;
+                        spill_reg[nspill] = s->gp_start + 1;
+                        spill_is_float[nspill] = 0;
+                        nspill++;
                     }
-                } else {
+                } else if (s->xmm_idx < 0) {
+                    /* GP register arg. */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
                     fprintf(cg->output, "    push rax\n");
                     cg->push_depth++;
-                    spill_regs[nspill++] = s->gp_start;
+                    spill_is_xmm[nspill] = 0;
+                    spill_reg[nspill] = s->gp_start;
+                    spill_is_float[nspill] = 0;
+                    nspill++;
+                } else {
+                    /* FP register arg: evaluate into xmm0, spill to stack. */
+                    codegen_expression(cg, node->children[i]);
+                    EMIT_ARG_CONVERT(node, callee, i);
+                    fprintf(cg->output, "    sub rsp, 8\n");
+                    cg->push_depth++;
+                    if (s->nbytes == 4)
+                        fprintf(cg->output, "    movss [rsp], xmm0\n");
+                    else
+                        fprintf(cg->output, "    movsd [rsp], xmm0\n");
+                    spill_is_xmm[nspill] = 1;
+                    spill_reg[nspill] = s->xmm_idx;
+                    spill_is_float[nspill] = (s->nbytes == 4) ? 1 : 0;
+                    nspill++;
                 }
             }
-            /* Load the spilled eightbytes into their argument registers. The
-             * j-th of nspill pushes sits at [rsp + (nspill-1-j)*8]. */
+            /* Load the spilled values into their target registers. The j-th
+             * spill (push order) sits at [rsp + (nspill-1-j)*8]. */
             for (int j = 0; j < nspill; j++) {
-                fprintf(cg->output, "    mov %s, [rsp + %d]\n",
-                        arg_regs[spill_regs[j]], (nspill - 1 - j) * 8);
+                int off = (nspill - 1 - j) * 8;
+                if (spill_is_xmm[j]) {
+                    if (spill_is_float[j])
+                        fprintf(cg->output, "    movss xmm%d, [rsp + %d]\n",
+                                spill_reg[j], off);
+                    else
+                        fprintf(cg->output, "    movsd xmm%d, [rsp + %d]\n",
+                                spill_reg[j], off);
+                } else {
+                    fprintf(cg->output, "    mov %s, [rsp + %d]\n",
+                            arg_regs[spill_reg[j]], off);
+                }
             }
             if (nspill > 0) {
                 fprintf(cg->output, "    add rsp, %d\n", nspill * 8);
                 cg->push_depth -= nspill;
             }
-            if (callee->is_variadic)
-                fprintf(cg->output, "    xor eax, eax\n");
+            if (callee && callee->is_variadic)
+                fprintf(cg->output, "    mov al, %d\n", xmm_arg_count);
             fprintf(cg->output, "    call %s\n", node->value);
             if (region > 0) {
                 fprintf(cg->output, "    add rsp, %d\n", region);
@@ -3517,7 +3616,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = callee->full_type;
             } else {
                 node->result_type = node->decl_type;
-                if (callee->decl_type == TYPE_POINTER)
+                if (callee && callee->decl_type == TYPE_POINTER)
                     node->full_type = callee->full_type;
             }
             return;
@@ -4405,8 +4504,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         int ap_off = lv_ap->offset;
         /* gp_offset = named_gp_params * 8, already clamped to ≤ 48 */
         int gp_off_val  = cg->variadic_named_gp_params * 8;
-        /* fp_offset = 48 (start of reserved FP/XMM area) */
-        int fp_off_val  = 48;
+        /* fp_offset = 48 + named_xmm_params * 16 (skip past named FP params) */
+        int fp_off_val  = 48 + cg->variadic_named_xmm_params * 16;
         /* overflow_arg_area = rbp + 16 + 8 * named_stack_params */
         int overflow_disp = 16 + cg->variadic_named_stack_params * 8;
         /* ap[0].gp_offset (unsigned int, 4 bytes at ap+0) */
@@ -4467,6 +4566,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                           " use int or a larger type\n",
                           type_kind_name(kind));
             return;
+        case TYPE_FLOAT:
+            /* C99 §6.5.2.2p6: float is always promoted to double in variadic calls.
+             * va_arg(ap, float) is undefined behavior; reject it. */
+            compile_error("error: va_arg: 'float' is not valid; use 'double'"
+                          " (float arguments are promoted to double)\n");
+            return;
         case TYPE_STRUCT:
         case TYPE_UNION:
             compile_error("error: va_arg: aggregate types are not supported\n");
@@ -4486,6 +4591,39 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         int ap_off = lv_ap->offset;
         int lbl = cg->label_count++;
 
+        /* Stage 112: va_arg for double uses fp_offset (bytes 4-7 in va_list)
+         * and loads from the XMM save area (16-byte slots starting at offset 48).
+         * va_arg for GP types uses gp_offset (bytes 0-3). */
+        if (kind == TYPE_DOUBLE) {
+            /* FP register save area path:
+             *   ap+4  = fp_offset (unsigned int)
+             *   ap+8  = overflow_arg_area (void *)
+             *   ap+16 = reg_save_area (void *)
+             * fp_offset >= 176 means all XMM slots exhausted. */
+            fprintf(cg->output, "    mov rcx, [rbp - %d]\n", ap_off - 16);
+            fprintf(cg->output, "    mov eax, dword [rbp - %d]\n", ap_off - 4);
+            fprintf(cg->output, "    cmp eax, 176\n");
+            fprintf(cg->output, "    jge .L_va_arg_ovf_%d\n", lbl);
+
+            /* Register path: load from reg_save_area + fp_offset. */
+            fprintf(cg->output, "    add rax, rcx\n");
+            fprintf(cg->output, "    movsd xmm0, [rax]\n");
+            fprintf(cg->output, "    add dword [rbp - %d], 16\n", ap_off - 4);
+            fprintf(cg->output, "    jmp .L_va_arg_done_%d\n", lbl);
+
+            /* Overflow path: load from overflow_arg_area. */
+            fprintf(cg->output, ".L_va_arg_ovf_%d:\n", lbl);
+            fprintf(cg->output, "    mov rax, [rbp - %d]\n", ap_off - 8);
+            fprintf(cg->output, "    movsd xmm0, [rax]\n");
+            fprintf(cg->output, "    add qword [rbp - %d], 8\n", ap_off - 8);
+
+            fprintf(cg->output, ".L_va_arg_done_%d:\n", lbl);
+            node->result_type = TYPE_DOUBLE;
+            node->full_type = arg_type;
+            return;
+        }
+
+        /* GP register class path. */
         /* Load gp_offset; branch to overflow if >= 48 */
         fprintf(cg->output, "    mov eax, dword [rbp - %d]\n", ap_off);
         fprintf(cg->output, "    cmp eax, 48\n");
@@ -5609,20 +5747,24 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Pre-walk the body to collect user labels; rejects duplicates. */
         collect_user_labels(cg, body);
 
-        /* Stage 91-01: does the prologue need struct-by-value binding (a struct
-         * value parameter, or a hidden sret pointer for a memory-class return)? */
+        /* Stage 91-01/112: does the prologue need special binding?
+         * True for: struct/union value parameter, memory-class return, or FP parameter. */
         int prologue_struct = return_is_memory_struct(node);
-        for (int i = 0; i < num_params; i++)
-            if (is_struct_or_union_kind(node->children[i]->decl_type))
+        for (int i = 0; i < num_params; i++) {
+            TypeKind pt = node->children[i]->decl_type;
+            if (is_struct_or_union_kind(pt) || type_is_fp(pt))
                 prologue_struct = 1;
+        }
 
         /* Compute stack space. Stage 91-01: a struct value parameter reserves
          * its rounded size (register-class) — memory-class struct params are
          * referenced in place and cost nothing; a memory-class return reserves
          * 8 bytes for the saved hidden pointer; struct-returning calls in the
          * body reserve a scratch region for their result temporaries.
-         * Stage 75-04: variadic functions also reserve 304 bytes for the
-         * hidden GP/FP register save area. Rounded up to a 16-byte multiple. */
+         * Stage 112: variadic functions reserve 176 bytes for the register save
+         * area: 48 (6 GP) + 128 (8 XMM) = 176.
+         * rbp mod 16 = 0 (call + push rbp = 16 bytes, restoring alignment), so
+         * xmm0 slot at [rbp-176+48]=[rbp-128] has (0-128) mod 16 = 0. Aligned. */
         int param_bytes = 0;
         for (int i = 0; i < num_params; i++) {
             ASTNode *p = node->children[i];
@@ -5639,7 +5781,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         int stack_size = param_bytes + compute_decl_bytes(body) + compound_lit_bytes +
                          scratch_bytes + sret_bytes;
         if (node->is_variadic)
-            stack_size += 304;
+            stack_size += 176;
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
@@ -5663,24 +5805,47 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
         }
 
-        /* Stage 75-04: variadic function register save area.
-         * Reserve 304 bytes at the top of the frame (before named params) and
-         * save all 6 GP argument registers so va_start can reference them. */
+        /* Stage 75-04/112: variadic function register save area.
+         * Reserve 176 bytes: 48 for 6 GP regs + 128 for 8 XMM regs (no padding needed).
+         * Save all 6 GP and all 8 XMM argument registers so va_start can use them.
+         * Layout (reg_save_area = rbp - rso):
+         *   [rso+0..+40]   rdi..r9 (6 × 8 bytes, GP regs)
+         *   [rso+48..+160] xmm0..xmm7 (8 × 16 bytes, XMM regs, 16-byte aligned) */
         if (node->is_variadic) {
-            cg->stack_offset += 304;
+            int named_gp = 0, named_xmm = 0;
+            int i;
+            for (i = 0; i < num_params; i++) {
+                if (type_is_fp(node->children[i]->decl_type))
+                    named_xmm++;
+                else
+                    named_gp++;
+            }
+            cg->stack_offset += 176;
             cg->variadic_reg_save_offset    = cg->stack_offset;
-            cg->variadic_named_gp_params    = num_params < 6 ? num_params : 6;
-            cg->variadic_named_stack_params = num_params > 6 ? num_params - 6 : 0;
+            cg->variadic_named_gp_params    = named_gp < 6 ? named_gp : 6;
+            cg->variadic_named_xmm_params   = named_xmm < 8 ? named_xmm : 8;
+            cg->variadic_named_stack_params = named_gp > 6 ? named_gp - 6 : 0;
             int rso = cg->variadic_reg_save_offset;
+            /* Save GP registers. */
             fprintf(cg->output, "    mov [rbp - %d], rdi\n", rso);
             fprintf(cg->output, "    mov [rbp - %d], rsi\n", rso - 8);
             fprintf(cg->output, "    mov [rbp - %d], rdx\n", rso - 16);
             fprintf(cg->output, "    mov [rbp - %d], rcx\n", rso - 24);
             fprintf(cg->output, "    mov [rbp - %d], r8\n",  rso - 32);
             fprintf(cg->output, "    mov [rbp - %d], r9\n",  rso - 40);
+            /* Save XMM registers (16 bytes each, movaps requires 16-byte alignment). */
+            fprintf(cg->output, "    movaps [rbp - %d], xmm0\n", rso - 48);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm1\n", rso - 64);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm2\n", rso - 80);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm3\n", rso - 96);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm4\n", rso - 112);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm5\n", rso - 128);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm6\n", rso - 144);
+            fprintf(cg->output, "    movaps [rbp - %d], xmm7\n", rso - 160);
         } else {
             cg->variadic_reg_save_offset    = 0;
             cg->variadic_named_gp_params    = 0;
+            cg->variadic_named_xmm_params   = 0;
             cg->variadic_named_stack_params = 0;
         }
 
@@ -5774,7 +5939,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
              * (plain stores, no register clobbering); stack-passed parameters
              * are bound second, since copying them clobbers rdi/rsi/rcx. */
             CallLayout L;
-            compute_call_layout(&L, node, num_params);
+            compute_call_layout(&L, node, num_params, NULL, NULL);
             /* Pass A: register-passed parameters. */
             for (int i = 0; i < num_params; i++) {
                 ASTNode *p = node->children[i];
@@ -5793,6 +5958,20 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     if (s->gp_count == 2)
                         fprintf(cg->output, "    mov [rbp - %d], %s\n", off - 8,
                                 arg_regs[s->gp_start + 1]);
+                } else if (s->xmm_idx >= 0) {
+                    /* Stage 112: FP parameter from XMM register. */
+                    int sz = type_kind_bytes(p->decl_type);
+                    int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = 0;
+                    }
+                    if (p->decl_type == TYPE_FLOAT)
+                        fprintf(cg->output, "    movss [rbp - %d], xmm%d\n",
+                                off, s->xmm_idx);
+                    else
+                        fprintf(cg->output, "    movsd [rbp - %d], xmm%d\n",
+                                off, s->xmm_idx);
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
@@ -5833,6 +6012,21 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                     fprintf(cg->output, "    lea rsi, [rbp + %d]\n", src);
                     fprintf(cg->output, "    lea rdi, [rbp - %d]\n", off);
                     emit_struct_copy(cg, sz);
+                } else if (type_is_fp(p->decl_type)) {
+                    /* Stage 112: FP stack parameter (overflowed beyond xmm7). */
+                    int sz = type_kind_bytes(p->decl_type);
+                    int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);
+                    {
+                        LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                        last_lv->is_unsigned = 0;
+                    }
+                    if (p->decl_type == TYPE_FLOAT) {
+                        fprintf(cg->output, "    movss xmm0, [rbp + %d]\n", src);
+                        fprintf(cg->output, "    movss [rbp - %d], xmm0\n", off);
+                    } else {
+                        fprintf(cg->output, "    movsd xmm0, [rbp + %d]\n", src);
+                        fprintf(cg->output, "    movsd [rbp - %d], xmm0\n", off);
+                    }
                 } else {
                     int sz = type_kind_bytes(p->decl_type);
                     int off = codegen_add_var(cg, p->value, sz, sz, p->decl_type, p->full_type);

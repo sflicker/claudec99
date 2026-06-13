@@ -171,14 +171,17 @@ typedef struct {
      * Stage 95-04: converted from fixed array to Vec. */
     Vec local_statics;  /* LocalStaticVar */
     /* Stage 75-04: variadic function register save area.
-     * variadic_reg_save_offset: rbp-relative offset of the 304-byte register
+     * variadic_reg_save_offset: rbp-relative offset of the 176-byte register
      * save area (0 for non-variadic functions).
-     * variadic_named_gp_params: min(named_param_count, 6) — used by va_start
-     * to initialize gp_offset.
-     * variadic_named_stack_params: max(0, named_param_count - 6) — used by
+     * variadic_named_gp_params: count of named GP params (min 6) — used by
+     * va_start to initialize gp_offset.
+     * variadic_named_xmm_params: count of named XMM (FP) params — used by
+     * va_start to initialize fp_offset.
+     * variadic_named_stack_params: max(0, named_gp_params - 6) — used by
      * va_start to compute overflow_arg_area. */
     int variadic_reg_save_offset;
     int variadic_named_gp_params;
+    int variadic_named_xmm_params;
     int variadic_named_stack_params;
     /* Stage 91-01: struct-by-value return support.
      * current_sret_offset: rbp-relative offset of the slot holding the hidden
