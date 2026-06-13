@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 112 (FP calling convention, va_arg for double, and math.h):
+
+> Stage 112 completes floating-point support through the SysV AMD64 ABI calling convention. FP arguments (float/double) go in xmm0–xmm7 (counted independently from GP args in rdi–r9); non-variadic function prologues move xmmN values to local stack slots; variadic prologues save xmm0–xmm7 to the register-save area (176 bytes: 48 GP + 128 XMM); `al` is set to the XMM register count before variadic calls; `va_arg(ap, double)` fetches from reg_save_area or overflow_arg_area; `va_arg(ap, float)` is rejected per C99 (float is always promoted to double). A `test/include/math.h` stub declares common math functions so programs can call `sqrt`, `pow`, etc. from libm. All 1650 tests pass (965 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified.
+
 Through stage 111 (float/double comparisons and boolean contexts):
 
 > Stage 111 adds float/double values in comparison expressions, logical operators, and control-flow conditions. The six relational and equality operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) on FP operands use SSE2 `ucomiss`/`ucomisd` with NaN-correct `set*` sequences: `==` requires `sete+setnp+and` (NaN==NaN is false per C99), `!=` requires `setne+setp+or` (NaN!=NaN is true). FP values in `if`/`while`/`for`/`do-while` conditions and ternary `?:` are converted to 0/1 in `rax` via a new `emit_fp_bool_to_rax` helper. Logical NOT (`!`) on FP uses `sete+setnp+and` so `!NaN==0`. Mixed FP/int comparisons promote the integer side via `cvtsi2ss`/`cvtsi2sd`. All 1643 tests pass (958 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no source changes needed during bootstrap.
@@ -450,7 +454,7 @@ Through stage 91 (address-of member lvalues):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP register class types (int, unsigned int, long, unsigned long, long long, unsigned long long, and pointer types) including register-save area and overflow stack paths; `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) and all 8 XMM argument registers (xmm0–xmm7) to a 176-byte register-save area (48 GP + 128 XMM, 16-byte aligned); `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP types (int, unsigned int, long, unsigned long, long long, unsigned long long, pointer) and `double` (via fp_offset into the XMM save area); `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves; `va_arg(ap, float)` is rejected (float is promoted to double in variadic calls per C99 §6.5.2.2p6). Code generation emits `mov al, <xmm_count>` before variadic calls to set the SSE register count per the SysV AMD64 ABI.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant. The address-of operator `&` accepts
@@ -613,8 +617,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; float/double function parameters/return values (Stage 112); block-scope `extern`;
-floating-point variadic arguments; floating-point `va_arg` arguments;
+Anonymous struct/union members (C11 feature), bit-fields; block-scope `extern`;
 compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 

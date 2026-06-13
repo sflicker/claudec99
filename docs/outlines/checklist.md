@@ -1641,6 +1641,26 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 8 new valid (<, ==, !=, if-condition, while-loop, logical-not, ternary, mixed-cmp); all 1643 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1643 tests at each step
 
+## Stage 112 — FP Calling Convention, va_arg for double, and math.h
+
+- [x] SysV AMD64 ABI: FP args in xmm0–xmm7 (classified independently from GP args rdi–r9)
+	- [x] compute_call_layout extended with actual_types array (from expr_result_type) for correct variadic extra classification
+	- [x] Non-variadic call sites: FP args evaluated into xmm0 then spilled; loaded into target xmmN at call
+	- [x] Stack-overflow FP args (xmm_idx > 7) passed via outgoing stack area
+- [x] Non-variadic function prologues: FP params moved from xmmN to local stack slot (movss/movsd)
+- [x] Variadic function prologues: xmm0–xmm7 saved to register-save area (176 bytes: 48 GP + 128 XMM)
+	- [x] movaps used for 16-byte aligned XMM saves (rso=176 so xmm0 at [rbp-128] is 0 mod 16)
+	- [x] variadic_named_xmm_params tracked for fp_offset initialization
+- [x] Variadic calls: `mov al, <xmm_count>` before call (was xor eax, eax)
+- [x] va_arg for double: reads fp_offset, loads from reg_save_area+fp_offset or overflow_arg_area; advances by 16 or 8
+- [x] va_arg for float rejected with compile error (C99 §6.5.2.2p6: float promoted to double in variadic calls)
+- [x] va_start fp_offset initialised to 48 + named_xmm_params * 16
+- [x] test/include/math.h stub: double and float variants of sin/cos/sqrt/pow/fabs/floor/ceil etc.; M_PI/M_E/M_SQRT2 constants
+- [x] test/valid/run_tests.sh: .libs companion file support for extra link flags (-lm for math tests)
+- [x] `VERSION_STAGE` bumped to "01120000"
+- [x] Tests: 7 new valid tests (fp_func_call, fp_mixed_params, fp_return_float, fp_sqrt, fp_printf, fp_varargs, fp_pow); all 1650 tests pass
+- [x] Self-host C0→C1→C2 passes after 3 bootstrap fixes (movaps alignment, decl_type=0 bug, array dim arithmetic); 1650 tests at each step
+
 ---
 
 ## TODO
@@ -1710,7 +1730,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ### Functions
 - [x] Variadic function definitions: va_list, va_start, va_end, and va_arg for GP-class types (int/long/long long/pointer) (Stage 75)
-  - [ ] va_arg for floating-point and struct-by-value types
+  - [x] va_arg for double (Stage 112); va_arg for float rejected per C99 §6.5.2.2p6
+  - [ ] va_arg for struct-by-value types
   - [x] va_copy codegen — three 8-byte moves copying the 24-byte va_list struct (Stage 107)
 - [ ] Old-style (K&R) function definitions
 - [x] Implicit return in void functions — fall-off-end emits `ret` (Stage 107 checklist close)
@@ -1734,7 +1755,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] <setjmp.h>: non-local jump support (Stage 74)
 - [x] <stdarg.h>: `va_list`, `va_start`, `va_end`, `va_arg`, `va_copy` macros (Stage 75-02)
 - [x] <stdio.h>: remaining stub `fwrite` (Stage 106)
-- [ ] <math.h>: basic floating-point math functions
+- [x] <math.h>: double and float math function declarations stub (Stage 112); M_PI/M_E/M_SQRT2 constants
 - [x] <assert.h>: assert macro — NDEBUG-aware stub in `test/include/assert.h` (Stage 107)
 
 ### Code Generation and Optimization
@@ -1746,7 +1767,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
 - [x] Stack-passing for more than 6 arguments (SysV; caller and callee side) (Stage 68)
 - [x] Calling convention for struct arguments and return values (SysV: register-class ≤16 bytes, memory-class via hidden pointer; enabled self-hosting) (Stage 91-01)
-- [ ] Floating-point ABI (xmm registers for float/double arguments)
+- [x] Floating-point ABI (xmm registers for float/double arguments and return values) (Stage 112)
 - [ ] Tail-call opportunities
 - [x] Constant folding for integer expressions — relational, equality, logical, and ternary operators in constant-expression contexts (Stage 104)
 - [ ] Constant folding in general expression codegen (optimizer)

@@ -210,6 +210,28 @@ C1, and C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01080000.00861` | `ClaudeC99_v00_02_01080000_00860` | 1621/1621 |
 | C2 | `build/ccompiler-c2` | `00.02.01080000.00862` | `ClaudeC99_v00_02_01080000_00861` | 1621/1621 |
 
+## Issues found during stage 112 self-hosting test
+
+Two bootstrap failures were surfaced and fixed.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | C1 bootstrap of `src/codegen.c` failed: `error: expected ']', got '+'` | New local array declarations used `[MAX_CALL_LAYOUT_ITEMS + 2]` as the dimension. ClaudeC99 does not support arithmetic expressions as local array dimension sizes (only single-identifier macros or literals). | Changed all three `[MAX_CALL_LAYOUT_ITEMS + 2]` declarations to the literal `[26]` (= 24 + 2). |
+| 2 | `test_fp_varargs__0` segfault: `movaps` general-protection fault | The variadic register-save area was allocated as 184 bytes; the xmm0 slot was computed at `[rbp - 184 + 48] = [rbp - 136]`. With `rbp mod 16 = 0` (true for all functions: `call` + `push rbp` = 16 bytes, restoring alignment), `[rbp - 136] mod 16 = 8`, which is not 16-byte aligned as `movaps` requires. | Changed the save-area allocation from 184 to 176 bytes. With rso = 176, xmm0 slot at `[rbp - 128]` has `128 mod 16 = 0`. The total frame size is still rounded to 16 bytes by the existing `(stack_size + 15) & ~15` rounding. |
+| 3 | `printf("%.0f\n", d)` printed `0` instead of `42` | `compute_call_layout` used `call_node->children[i]->decl_type` to classify variadic extra args. For `AST_VAR_REF` expression nodes, `decl_type` is 0 (TYPE_VOID), so the double was classified as a GP arg instead of XMM. | `compute_call_layout` now accepts a `const TypeKind *actual_types` array; the call site computes `actual_types[i] = expr_result_type(cg, node->children[i])` before calling `compute_call_layout`, providing correct types for all args including variadic extras. |
+
+After all three fixes, 1650/1650 tests passed at C0, C1, and C2 with no further changes needed.
+
+## Result (stage 112)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01120000.00889` | `GNU_13_3_0` | 1650/1650 |
+| C1 | `build/ccompiler-c1` | `00.02.01120000.00890` | `ClaudeC99_v00_02_01120000_00889` | 1650/1650 |
+| C2 | `build/ccompiler-c2` | `00.02.01120000.00891` | `ClaudeC99_v00_02_01120000_00890` | 1650/1650 |
+
 ## Issues found during stage 111 self-hosting test
 
 None. The FP comparison and boolean-context additions (`emit_fp_bool_to_rax`,

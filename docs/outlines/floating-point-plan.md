@@ -184,9 +184,11 @@ a `double[]` compiles and produces correct results. ✓
 
 ---
 
-## Stage 112 — FP Calling Convention, `va_arg`, and `<math.h>`
+## Stage 112 — FP Calling Convention, `va_arg`, and `<math.h>` ✓ COMPLETED
 
 **Spec**: `docs/stages/ClaudeC99-spec-stage-112-float-double-calls-math.md`
+**Milestone**: `docs/milestones/stage-112-milestone.md`
+**Status**: Complete — 1650/1650 tests pass; C0→C1→C2 self-host verified.
 
 **Scope**: calling functions with FP arguments; returning FP values;
 variadic calls with FP arguments; `va_arg` for `double`; `<math.h>` stub.
@@ -227,7 +229,28 @@ Single-precision and double-precision declarations for:
 `fmodf`, `fmin`, `fmax`, `fminf`, `fmaxf`, `isnan`, `isinf`, `isfinite`.
 The `float` variants use the `f` suffix.
 
-**Deliverable**: `printf("%.2f\n", sqrt(2.0))` compiles and prints `1.41`.
+**Deliverable**: `printf("%.2f\n", sqrt(2.0))` compiles and prints `1.41`. ✓
+
+**Implementation notes** (actual vs. plan):
+- **`movaps` alignment bug** (found during bootstrap): The initial rso=184 placed
+  the xmm0 save slot at [rbp-136]. With rbp mod 16=0 (true for all functions: `call`
+  + `push rbp` = 16 bytes, restoring alignment), [rbp-136] mod 16=8 — not aligned for
+  `movaps`. Fixed: rso=176 (exact 48+128, no padding), xmm0 slot at [rbp-128] (0 mod 16).
+- **`compute_call_layout` decl_type bug** (found during testing): Variadic extra args
+  use `call_node->children[i]->decl_type` which is 0 (TYPE_VOID) for expression nodes
+  like `AST_VAR_REF`. So `printf("%f", d)` classified `d` as a GP arg, not XMM, and
+  printed `0`. Fixed: new `const TypeKind *actual_types` parameter computed from
+  `expr_result_type` at each call site.
+- **Array dimension arithmetic** (found during bootstrap): ClaudeC99 does not support
+  arithmetic expressions in local array size declarations. `[MAX_CALL_LAYOUT_ITEMS + 2]`
+  caused a parse error. Fixed: replaced with literal `[26]` (= 24 + 2).
+- **`test/valid/run_tests.sh` `.libs` support**: Math tests (`sqrt`, `pow`) require
+  `-lm`. Added `.libs` companion file mechanism (matching integration runner) so tests
+  can specify extra link flags. On glibc 2.39, sqrt/pow are in libm.so.6 not libc.so.6
+  when linking raw .o files.
+- **`HUGE_VAL`/`INFINITY`/`NAN` omitted**: The spec's stub included these as
+  `__builtin_*()` calls. ClaudeC99 does not support `__builtin_*` builtins; these
+  three macros were omitted from `test/include/math.h`.
 
 ---
 
