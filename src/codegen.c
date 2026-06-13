@@ -529,6 +529,23 @@ static void emit_fp_widen_if_needed(CodeGen *cg, TypeKind src, TypeKind dst) {
         fprintf(cg->output, "    cvtsd2ss xmm0, xmm0\n");
 }
 
+/* Stage 111: convert xmm0 (FP value) to 0/1 in rax.
+ * NaN is treated as true (non-zero) per ClaudeC99 boolean policy. */
+static void emit_fp_bool_to_rax(CodeGen *cg, TypeKind kind) {
+    int use_double = (kind == TYPE_DOUBLE);
+    if (use_double) {
+        fprintf(cg->output, "    xorpd xmm1, xmm1\n");
+        fprintf(cg->output, "    ucomisd xmm0, xmm1\n");
+    } else {
+        fprintf(cg->output, "    xorps xmm1, xmm1\n");
+        fprintf(cg->output, "    ucomiss xmm0, xmm1\n");
+    }
+    fprintf(cg->output, "    setne al\n");
+    fprintf(cg->output, "    setp cl\n");
+    fprintf(cg->output, "    or al, cl\n");
+    fprintf(cg->output, "    movzx rax, al\n");
+}
+
 /* Stage 66/70-03: warn with a variable name embedded.
  * Position is omitted (codegen has no token info); g_warnings_are_errors
  * is checked inside compile_warning_at. */
@@ -3129,6 +3146,24 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->result_type = node->children[0]->result_type;
             return;
         }
+        /* Stage 111: FP logical NOT — !fp is 1 if value is zero (and not NaN). */
+        if (strcmp(op, "!") == 0 && type_is_fp(node->children[0]->result_type)) {
+            TypeKind ft = node->children[0]->result_type;
+            int use_double = (ft == TYPE_DOUBLE);
+            if (use_double) {
+                fprintf(cg->output, "    xorpd xmm1, xmm1\n");
+                fprintf(cg->output, "    ucomisd xmm0, xmm1\n");
+            } else {
+                fprintf(cg->output, "    xorps xmm1, xmm1\n");
+                fprintf(cg->output, "    ucomiss xmm0, xmm1\n");
+            }
+            fprintf(cg->output, "    sete al\n");
+            fprintf(cg->output, "    setnp cl\n");
+            fprintf(cg->output, "    and al, cl\n");
+            fprintf(cg->output, "    movzx rax, al\n");
+            node->result_type = TYPE_INT;
+            return;
+        }
         if (strcmp(op, "-") == 0) {
             TypeKind ot = promote_kind(node->children[0]->result_type);
             if (ot == TYPE_LONG) {
@@ -3903,6 +3938,90 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 return;
             }
         }
+        /* Stage 111: FP comparison block (==, !=, <, <=, >, >=) when either
+         * operand is float or double.  Uses ucomiss/ucomisd with save/restore
+         * convention; result is 0/1 in rax (TYPE_INT). */
+        {
+            TypeKind fp_lt = expr_result_type(cg, node->children[0]);
+            TypeKind fp_rt = expr_result_type(cg, node->children[1]);
+            int fp_is_cmp = (strcmp(node->value, "==") == 0 ||
+                             strcmp(node->value, "!=") == 0 ||
+                             strcmp(node->value, "<")  == 0 ||
+                             strcmp(node->value, "<=") == 0 ||
+                             strcmp(node->value, ">")  == 0 ||
+                             strcmp(node->value, ">=") == 0);
+            if (fp_is_cmp && (type_is_fp(fp_lt) || type_is_fp(fp_rt))) {
+                const char *bop = node->value;
+                TypeKind result = fp_common_arith_kind(fp_lt, fp_rt);
+                int use_double = (result == TYPE_DOUBLE);
+
+                /* Evaluate left operand into xmm0, convert to common FP type. */
+                codegen_expression(cg, node->children[0]);
+                if (!type_is_fp(node->children[0]->result_type)) {
+                    if (use_double)
+                        fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+                    else
+                        fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+                } else if (node->children[0]->result_type == TYPE_FLOAT && use_double) {
+                    fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+                }
+                /* Save left to stack (SSE2 has no push xmm0). */
+                fprintf(cg->output, "    sub rsp, 8\n");
+                if (use_double)
+                    fprintf(cg->output, "    movsd [rsp], xmm0\n");
+                else
+                    fprintf(cg->output, "    movss [rsp], xmm0\n");
+                cg->push_depth++;
+
+                /* Evaluate right operand into xmm0, convert to common FP type. */
+                codegen_expression(cg, node->children[1]);
+                if (!type_is_fp(node->children[1]->result_type)) {
+                    if (use_double)
+                        fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+                    else
+                        fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+                } else if (node->children[1]->result_type == TYPE_FLOAT && use_double) {
+                    fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+                }
+
+                /* Restore left into xmm1; pop stack.
+                 * After this: xmm0 = right, xmm1 = left. */
+                if (use_double)
+                    fprintf(cg->output, "    movsd xmm1, [rsp]\n");
+                else
+                    fprintf(cg->output, "    movss xmm1, [rsp]\n");
+                fprintf(cg->output, "    add rsp, 8\n");
+                cg->push_depth--;
+
+                /* ucomiss/ucomisd xmm1, xmm0: compares left (xmm1) vs right (xmm0). */
+                fprintf(cg->output, use_double
+                    ? "    ucomisd xmm1, xmm0\n"
+                    : "    ucomiss xmm1, xmm0\n");
+
+                if (strcmp(bop, "<") == 0) {
+                    fprintf(cg->output, "    setb al\n");
+                } else if (strcmp(bop, "<=") == 0) {
+                    fprintf(cg->output, "    setbe al\n");
+                } else if (strcmp(bop, ">") == 0) {
+                    fprintf(cg->output, "    seta al\n");
+                } else if (strcmp(bop, ">=") == 0) {
+                    fprintf(cg->output, "    setae al\n");
+                } else if (strcmp(bop, "==") == 0) {
+                    /* equal AND not NaN (NaN == NaN must be false per C99) */
+                    fprintf(cg->output, "    sete al\n");
+                    fprintf(cg->output, "    setnp cl\n");
+                    fprintf(cg->output, "    and al, cl\n");
+                } else { /* != */
+                    /* not-equal OR NaN (NaN != NaN must be true per C99) */
+                    fprintf(cg->output, "    setne al\n");
+                    fprintf(cg->output, "    setp cl\n");
+                    fprintf(cg->output, "    or al, cl\n");
+                }
+                fprintf(cg->output, "    movzx rax, al\n");
+                node->result_type = TYPE_INT;
+                return;
+            }
+        }
         const char *op = node->value;
         int is_arith = (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
                         strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||
@@ -4225,7 +4344,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         ASTNode *false_node = node->children[2];
 
         codegen_expression(cg, cond_node);
-        if (cond_node->result_type == TYPE_LONG || cond_node->result_type == TYPE_POINTER) {
+        if (type_is_fp(cond_node->result_type)) {
+            emit_fp_bool_to_rax(cg, cond_node->result_type);
+            fprintf(cg->output, "    cmp eax, 0\n");
+        } else if (cond_node->result_type == TYPE_LONG ||
+                   cond_node->result_type == TYPE_POINTER) {
             fprintf(cg->output, "    cmp rax, 0\n");
         } else {
             fprintf(cg->output, "    cmp eax, 0\n");
@@ -4548,9 +4671,13 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
  * Emit a zero-compare on the result register using the width of
  * `cond`'s result type, so long-typed conditions test all 64 bits
  * instead of just the low 32.
+ * Stage 111: FP conditions are converted to 0/1 in rax first.
  */
 static void emit_cond_cmp_zero(CodeGen *cg, ASTNode *cond) {
-    if (cond && cond->result_type == TYPE_LONG) {
+    if (cond && type_is_fp(cond->result_type)) {
+        emit_fp_bool_to_rax(cg, cond->result_type);
+        fprintf(cg->output, "    cmp eax, 0\n");
+    } else if (cond && cond->result_type == TYPE_LONG) {
         fprintf(cg->output, "    cmp rax, 0\n");
     } else {
         fprintf(cg->output, "    cmp eax, 0\n");
