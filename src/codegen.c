@@ -3968,8 +3968,28 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->result_type = TYPE_VOID;
         return;
     }
-    if (node->type == AST_BUILTIN_VA_END ||
-        node->type == AST_BUILTIN_VA_COPY) {
+    if (node->type == AST_BUILTIN_VA_END) {
+        node->result_type = TYPE_VOID;
+        return;
+    }
+    if (node->type == AST_BUILTIN_VA_COPY) {
+        /* children[0] = dst (va_list), children[1] = src (va_list) */
+        ASTNode *dst_node = node->children[0];
+        ASTNode *src_node = node->children[1];
+        LocalVar *lv_dst = codegen_find_var(cg, dst_node->value);
+        LocalVar *lv_src = codegen_find_var(cg, src_node->value);
+        if (!lv_dst || !lv_src) {
+            compile_error("error: va_copy: operand is not a local variable\n");
+        }
+        int dst_off = lv_dst->offset;
+        int src_off = lv_src->offset;
+        /* Copy 24-byte va_list struct: three 8-byte moves via rax. */
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n",  src_off);
+        fprintf(cg->output, "    mov [rbp - %d], rax\n",  dst_off);
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n",  src_off - 8);
+        fprintf(cg->output, "    mov [rbp - %d], rax\n",  dst_off - 8);
+        fprintf(cg->output, "    mov rax, [rbp - %d]\n",  src_off - 16);
+        fprintf(cg->output, "    mov [rbp - %d], rax\n",  dst_off - 16);
         node->result_type = TYPE_VOID;
         return;
     }

@@ -3451,6 +3451,9 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
         } else if (parser->current.type == TOKEN_VOLATILE) {
             r.is_volatile = 1;
             parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_INLINE) {
+            /* C99 §6.7.4 function-specifier: parse and ignore (no codegen effect) */
+            parser->current = lexer_next_token(parser->lexer);
         } else if (parser->current.type == TOKEN_EXTERN ||
             parser->current.type == TOKEN_STATIC ||
             parser->current.type == TOKEN_TYPEDEF) {

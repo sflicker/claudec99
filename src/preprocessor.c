@@ -228,6 +228,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                   const char **include_dirs, int n_include_dirs);
 static char *expand_macros_text(const char *text, MacroTable *macros);
 
+/* Context for __FILE__ and __LINE__ expansion inside expand_macros_text.
+ * Set by preprocess_internal immediately before each expand_macros_text call
+ * so that rescan of function-like macro bodies correctly expands these
+ * predefined macros to the invocation-site file and line. */
+static const char *g_expand_source_path = NULL;
+static int         g_expand_current_line = 0;
+
 /* ---- Read and recursively preprocess an included file ---------------- */
 
 static char *preprocess_file(const char *path, int depth, MacroTable *macros,
@@ -617,6 +624,23 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
             while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
                 in++;
             size_t id_len = in - id_start;
+            /* Expand predefined __FILE__ and __LINE__ using invocation-site context. */
+            if (id_len == 8 && strncmp(s + id_start, "__FILE__", 8) == 0) {
+                const char *fname = g_expand_source_path ? g_expand_source_path : "";
+                gbuf_push(&out, '"');
+                for (const char *fp = fname; *fp; fp++) {
+                    if (*fp == '"' || *fp == '\\') gbuf_push(&out, '\\');
+                    gbuf_push(&out, *fp);
+                }
+                gbuf_push(&out, '"');
+                continue;
+            }
+            if (id_len == 8 && strncmp(s + id_start, "__LINE__", 8) == 0) {
+                char lbuf[32];
+                int llen = snprintf(lbuf, sizeof(lbuf), "%d", g_expand_current_line);
+                gbuf_append(&out, lbuf, (size_t)llen);
+                continue;
+            }
             MacroDef *def = macro_find(macros, s + id_start, id_len);
             if (def && def->param_count == -1) {
                 /* object-like macro */
@@ -1875,6 +1899,9 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                 raw_args[i]     = util_strdup(args[i]);
                                 raw_arg_lens[i] = arg_lens[i];
                             }
+                            /* Set context so expand_macros_text can expand __FILE__/__LINE__. */
+                            g_expand_source_path  = current_file_override ? current_file_override : source_path;
+                            g_expand_current_line = current_line;
                             /* pre-expand each argument */
                             for (int i = 0; i < arg_count; i++) {
                                 char *ea = expand_macros_text(args[i], macros);
@@ -1939,6 +1966,8 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                                                subst_params, subst_count,
                                                                subst_args, subst_arg_lens,
                                                                subst_raw, subst_raw_lens);
+                            g_expand_source_path  = current_file_override ? current_file_override : source_path;
+                            g_expand_current_line = current_line;
                             char *rescanned = expand_macros_text(subst, macros);
                             gbuf_append(&out, rescanned, strlen(rescanned));
                             free(rescanned); free(subst);
