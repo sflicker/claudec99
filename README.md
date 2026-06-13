@@ -646,13 +646,89 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 111 all tests pass (958 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1643 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 112 all tests pass (970 valid, 256 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1650 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
 Tests in `test/valid/` use the naming convention
 `test_<description>__<expected_exit_code>.c` so the runner can extract
 the expected exit code from the filename.
+
+### Test suite structure (stage 113)
+
+The four large suites are organized into category subfolders. Runners
+use `find`-based recursive discovery so new tests placed in any subfolder
+are picked up automatically. Companion files (`.expected`, `.libs`) must
+be placed in the **same subfolder** as their `.c` file.
+
+#### `test/valid/` — 21 category subfolders
+
+| Subfolder | Contents |
+|-----------|----------|
+| `arithmetic/` | add, subtract, multiply, divide, remainder, increment, decrement, negation |
+| `bitwise/` | bitwise AND/OR/XOR/complement, shifts |
+| `assignment/` | simple assignment, compound assignment operators, chained assignment |
+| `comparisons/` | relational, equality, logical AND/OR, logical NOT |
+| `casting/` | explicit casts, implicit conversions, usual arithmetic conversions |
+| `control_flow/` | if/else, for, while, do-while, switch, break, continue, goto, return |
+| `functions/` | function definitions, calls, prototypes, indirect calls, variadic functions |
+| `pointers/` | pointer declarations, dereference, address-of, pointer arithmetic, void pointer |
+| `arrays/` | array declarations, indexing, multidimensional arrays, array decay |
+| `strings/` | string literals, adjacent concatenation |
+| `chars/` | character literals, escape sequences |
+| `structs/` | struct definitions, member access, nested structs, incomplete types |
+| `unions/` | union definitions, member access |
+| `enums/` | enum declarations and constants |
+| `typedefs/` | typedef declarations and usage |
+| `declarations/` | variable declarations, storage classes, integer type specifiers, `_Bool` |
+| `expressions/` | compound literals, designated initializers, sizeof, comma, ternary |
+| `preprocessor/` | macros, `#include`, `#if`/`#ifdef`, `#define`/`#undef`, predefined macros |
+| `stdlib/` | printf, putchar, puts, stdlib.h, ctype.h, errno.h, setjmp.h, time.h |
+| `floating_point/` | float and double arithmetic, comparisons, FP calling convention |
+| `varargs/` | va_list, va_start, va_arg, va_end, va_copy |
+
+New `test/valid/` tests go in the matching category subfolder. Tests that
+do not fit any category go in `misc/`.
+
+#### `test/invalid/` — `legacy/` + 9 category subfolders
+
+| Subfolder | Contents |
+|-----------|----------|
+| `legacy/` | Numbered `test_invalid_NNN__*.c` tests |
+| `aggregates/` | Struct and union type errors |
+| `declarations/` | Storage-class and type-specifier errors |
+| `types/` | `_Bool`, `void` type errors |
+| `const/` | `const` assignment and write-through errors |
+| `pointers/` | Pointer, arrow, dot, and subscript type errors |
+| `functions/` | Variadic, function-pointer, and void-function errors |
+| `expressions/` | Compound literal, conditional, designated-init, enum, switch-case errors |
+| `control_flow/` | `for` declaration scope errors |
+| `preprocessor/` | Preprocessor directive errors |
+
+New `test/invalid/` tests go in the appropriate category subfolder
+(or `legacy/` for backward-compatible numbered tests).
+
+#### `test/print_ast/` — `legacy/` + `constructs/`
+
+| Subfolder | Contents |
+|-----------|----------|
+| `legacy/` | `test_stage_NN_*` numbered regression tests |
+| `constructs/` | Descriptively-named tests covering all language constructs |
+
+New `test/print_ast/` tests go in `constructs/`.
+
+#### `test/print_tokens/` — `tokens/` + `programs/`
+
+| Subfolder | Contents |
+|-----------|----------|
+| `tokens/` | `test_token_*` tests (one per token type) |
+| `programs/` | `test_program_*` tests (whole-program token streams) |
+
+New `test/print_tokens/` tests go in `tokens/` or `programs/` as appropriate.
+
+#### `test/print_asm/` — flat
+
+All 21 tests follow `test_stage_*` naming; this suite stays flat.
 
 ## Development model
 

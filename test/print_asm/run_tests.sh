@@ -19,9 +19,9 @@ pass=0
 fail=0
 total=0
 
-for src in "$SCRIPT_DIR"/test_*.c; do
+for src in $(find "$SCRIPT_DIR" -name 'test_*.c' | sort); do
     name=$(basename "$src" .c)
-    expected_file="$SCRIPT_DIR/${name}.expected"
+    expected_file="$(dirname "$src")/${name}.expected"
     total=$((total + 1))
 
     if [ ! -f "$expected_file" ]; then

@@ -17,7 +17,7 @@ pass=0
 fail=0
 total=0
 
-for src in "$SCRIPT_DIR"/test_*.c; do
+for src in $(find "$SCRIPT_DIR" -name 'test_*.c' | sort); do
     name=$(basename "$src" .c)
     total=$((total + 1))
 

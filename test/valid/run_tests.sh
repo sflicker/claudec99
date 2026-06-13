@@ -17,7 +17,7 @@ pass=0
 fail=0
 total=0
 
-for src in "$SCRIPT_DIR"/*.c; do
+for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     name=$(basename "$src" .c)
     total=$((total + 1))
 
@@ -50,7 +50,7 @@ for src in "$SCRIPT_DIR"/*.c; do
 
     # Optional .libs companion file: extra -l flags for this test
     # (e.g. test_fp_sqrt__0.libs containing "-lm").
-    libs_file="$SCRIPT_DIR/${name}.libs"
+    libs_file="$(dirname "$src")/${name}.libs"
     if [ -f "$libs_file" ]; then
         extra_libs=($(cat "$libs_file"))
     else
@@ -82,7 +82,7 @@ for src in "$SCRIPT_DIR"/*.c; do
 
     # Optional stdout comparison. If a sibling .expected file exists in
     # the source dir, the captured stdout must match it byte-for-byte.
-    expected_file="$SCRIPT_DIR/${name}.expected"
+    expected_file="$(dirname "$src")/${name}.expected"
     if [ -f "$expected_file" ]; then
         if ! diff -q "$expected_file" "$stdout_file" >/dev/null; then
             echo "FAIL  $name  (output mismatch)"
