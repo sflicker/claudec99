@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 109 (float and double types, literals, and stack variables):
+Through stage 110 (float/double arithmetic, conversions, and casts):
 
-> Stage 109 adds `float` and `double` as first-class scalar types. The lexer recognizes `float` and `double` keywords and scans floating-point literals in all standard forms (decimal digits with optional fraction, exponent, and `f`/`F` suffix; leading-dot form). The parser accepts `float`/`double` in all type-specifier positions and parses FP literal primary expressions as `AST_FLOAT_LITERAL` nodes. Codegen allocates float locals at 4-byte/4-byte-aligned stack slots and double locals at 8-byte/8-byte-aligned slots, loads/stores them via `movss`/`movsd` into/from `xmm0`, interning each unique literal text into a `.rodata` pool of `Lfc<N>: dd`/`dq` entries. Implicit float→double widening is emitted as `cvtss2sd xmm0, xmm0` (C99 §6.3.1.5). Global float/double variables are emitted to `.data` (DD/DQ with decimal value) or `.bss` (resd/resq). Struct/union float/double member assignment uses `movss`/`movsd [rbx]` after pushing the member address. Arithmetic, comparisons, and function parameters/return values with float/double are deferred to Stages 110–112. All 1627 tests pass (942 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+> Stage 110 adds floating-point arithmetic and explicit casts. Usual arithmetic conversions (UAC) now handle mixed FP and integer operands: if either operand is `double`, the result is `double`; else if either is `float`, the result is `float`; else standard integer UAC applies. Unary minus on FP types emits xorps/xorpd with sign-bit masks (16-byte-aligned) from `.rodata`. Binary arithmetic (+, -, *, /) on FP operands uses a save/restore convention: left operand stored to stack, right operand evaluated into xmm0, left restored to xmm1, and operation executed. Mixed int/float operands are widened inline via cvtsi2ss/cvtsi2sd (int→FP), cvtss2sd/cvtsd2ss (float↔double), or cvttss2si/cvttsd2si (FP→int). Explicit casts between all scalar types (int, float, double) are now code-generated. All 1635 tests pass (950 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly with no source changes needed during bootstrap.
 
 Through stage 108 (#elifdef / #elifndef):
 
@@ -613,7 +613,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; float/double arithmetic, comparisons, and function parameters/return values (Stages 110–112); block-scope `extern`;
+Anonymous struct/union members (C11 feature), bit-fields; float/double comparisons and function parameters/return values (Stages 111–112); block-scope `extern`;
 floating-point variadic arguments; floating-point `va_arg` arguments;
 compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
@@ -643,7 +643,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 107 all tests pass (930 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1615 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 110 all tests pass (950 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1635 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

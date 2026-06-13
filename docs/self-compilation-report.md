@@ -210,6 +210,29 @@ C1, and C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01080000.00861` | `ClaudeC99_v00_02_01080000_00860` | 1621/1621 |
 | C2 | `build/ccompiler-c2` | `00.02.01080000.00862` | `ClaudeC99_v00_02_01080000_00861` | 1621/1621 |
 
+## Issues found during stage 110 self-hosting test
+
+None. The FP arithmetic additions (SSE2 binary arithmetic, UAC, unary minus,
+casts, implicit int→FP coercion) all involve code paths that the compiler's
+own source code does not exercise: the compiler source uses no `float` or
+`double` arithmetic, no FP unary minus, and no FP casts. The two new CodeGen
+fields (`fp_sign_mask_f32_emitted`, `fp_sign_mask_f64_emitted`) are initialized
+to 0 and never set during a self-host build; the updated `codegen_emit_fp_literals`
+emits the sign-mask entries only when these flags are non-zero. The extended
+`emit_fp_widen_if_needed` and `emit_convert` FP branches are only entered when
+an FP type is encountered, which the compiler source never produces.
+All 1635 tests passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 110)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01100000.00872` | `GNU_13_3_0` | 1635/1635 |
+| C1 | `build/ccompiler-c1` | `00.02.01100000.00873` | `ClaudeC99_v00_02_01100000_00872` | 1635/1635 |
+| C2 | `build/ccompiler-c2` | `00.02.01100000.00874` | `ClaudeC99_v00_02_01100000_00873` | 1635/1635 |
+
 ## Issues found during stage 109 self-hosting test
 
 None. The `float`/`double` type additions (new token kinds, AST node, type

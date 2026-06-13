@@ -1615,6 +1615,21 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ---
 
+## Stage 110 — float/double Arithmetic, Conversions, and Casts
+
+- [x] Floating-point unary minus (xorps/xorpd with sign-bit mask)
+- [x] Floating-point binary arithmetic (+, -, *, /) with mixed operand handling
+- [x] Usual arithmetic conversions (UAC) for float/double vs int operands
+- [x] Inline type conversions: int→float (cvtsi2ss), int→double (cvtsi2sd), float→double (cvtss2sd), double→float (cvtsd2ss), float→int (cvttss2si), double→int (cvttsd2si)
+- [x] Explicit casts between all scalar types (int, float, double)
+- [x] Sign-bit masks for xorps/xorpd emitted to .rodata with 16-byte alignment on demand
+- [x] Bug fix: expr_result_type() now uses type_is_fp() for FP locals instead of size-based inference
+- [x] `VERSION_STAGE` bumped to "01100000"
+- [x] Tests: 8 new valid (float/double arithmetic, casts, UAC); all 1635 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; 1635 tests at each step
+
+---
+
 ## TODO
 
 ### Preprocessor
