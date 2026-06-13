@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 106)
+# Claude C99 Grammar (Current through Stage 109)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -69,7 +69,9 @@
                        | <direct_declarator> "(" [ <parameter_list> ] ")"
 
 <type_specifier> ::= "void"
-                     | <integer_type_specifier> 
+                     | <integer_type_specifier>
+                     | "float"
+                     | "double"
                      | "_Bool"
                      | <typedef_name> 
                      | <enum_specifier> 
@@ -247,6 +249,7 @@
                       }                    
 
 <primary_expression> ::= <integer_literal>
+                         | <floating_literal>
                          | <string_literal>
                          | <character_literal>
                          | <identifier>
@@ -268,6 +271,16 @@
 <decimal_literal> ::= [0-9]+ [ <integer_suffix> ]
 
 <hex_literal> ::= ( "0x" | "0X" ) [0-9a-fA-F]+ [ <integer_suffix> ]
+
+<floating_literal> ::= <digit_seq> "." [ <digit_seq> ] [ <exponent_part> ] [ <float_suffix> ]
+                     | <digit_seq> <exponent_part> [ <float_suffix> ]
+                     | "." <digit_seq> [ <exponent_part> ] [ <float_suffix> ]
+
+<digit_seq>       ::= [0-9]+
+<exponent_part>   ::= ( "e" | "E" ) [ "+" | "-" ] <digit_seq>
+<float_suffix>    ::= "f" | "F"
+
+# A floating literal with no f/F suffix has type double; with f/F suffix it has type float.
 
 <string_literal> ::= TOKEN_STRING_LITERAL { TOKEN_STRING_LITERAL }
 

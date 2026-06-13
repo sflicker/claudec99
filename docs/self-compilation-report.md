@@ -210,6 +210,28 @@ C1, and C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01080000.00861` | `ClaudeC99_v00_02_01080000_00860` | 1621/1621 |
 | C2 | `build/ccompiler-c2` | `00.02.01080000.00862` | `ClaudeC99_v00_02_01080000_00861` | 1621/1621 |
 
+## Issues found during stage 109 self-hosting test
+
+None. The `float`/`double` type additions (new token kinds, AST node, type
+singletons, lexer FP literal scanning, parser type-specifier and primary
+expression paths, codegen FP literal pool, and load/store helpers) all involve
+code paths that the compiler's own source does not exercise: the compiler source
+uses no `float` or `double` types or literals. The `FpLiteral` Vec added to
+`CodeGen`, the `fp_literals` field in `codegen_init`/`codegen_free`, and the new
+`codegen_emit_fp_literals` emission function are all inert during a self-host
+build. All 1627 tests passed at C0, C1, and C2 with no source changes needed
+during the bootstrap.
+
+## Result (stage 109)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01090000.00867` | `GNU_13_3_0` | 1627/1627 |
+| C1 | `build/ccompiler-c1` | `00.02.01090000.00868` | `ClaudeC99_v00_02_01090000_00867` | 1627/1627 |
+| C2 | `build/ccompiler-c2` | `00.02.01090000.00869` | `ClaudeC99_v00_02_01090000_00868` | 1627/1627 |
+
 ## Issues found during stage 104 self-hosting test
 
 None. The new constant-expression evaluator functions (`eval_const_relational`,

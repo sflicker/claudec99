@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 109 (float and double types, literals, and stack variables):
+
+> Stage 109 adds `float` and `double` as first-class scalar types. The lexer recognizes `float` and `double` keywords and scans floating-point literals in all standard forms (decimal digits with optional fraction, exponent, and `f`/`F` suffix; leading-dot form). The parser accepts `float`/`double` in all type-specifier positions and parses FP literal primary expressions as `AST_FLOAT_LITERAL` nodes. Codegen allocates float locals at 4-byte/4-byte-aligned stack slots and double locals at 8-byte/8-byte-aligned slots, loads/stores them via `movss`/`movsd` into/from `xmm0`, interning each unique literal text into a `.rodata` pool of `Lfc<N>: dd`/`dq` entries. Implicit float→double widening is emitted as `cvtss2sd xmm0, xmm0` (C99 §6.3.1.5). Global float/double variables are emitted to `.data` (DD/DQ with decimal value) or `.bss` (resd/resq). Struct/union float/double member assignment uses `movss`/`movsd [rbx]` after pushing the member address. Arithmetic, comparisons, and function parameters/return values with float/double are deferred to Stages 110–112. All 1627 tests pass (942 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 108 (#elifdef / #elifndef):
 
 > Stage 108 adds `#elifdef NAME` and `#elifndef NAME` branch-transition directives (C23 §6.10.1 / GCC/Clang extension), equivalent to `#elif defined(NAME)` and `#elif !defined(NAME)` respectively. The change is entirely confined to `src/preprocessor.c`; both new branches are placed before `#elif` in the directive chain so they take priority and correctly update `cond_stack` state even inside inactive regions. All 1621 tests pass (936 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
@@ -609,9 +613,9 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`;
+Anonymous struct/union members (C11 feature), bit-fields; float/double arithmetic, comparisons, and function parameters/return values (Stages 110–112); block-scope `extern`;
 floating-point variadic arguments; floating-point `va_arg` arguments;
-compound literals at file scope; `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
+compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
 The authoritative grammar for the supported language is in

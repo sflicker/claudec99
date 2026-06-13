@@ -1598,6 +1598,23 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ---
 
+## Stage 109 — `float` and `double` types, literals, and stack variables
+
+- [x] `include/token.h` — `TOKEN_FLOAT`, `TOKEN_DOUBLE` keywords; `TOKEN_FLOAT_LITERAL`, `TOKEN_DOUBLE_LITERAL` literal token types
+- [x] `include/type.h` — `TYPE_FLOAT` (size=4, align=4), `TYPE_DOUBLE` (size=8, align=8); prototypes `type_float()`, `type_double()`
+- [x] `include/ast.h` — `AST_FLOAT_LITERAL` node (single type for both; `decl_type` field distinguishes float vs. double)
+- [x] `include/codegen.h` — `Vec fp_literals` field in `CodeGen` for per-TU literal deduplication pool
+- [x] `src/type.c` — singleton types; `type_kind_name()` and `type_is_integer()` updated
+- [x] `src/lexer.c` — keyword recognition; FP literal scanning (decimal with `.`/exponent/`f`F` suffix; leading-dot form); `token_display_name()` entries
+- [x] `src/parser.c` — `parse_type_specifier()` for float/double; `parse_primary()` for `AST_FLOAT_LITERAL`; all type-start lookahead sets updated; file-scope FP initializer branch
+- [x] `src/codegen.c` — `FpLiteral` typedef; `type_is_fp()` helper; load/store/widen helpers; `AST_FLOAT_LITERAL` handler (movss/movsd from Lfc<N>); FP path in `AST_VAR_REF`, `AST_DECLARATION`, `AST_ASSIGNMENT` (local, global, member-dot, member-arrow); `codegen_add_global()` FP init; `data_init_directive()`/`bss_res_directive()` for float/double; `codegen_emit_fp_literals()` (.rodata Lfc<N>: dd/dq)
+- [x] `src/ast_pretty_printer.c` — `AST_FLOAT_LITERAL` case
+- [x] `src/version.c` — `VERSION_STAGE` bumped to `"01090000"`
+- [x] Tests: 6 new valid tests (float_declare, double_declare, float_copy, double_widen, float_struct_member, double_global); all 1627 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues (compiler source uses no float/double); all 1627/1627 tests pass at each step
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -1606,9 +1623,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] GNU extension: `__VA_OPT__` and named variadic args
 
 ### Types
-- [ ] float and double types
+- [x] float and double types (Stage 109: declaration, initialization, assignment, struct members, globals)
 - [ ] Floating-point arithmetic and comparisons
-- [ ] Floating-point literals (decimal and hex forms)
+- [x] Floating-point literals (decimal, leading-dot, exponent forms; f/F suffix) (Stage 109)
 - [ ] Floating-point conversions (int ↔ float ↔ double)
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [x] Union types (Stage 72; anonymous unions Stage 73-01)
