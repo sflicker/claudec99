@@ -210,6 +210,28 @@ C1, and C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01080000.00861` | `ClaudeC99_v00_02_01080000_00860` | 1621/1621 |
 | C2 | `build/ccompiler-c2` | `00.02.01080000.00862` | `ClaudeC99_v00_02_01080000_00861` | 1621/1621 |
 
+## Issues found during stage 111 self-hosting test
+
+None. The FP comparison and boolean-context additions (`emit_fp_bool_to_rax`,
+`emit_cond_cmp_zero` FP branch, FP comparison block in `AST_BINARY_OP`, FP
+logical NOT in unary `!`, FP condition in `AST_CONDITIONAL_EXPR`) all involve
+code paths that the compiler's own source code does not exercise: the compiler
+source uses no `float` or `double` comparisons, no FP boolean conditions, and
+no FP logical NOT. The new SSE2 comparison instructions (`ucomiss`/`ucomisd`)
+are only emitted when a comparison operator is applied to a float/double operand,
+which never occurs during a self-host build.
+All 1643 tests passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 111)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01110000.00881` | `GNU_13_3_0` | 1643/1643 |
+| C1 | `build/ccompiler-c1` | `00.02.01110000.00882` | `ClaudeC99_v00_02_01110000_00881` | 1643/1643 |
+| C2 | `build/ccompiler-c2` | `00.02.01110000.00883` | `ClaudeC99_v00_02_01110000_00882` | 1643/1643 |
+
 ## Issues found during stage 110 self-hosting test
 
 None. The FP arithmetic additions (SSE2 binary arithmetic, UAC, unary minus,
