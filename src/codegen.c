@@ -3449,7 +3449,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (involves_special) {
             CallLayout L;
             /* Compute actual arg types so variadic extras classify correctly. */
-            TypeKind actual_types[MAX_CALL_LAYOUT_ITEMS + 2];
+            TypeKind actual_types[26];
             {
                 int _i;
                 for (_i = 0; _i < nargs; _i++)
@@ -3509,9 +3509,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             /* Phase 2: evaluate register-passed arguments, spilling each to the
              * temporary stack. The hidden sret pointer (if any) is first. */
             /* Spill descriptor: {is_xmm, reg_idx, is_float} */
-            int spill_is_xmm[MAX_CALL_LAYOUT_ITEMS + 2];
-            int spill_reg[MAX_CALL_LAYOUT_ITEMS + 2];
-            int spill_is_float[MAX_CALL_LAYOUT_ITEMS + 2];
+            int spill_is_xmm[26];
+            int spill_reg[26];
+            int spill_is_float[26];
             int nspill = 0;
             if (L.sret) {
                 fprintf(cg->output, "    lea rax, [rbp - %d]\n", ret_temp);
