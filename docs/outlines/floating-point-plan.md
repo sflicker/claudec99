@@ -1,6 +1,6 @@
 # ClaudeC99 Floating-Point Implementation Plan — Stages 109–112
 
-_Drafted 2026-06-13_
+_Drafted 2026-06-13 — Stage 109 completed 2026-06-13_
 
 ## Overview
 
@@ -16,9 +16,11 @@ are significantly different from SSE2 and the practical benefit is low.
 
 ---
 
-## Stage 109 — Types, Literals, and Stack Variables
+## Stage 109 — Types, Literals, and Stack Variables ✓ COMPLETED
 
 **Spec**: `docs/stages/ClaudeC99-spec-stage-109-float-double-types-literals.md`
+**Milestone**: `docs/milestones/stage-109-milestone.md`
+**Status**: Complete — 1627/1627 tests pass; C0→C1→C2 self-host verified.
 
 **Scope**: everything needed to declare and load/store float/double values;
 no arithmetic, no comparisons, no function calls.
@@ -41,7 +43,24 @@ no arithmetic, no comparisons, no function calls.
     with a generated label; referenced via `movss xmm0, [rel Lfc_N]`.
 - **No** arithmetic, comparisons, or function calls with FP operands yet.
 
-**Deliverable**: `float x = 1.5f; double y = x;` compiles and runs.
+**Deliverable**: `float x = 1.5f; double y = x;` compiles and runs. ✓
+
+**Implementation notes** (actual vs. plan):
+- Deduplication key is the **raw literal text** (including `f`/`F` suffix),
+  not the numeric value — "1.5f" and "1.5" are distinct pool entries with
+  separate labels. This correctly handles `float` vs `double` at the NASM
+  level (`DD` vs `DQ`).
+- The `FpLiteral` pool struct carries an `is_double` flag in addition to
+  `raw_text` and `label`; the `codegen_intern_fp_literal()` function takes
+  a `TypeKind` parameter rather than inferring from the suffix.
+- File-scope FP initializers needed a dedicated branch in
+  `parse_external_declaration` because the existing `eval_const_expr` path
+  for non-pointer scalars cannot handle `AST_FLOAT_LITERAL` nodes. The
+  branch accepts only `AST_FLOAT_LITERAL` as a valid FP global initializer.
+- NASM strips the `f`/`F` suffix itself but ClaudeC99 strips it manually
+  before emission to be safe and explicit.
+- Labels use `Lfc<N>` (not `Lfc_N` as the spec suggested); the plan's
+  underscore form was a minor inconsistency.
 
 ---
 
