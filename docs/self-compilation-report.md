@@ -192,6 +192,24 @@ the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01070000.00856` | `ClaudeC99_v00_02_01070000_00855` | 1615/1615 |
 | C2 | `build/ccompiler-c2` | `00.02.01070000.00857` | `ClaudeC99_v00_02_01070000_00856` | 1615/1615 |
 
+## Issues found during stage 108 self-hosting test
+
+None. The `#elifdef`/`#elifndef` additions are confined to `src/preprocessor.c`
+and `src/version.c`. The compiler's own source code does not use either directive;
+the new branches are reached only if the preprocessor encounters those keywords,
+so there is no code path change during bootstrap. All 1621 tests passed at C0,
+C1, and C2 with no source changes needed during the bootstrap.
+
+## Result (stage 108)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01080000.00860` | `GNU_13_3_0` | 1621/1621 |
+| C1 | `build/ccompiler-c1` | `00.02.01080000.00861` | `ClaudeC99_v00_02_01080000_00860` | 1621/1621 |
+| C2 | `build/ccompiler-c2` | `00.02.01080000.00862` | `ClaudeC99_v00_02_01080000_00861` | 1621/1621 |
+
 ## Issues found during stage 104 self-hosting test
 
 None. The new constant-expression evaluator functions (`eval_const_relational`,

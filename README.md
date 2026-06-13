@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 108 (#elifdef / #elifndef):
+
+> Stage 108 adds `#elifdef NAME` and `#elifndef NAME` branch-transition directives (C23 §6.10.1 / GCC/Clang extension), equivalent to `#elif defined(NAME)` and `#elif !defined(NAME)` respectively. The change is entirely confined to `src/preprocessor.c`; both new branches are placed before `#elif` in the directive chain so they take priority and correctly update `cond_stack` state even inside inactive regions. All 1621 tests pass (936 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+
 Through stage 107 (inline keyword, assert.h, and va_copy codegen):
 
 > Stage 107 closes three independent C99 gaps: the `inline` function specifier is now parsed (consumed and discarded via the same pattern as `restrict` and `volatile`), the `<assert.h>` stub header is available with a complete NDEBUG-aware `assert` macro, and `va_copy` codegen is corrected to emit three 8-byte moves copying the 24-byte SysV AMD64 `va_list` struct (previously a silent no-op). A preprocessor bug was discovered and fixed: `__FILE__` and `__LINE__` were not expanding inside function-like macro bodies during rescan; fixed via static globals tracking current file/line context. All 1615 tests pass (930 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
@@ -363,11 +367,13 @@ Through stage 91 (address-of member lvalues):
   - _Directive recognition_: unsupported directives are rejected with a
     diagnostic error.
   - _Conditional compilation_: `#ifdef`/`#ifndef`/`#else`/`#endif`, plus
-    `#if`/`#elif` (below), with first-true-wins branch semantics. Inactive
-    regions are fully skipped — not emitted, not macro-expanded, and nested
-    `#define`/`#include` suppressed. Nesting up to 64 levels deep. Errors on a
-    missing `#endif`, unmatched `#else`/`#endif`, duplicate `#else`, `#elif`
-    without a conditional, and `#elif` after `#else`.
+    `#if`/`#elif` (below), plus `#elifdef`/`#elifndef` (C23/GCC/Clang
+    extension equivalents of `#elif defined(NAME)` / `#elif !defined(NAME)`),
+    with first-true-wins branch semantics. Inactive regions are fully skipped
+    — not emitted, not macro-expanded, and nested `#define`/`#include`
+    suppressed. Nesting up to 64 levels deep. Errors on a missing `#endif`,
+    unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a
+    conditional, and `#elif` after `#else`.
   - _`#if`/`#elif` expression operands_: integer literals; `defined(NAME)` and
     `defined NAME`; object-like macros that expand to integer literals
     (`0` = false, nonzero = true); bare undefined identifiers (evaluate to 0);

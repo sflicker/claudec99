@@ -1588,13 +1588,21 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 8 new valid tests (inline func, static inline, extern inline, assert pass, assert NDEBUG, assert fail/134, va_copy basic, void implicit return); all 1615 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1615/1615 tests pass at each step
 
+## Stage 108 — `#elifdef` / `#elifndef` preprocessor directives
+
+- [x] `src/preprocessor.c` — add `#elifdef NAME` branch before `#elif` (C23 §6.10.1 / GCC/Clang extension; equivalent to `#elif defined(NAME)`)
+- [x] `src/preprocessor.c` — add `#elifndef NAME` branch before `#elif` (equivalent to `#elif !defined(NAME)`)
+- [x] `src/version.c` — `VERSION_STAGE` bumped to `"01080000"`
+- [x] Tests: 6 new valid tests (elifdef taken, elifdef else fallthrough, elifndef taken, elifndef false, chained elifdef/elifndef, nested inside inactive region); all 1621 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1621/1621 tests pass at each step
+
 ---
 
 ## TODO
 
 ### Preprocessor
 - [x] `#pragma` (unknown pragmas silently ignored; `#pragma once` supported) (Stage 105)
-- [ ] #elifdef / #elifndef
+- [x] #elifdef / #elifndef (Stage 108)
 - [ ] GNU extension: `__VA_OPT__` and named variadic args
 
 ### Types
