@@ -171,6 +171,27 @@ at C0, C1, and C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01060000.00849` | `ClaudeC99_v00_02_01060000_00848` | 1607/1607 |
 | C2 | `build/ccompiler-c2` | `00.02.01060000.00850` | `ClaudeC99_v00_02_01060000_00849` | 1607/1607 |
 
+## Issues found during stage 107 self-hosting test
+
+None. The `inline` keyword changes (TOKEN_INLINE in lexer/parser),
+`test/include/assert.h`, the `va_copy` codegen fix, and the `__FILE__`/`__LINE__`
+expansion fix in `expand_macros_text` are all C-source-visible changes that the
+compiler's own source code does not exercise. The new static globals
+(`g_expand_source_path`, `g_expand_current_line`) in `preprocessor.c` are
+straightforward additions with no interaction with the existing bootstrap path.
+All 1615 tests passed at C0, C1, and C2 with no source changes needed during
+the bootstrap.
+
+## Result (stage 107)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01070000.00855` | `GNU_13_3_0` | 1615/1615 |
+| C1 | `build/ccompiler-c1` | `00.02.01070000.00856` | `ClaudeC99_v00_02_01070000_00855` | 1615/1615 |
+| C2 | `build/ccompiler-c2` | `00.02.01070000.00857` | `ClaudeC99_v00_02_01070000_00856` | 1615/1615 |
+
 ## Issues found during stage 104 self-hosting test
 
 None. The new constant-expression evaluator functions (`eval_const_relational`,
