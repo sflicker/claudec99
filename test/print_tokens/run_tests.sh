@@ -44,7 +44,7 @@ for src in "$SCRIPT_DIR"/test_*.c; do
 
     expected=$(cat "$expected_file")
     if [ "$actual" = "$expected" ]; then
-        echo "PASS  $name"
+        [ -n "$CLAUDEC99_TEST_VERBOSE" ] && echo "PASS  $name"
         pass=$((pass + 1))
     else
         echo "FAIL  $name  (output mismatch)"

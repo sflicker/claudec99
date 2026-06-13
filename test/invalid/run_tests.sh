@@ -46,7 +46,7 @@ for src in "$SCRIPT_DIR"/test_*.c; do
 
     # Check that error message contains expected fragment (case-insensitive)
     if echo "$output" | grep -qi "$expected_fragment"; then
-        echo "PASS  $name  (error contains: '$expected_fragment')"
+        [ -n "$CLAUDEC99_TEST_VERBOSE" ] && echo "PASS  $name  (error contains: '$expected_fragment')"
         pass=$((pass + 1))
     else
         echo "FAIL  $name  (expected error containing '$expected_fragment', got: $output)"

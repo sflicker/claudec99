@@ -30,7 +30,7 @@ for src in "$SCRIPT_DIR"/*.c; do
     fi
 
     # Compile .c -> .asm
-    if ! timeout "$TIMEOUT" "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" 2>/dev/null; then
+    if ! timeout "$TIMEOUT" "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" >/dev/null 2>&1; then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue
@@ -71,7 +71,7 @@ for src in "$SCRIPT_DIR"/*.c; do
     # don't pollute the runner's PASS/FAIL output, and so the optional
     # .expected-file comparison below can use it.
     stdout_file="$WORK_DIR/${name}.stdout"
-    timeout "$TIMEOUT" "$WORK_DIR/${name}" >"$stdout_file"
+    { timeout "$TIMEOUT" "$WORK_DIR/${name}" >"$stdout_file" 2>/dev/null; } 2>/dev/null
     actual=$?
 
     if [ "$actual" -ne "$expected" ]; then
@@ -95,9 +95,9 @@ for src in "$SCRIPT_DIR"/*.c; do
             fail=$((fail + 1))
             continue
         fi
-        echo "PASS  $name  (exit code: $actual, output matched)"
+        [ -n "$CLAUDEC99_TEST_VERBOSE" ] && echo "PASS  $name  (exit code: $actual, output matched)"
     else
-        echo "PASS  $name  (exit code: $actual)"
+        [ -n "$CLAUDEC99_TEST_VERBOSE" ] && echo "PASS  $name  (exit code: $actual)"
     fi
     pass=$((pass + 1))
 done
