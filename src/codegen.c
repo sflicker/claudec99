@@ -169,18 +169,48 @@ static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs) {
  * return statements (expression → declared return type).
  */
 static void emit_convert(CodeGen *cg, TypeKind src, TypeKind dst) {
-    int src_sz = type_kind_bytes(src);
-    int dst_sz = type_kind_bytes(dst);
-    if (src_sz == dst_sz) return;
-    if (dst_sz == 8) {
-        fprintf(cg->output, "    movsxd rax, eax\n");
-    } else if (dst_sz == 2) {
-        fprintf(cg->output, "    movsx eax, ax\n");
-    } else if (dst_sz == 1) {
-        fprintf(cg->output, "    movsx eax, al\n");
+    /* Stage 110: FP↔int and FP↔FP conversions.
+     * Convention: FP values live in xmm0; integer values live in rax/eax. */
+    if (src == dst) return;
+    if (!type_is_fp(src) && type_is_fp(dst)) {
+        /* int/long in rax → float/double in xmm0 */
+        if (dst == TYPE_FLOAT)
+            fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+        else
+            fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+        return;
     }
-    /* dst_sz == 4 and src_sz == 8: low 32 bits of rax are already in
-     * eax, so no explicit instruction is needed. */
+    if (type_is_fp(src) && !type_is_fp(dst)) {
+        /* float/double in xmm0 → int/long in rax (truncate toward zero) */
+        if (src == TYPE_FLOAT)
+            fprintf(cg->output, "    cvttss2si rax, xmm0\n");
+        else
+            fprintf(cg->output, "    cvttsd2si rax, xmm0\n");
+        return;
+    }
+    if (src == TYPE_FLOAT && dst == TYPE_DOUBLE) {
+        fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+        return;
+    }
+    if (src == TYPE_DOUBLE && dst == TYPE_FLOAT) {
+        fprintf(cg->output, "    cvtsd2ss xmm0, xmm0\n");
+        return;
+    }
+    /* Integer-to-integer size conversion (original logic). */
+    {
+        int src_sz = type_kind_bytes(src);
+        int dst_sz = type_kind_bytes(dst);
+        if (src_sz == dst_sz) return;
+        if (dst_sz == 8) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        } else if (dst_sz == 2) {
+            fprintf(cg->output, "    movsx eax, ax\n");
+        } else if (dst_sz == 1) {
+            fprintf(cg->output, "    movsx eax, al\n");
+        }
+        /* dst_sz == 4 and src_sz == 8: low 32 bits of rax are already in
+         * eax, so no explicit instruction is needed. */
+    }
 }
 
 /*
@@ -390,6 +420,8 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->tu_root = NULL;
     vec_init(&cg->string_pool, sizeof(ASTNode *));
     vec_init(&cg->fp_literals, sizeof(FpLiteral));
+    cg->fp_sign_mask_f32_emitted = 0;
+    cg->fp_sign_mask_f64_emitted = 0;
     cg->warnings_are_errors = 0;
     vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
@@ -477,10 +509,24 @@ static void emit_store_fp_global(CodeGen *cg, const char *name, TypeKind kind) {
         fprintf(cg->output, "    movsd [rel %s], xmm0\n", name);
 }
 
-/* Stage 109: widen float in xmm0 to double when assigning float to double slot. */
+/* Stage 109/110: coerce the value currently in xmm0 (if src is FP) or rax (if
+ * src is integer) to the destination FP type.  Called at every FP assignment
+ * and initializer site so the store instruction always finds the correct value
+ * in xmm0. */
 static void emit_fp_widen_if_needed(CodeGen *cg, TypeKind src, TypeKind dst) {
+    if (src == dst) return;
+    if (!type_is_fp(src) && type_is_fp(dst)) {
+        /* int/long in rax → float/double in xmm0 */
+        if (dst == TYPE_FLOAT)
+            fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+        else
+            fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+        return;
+    }
     if (src == TYPE_FLOAT && dst == TYPE_DOUBLE)
         fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+    if (src == TYPE_DOUBLE && dst == TYPE_FLOAT)
+        fprintf(cg->output, "    cvtsd2ss xmm0, xmm0\n");
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -1572,6 +1618,15 @@ static TypeKind common_arith_kind(TypeKind a, TypeKind b) {
     return TYPE_INT;
 }
 
+/* Stage 110: Usual Arithmetic Conversions for real types (C99 §6.3.1.8).
+ * Returns TYPE_DOUBLE if either operand is double, TYPE_FLOAT if either
+ * is float, otherwise falls through to common_arith_kind for integers. */
+static TypeKind fp_common_arith_kind(TypeKind a, TypeKind b) {
+    if (a == TYPE_DOUBLE || b == TYPE_DOUBLE) return TYPE_DOUBLE;
+    if (a == TYPE_FLOAT  || b == TYPE_FLOAT)  return TYPE_FLOAT;
+    return common_arith_kind(a, b);
+}
+
 /*
  * Stage 40: Usual arithmetic conversion signedness rule.
  * Returns 1 if the result of operating on two values with the given
@@ -1686,6 +1741,9 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
             strcmp(op, "^") == 0 || strcmp(op, "|") == 0) {
             TypeKind lt = sizeof_type_of_expr(cg, node->children[0]);
             TypeKind rt = sizeof_type_of_expr(cg, node->children[1]);
+            /* Stage 110: FP UAC before integer promotion rules. */
+            if (type_is_fp(lt) || type_is_fp(rt))
+                return fp_common_arith_kind(lt, rt);
             return common_arith_kind(promote_kind(lt), promote_kind(rt));
         }
         if (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0) {
@@ -1697,7 +1755,10 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         const char *op = node->value;
         if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
             strcmp(op, "~") == 0) {
-            return promote_kind(sizeof_type_of_expr(cg, node->children[0]));
+            TypeKind ct = sizeof_type_of_expr(cg, node->children[0]);
+            /* Stage 110: FP unary preserves the FP type. */
+            if (type_is_fp(ct)) return ct;
+            return promote_kind(ct);
         }
         return TYPE_INT; /* ! */
     }
@@ -1787,6 +1848,10 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_CHAR_LITERAL:
         t = TYPE_INT;
         break;
+    case AST_FLOAT_LITERAL:
+        /* Stage 110: float/double literal — decl_type carries TYPE_FLOAT or TYPE_DOUBLE. */
+        t = node->decl_type;
+        break;
     case AST_VAR_REF: {
         LocalVar *lv = codegen_find_var(cg, node->value);
         if (lv) {
@@ -1794,6 +1859,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                 /* Stage 13-03: an array name in a value context decays to
                  * a pointer to its element type. */
                 t = TYPE_POINTER;
+            } else if (type_is_fp(lv->kind)) {
+                /* Stage 110: float/double local — return the declared kind directly. */
+                t = lv->kind;
             } else {
                 t = promote_kind(type_kind_from_size(lv->size));
             }
@@ -1801,6 +1869,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             GlobalVar *gv = codegen_find_global(cg, node->value);
             if (gv && (gv->kind == TYPE_POINTER || gv->kind == TYPE_ARRAY)) {
                 t = TYPE_POINTER;
+            } else if (gv && type_is_fp(gv->kind)) {
+                /* Stage 110: float/double global — return the declared kind directly. */
+                t = gv->kind;
             } else {
                 t = gv ? promote_kind(type_kind_from_size(gv->size)) : TYPE_INT;
             }
@@ -1814,7 +1885,10 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         if (strcmp(node->value, "+") == 0 ||
             strcmp(node->value, "-") == 0 ||
             strcmp(node->value, "~") == 0) {
-            t = promote_kind(expr_result_type(cg, node->children[0]));
+            TypeKind ct = expr_result_type(cg, node->children[0]);
+            /* Stage 110: FP unary preserves the FP type. */
+            if (type_is_fp(ct)) { t = ct; break; }
+            t = promote_kind(ct);
         } else {
             t = TYPE_INT; /* ! stays 32-bit */
         }
@@ -1826,6 +1900,11 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             strcmp(op, "%") == 0) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
+            /* Stage 110: FP UAC before pointer/integer rules. */
+            if (type_is_fp(lt) || type_is_fp(rt)) {
+                t = fp_common_arith_kind(lt, rt);
+                break;
+            }
             /* Stage 13-04: pointer arithmetic — `T* +/- int` and
              * `int + T*` produce a pointer. Validation of the
              * specific combinations happens in codegen. */
@@ -3030,6 +3109,26 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     if (node->type == AST_UNARY_OP) {
         codegen_expression(cg, node->children[0]);
         const char *op = node->value;
+        /* Stage 110: FP unary minus — toggle sign bit via XOR with mask. */
+        if (strcmp(op, "-") == 0 && type_is_fp(node->children[0]->result_type)) {
+            TypeKind ft = node->children[0]->result_type;
+            if (ft == TYPE_FLOAT) {
+                cg->fp_sign_mask_f32_emitted = 1;
+                fprintf(cg->output, "    xorps xmm0, [rel Lfp_smask_f32]\n");
+            } else {
+                cg->fp_sign_mask_f64_emitted = 1;
+                fprintf(cg->output, "    xorpd xmm0, [rel Lfp_smask_f64]\n");
+            }
+            node->result_type = ft;
+            return;
+        }
+        /* Stage 110: FP unary plus is a no-op; convert to double if needed.
+         * Result is a widening to double if the operand is float (C99 doesn't
+         * widen here; unary + just preserves type). */
+        if (strcmp(op, "+") == 0 && type_is_fp(node->children[0]->result_type)) {
+            node->result_type = node->children[0]->result_type;
+            return;
+        }
         if (strcmp(op, "-") == 0) {
             TypeKind ot = promote_kind(node->children[0]->result_type);
             if (ot == TYPE_LONG) {
@@ -3718,6 +3817,91 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->result_type = result;
             node->is_unsigned = node->children[0]->is_unsigned;
             return;
+        }
+        /* Stage 110: FP arithmetic (addss/addsd/subss/subsd/mulss/mulsd/divss/divsd).
+         * Handled before the integer path.  Convention after save/restore:
+         *   xmm0 = right operand, xmm1 = left operand.
+         * Non-commutative ops (sub, div) use  xmm1 op= xmm0,  result → xmm0. */
+        {
+            TypeKind fp_lt = expr_result_type(cg, node->children[0]);
+            TypeKind fp_rt = expr_result_type(cg, node->children[1]);
+            int fp_is_arith = (strcmp(node->value, "+") == 0 ||
+                               strcmp(node->value, "-") == 0 ||
+                               strcmp(node->value, "*") == 0 ||
+                               strcmp(node->value, "/") == 0);
+            if (fp_is_arith && (type_is_fp(fp_lt) || type_is_fp(fp_rt))) {
+                const char *bop = node->value;
+                TypeKind result = fp_common_arith_kind(fp_lt, fp_rt);
+                int use_double = (result == TYPE_DOUBLE);
+
+                /* Evaluate left operand into xmm0, then save to stack. */
+                codegen_expression(cg, node->children[0]);
+                /* Convert left if needed (int→FP or float→double). */
+                if (!type_is_fp(node->children[0]->result_type)) {
+                    if (use_double)
+                        fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+                    else
+                        fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+                } else if (node->children[0]->result_type == TYPE_FLOAT && use_double) {
+                    fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+                }
+                /* Save left operand: SSE2 has no push xmm0 — use stack slot. */
+                fprintf(cg->output, "    sub rsp, 8\n");
+                if (use_double)
+                    fprintf(cg->output, "    movsd [rsp], xmm0\n");
+                else
+                    fprintf(cg->output, "    movss [rsp], xmm0\n");
+                cg->push_depth++;
+
+                /* Evaluate right operand into xmm0. */
+                codegen_expression(cg, node->children[1]);
+                if (!type_is_fp(node->children[1]->result_type)) {
+                    if (use_double)
+                        fprintf(cg->output, "    cvtsi2sd xmm0, rax\n");
+                    else
+                        fprintf(cg->output, "    cvtsi2ss xmm0, rax\n");
+                } else if (node->children[1]->result_type == TYPE_FLOAT && use_double) {
+                    fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
+                }
+
+                /* Restore left into xmm1; pop stack.
+                 * After this: xmm0 = right, xmm1 = left. */
+                if (use_double)
+                    fprintf(cg->output, "    movsd xmm1, [rsp]\n");
+                else
+                    fprintf(cg->output, "    movss xmm1, [rsp]\n");
+                fprintf(cg->output, "    add rsp, 8\n");
+                cg->push_depth--;
+
+                /* Emit arithmetic instruction.
+                 * Commutative (+, *): result in xmm0 directly.
+                 * Non-commutative (-, /): compute xmm1 op xmm0, move to xmm0. */
+                if (strcmp(bop, "+") == 0) {
+                    fprintf(cg->output, use_double
+                        ? "    addsd xmm0, xmm1\n"
+                        : "    addss xmm0, xmm1\n");
+                } else if (strcmp(bop, "-") == 0) {
+                    fprintf(cg->output, use_double
+                        ? "    subsd xmm1, xmm0\n"
+                        : "    subss xmm1, xmm0\n");
+                    fprintf(cg->output, use_double
+                        ? "    movsd xmm0, xmm1\n"
+                        : "    movss xmm0, xmm1\n");
+                } else if (strcmp(bop, "*") == 0) {
+                    fprintf(cg->output, use_double
+                        ? "    mulsd xmm0, xmm1\n"
+                        : "    mulss xmm0, xmm1\n");
+                } else { /* "/" */
+                    fprintf(cg->output, use_double
+                        ? "    divsd xmm1, xmm0\n"
+                        : "    divss xmm1, xmm0\n");
+                    fprintf(cg->output, use_double
+                        ? "    movsd xmm0, xmm1\n"
+                        : "    movss xmm0, xmm1\n");
+                }
+                node->result_type = result;
+                return;
+            }
         }
         const char *op = node->value;
         int is_arith = (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
@@ -5598,12 +5782,14 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     }
 }
 
-/* Stage 109: emit all float/double literals pooled in cg->fp_literals into
- * a .rodata section.  Each entry is Lfc<N>: DD <value>  (float) or
- * Lfc<N>: DQ <value>  (double).  NASM converts the decimal text to IEEE 754.
- * The f/F suffix must be stripped — NASM does not accept it. */
+/* Stage 109/110: emit all float/double literals pooled in cg->fp_literals
+ * and the Stage-110 sign-bit mask constants (when used) into .rodata.
+ * Lfc<N>: DD/DQ for numeric literals; Lfp_smask_f32/f64 for sign masks. */
 static void codegen_emit_fp_literals(CodeGen *cg) {
-    if (cg->fp_literals.len == 0) return;
+    int need_section = (cg->fp_literals.len > 0 ||
+                        cg->fp_sign_mask_f32_emitted ||
+                        cg->fp_sign_mask_f64_emitted);
+    if (!need_section) return;
     fprintf(cg->output, "section .rodata\n");
     for (int i = 0; i < (int)cg->fp_literals.len; i++) {
         FpLiteral *fp = (FpLiteral *)vec_get(&cg->fp_literals, (size_t)i);
@@ -5618,6 +5804,17 @@ static void codegen_emit_fp_literals(CodeGen *cg) {
                     fp->label, dir, raw);
         }
     }
+    /* Stage 110: sign-bit mask constants for FP unary minus.
+     * xorps/xorpd require 16-byte-aligned memory operands and read 16 bytes,
+     * so each mask is padded to 16 bytes and preceded by align 16. */
+    if (cg->fp_sign_mask_f32_emitted)
+        fprintf(cg->output,
+                "align 16\n"
+                "Lfp_smask_f32: dd 0x80000000, 0, 0, 0\n");
+    if (cg->fp_sign_mask_f64_emitted)
+        fprintf(cg->output,
+                "align 16\n"
+                "Lfp_smask_f64: dq 0x8000000000000000, 0\n");
 }
 
 /*

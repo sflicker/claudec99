@@ -159,6 +159,11 @@ typedef struct {
      * Each unique raw text is assigned a Lfc<N> label and emitted to
      * .rodata as DD or DQ for NASM to encode as IEEE 754. */
     Vec fp_literals;  /* FpLiteral */
+    /* Stage 110: track whether the sign-bit mask constants for FP unary
+     * minus have been emitted to .rodata (Lfp_smask_f32 / Lfp_smask_f64).
+     * Set on first use; the emit helper checks these before writing. */
+    int fp_sign_mask_f32_emitted;
+    int fp_sign_mask_f64_emitted;
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
     /* Stage 71: block-scope static variable pool — accumulated across all
