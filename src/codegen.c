@@ -25,6 +25,8 @@ static int type_kind_bytes(TypeKind kind) {
     case TYPE_LONG:               return 8;
     case TYPE_LONG_LONG:          return 8;
     case TYPE_UNSIGNED_LONG_LONG: return 8;
+    case TYPE_FLOAT:              return 4;
+    case TYPE_DOUBLE:             return 8;
     case TYPE_POINTER:            return 8;
     case TYPE_ARRAY:              return 0; /* size lives on full_type; caller uses that */
     case TYPE_FUNCTION:           return 0; /* never directly allocated; base of FP pointer */
@@ -33,6 +35,18 @@ static int type_kind_bytes(TypeKind kind) {
     }
     return 4;
 }
+
+/* Stage 109: true when the type is float or double. */
+static int type_is_fp(TypeKind k) {
+    return k == TYPE_FLOAT || k == TYPE_DOUBLE;
+}
+
+/* Stage 109: per-translation-unit float/double literal entry for deduplication. */
+typedef struct {
+    const char *raw_text; /* raw literal text as parsed (e.g. "1.5f", "3.14") */
+    int label;            /* Lfc<N> index */
+    int is_double;        /* 1 = dq (double), 0 = dd (float) */
+} FpLiteral;
 
 static int is_struct_or_union_kind(TypeKind k) {
     return k == TYPE_STRUCT || k == TYPE_UNION;
@@ -375,6 +389,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_return_full_type = NULL;
     cg->tu_root = NULL;
     vec_init(&cg->string_pool, sizeof(ASTNode *));
+    vec_init(&cg->fp_literals, sizeof(FpLiteral));
     cg->warnings_are_errors = 0;
     vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
@@ -409,7 +424,63 @@ void codegen_free(CodeGen *cg) {
     vec_free(&cg->switch_stack);
     vec_free(&cg->user_labels);
     vec_free(&cg->string_pool);
+    vec_free(&cg->fp_literals);
     vec_free(&cg->local_statics);
+}
+
+/* Stage 109: intern a float/double literal text into the FP literal pool.
+ * Deduplicates by raw text (including suffix). Returns the Lfc<N> label index. */
+static int codegen_intern_fp_literal(CodeGen *cg, const char *raw_text, TypeKind kind) {
+    size_t i;
+    for (i = 0; i < cg->fp_literals.len; i++) {
+        FpLiteral *fl = (FpLiteral *)vec_get(&cg->fp_literals, i);
+        if (strcmp(fl->raw_text, raw_text) == 0)
+            return fl->label;
+    }
+    FpLiteral newfl;
+    newfl.raw_text  = raw_text;
+    newfl.label     = (int)cg->fp_literals.len;
+    newfl.is_double = (kind == TYPE_DOUBLE);
+    vec_push(&cg->fp_literals, &newfl);
+    return newfl.label;
+}
+
+/* Stage 109: load an FP local (stack-based) into xmm0. */
+static void emit_load_fp_local(CodeGen *cg, int offset, TypeKind kind) {
+    if (kind == TYPE_FLOAT)
+        fprintf(cg->output, "    movss xmm0, [rbp - %d]\n", offset);
+    else
+        fprintf(cg->output, "    movsd xmm0, [rbp - %d]\n", offset);
+}
+
+/* Stage 109: store xmm0 into an FP local. */
+static void emit_store_fp_local(CodeGen *cg, int offset, TypeKind kind) {
+    if (kind == TYPE_FLOAT)
+        fprintf(cg->output, "    movss [rbp - %d], xmm0\n", offset);
+    else
+        fprintf(cg->output, "    movsd [rbp - %d], xmm0\n", offset);
+}
+
+/* Stage 109: load an FP global (RIP-relative) into xmm0. */
+static void emit_load_fp_global(CodeGen *cg, const char *name, TypeKind kind) {
+    if (kind == TYPE_FLOAT)
+        fprintf(cg->output, "    movss xmm0, [rel %s]\n", name);
+    else
+        fprintf(cg->output, "    movsd xmm0, [rel %s]\n", name);
+}
+
+/* Stage 109: store xmm0 into an FP global (RIP-relative). */
+static void emit_store_fp_global(CodeGen *cg, const char *name, TypeKind kind) {
+    if (kind == TYPE_FLOAT)
+        fprintf(cg->output, "    movss [rel %s], xmm0\n", name);
+    else
+        fprintf(cg->output, "    movsd [rel %s], xmm0\n", name);
+}
+
+/* Stage 109: widen float in xmm0 to double when assigning float to double slot. */
+static void emit_fp_widen_if_needed(CodeGen *cg, TypeKind src, TypeKind dst) {
+    if (src == TYPE_FLOAT && dst == TYPE_DOUBLE)
+        fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
 }
 
 /* Stage 66/70-03: warn with a variable name embedded.
@@ -2044,6 +2115,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         node->result_type = TYPE_INT;
         return;
     }
+    if (node->type == AST_FLOAT_LITERAL) {
+        /* Stage 109: float/double literal — load from .rodata via Lfc<N>.
+         * Each unique raw text gets a label; NASM converts the decimal
+         * value to IEEE 754 via DD (float) or DQ (double). */
+        int idx = codegen_intern_fp_literal(cg, node->value, node->decl_type);
+        if (node->decl_type == TYPE_FLOAT)
+            fprintf(cg->output, "    movss xmm0, [rel Lfc%d]\n", idx);
+        else
+            fprintf(cg->output, "    movsd xmm0, [rel Lfc%d]\n", idx);
+        node->result_type = node->decl_type;
+        return;
+    }
     if (node->type == AST_STRING_LITERAL) {
         /* Stage 14-03: register the literal in the per-translation-unit
          * string pool, assigning it the next `Lstr<N>` label, then emit
@@ -2083,6 +2166,15 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = type_pointer(lv->full_type->base);
                 return;
             }
+            /* Stage 109: float/double locals load into xmm0. */
+            if (type_is_fp(lv->kind)) {
+                if (lv->is_static)
+                    emit_load_fp_global(cg, lv->static_label, lv->kind);
+                else
+                    emit_load_fp_local(cg, lv->offset, lv->kind);
+                node->result_type = lv->kind;
+                return;
+            }
             if (lv->kind == TYPE_POINTER) {
                 node->result_type = TYPE_POINTER;
                 node->full_type = lv->full_type;
@@ -2115,6 +2207,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             fprintf(cg->output, "    lea rax, [rel %s]\n", gv->name);
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(gv->full_type->base);
+            return;
+        }
+        /* Stage 109: float/double globals load into xmm0. */
+        if (type_is_fp(gv->kind)) {
+            emit_load_fp_global(cg, gv->name, gv->kind);
+            node->result_type = gv->kind;
             return;
         }
         if (gv->kind == TYPE_POINTER) {
@@ -2234,6 +2332,21 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = f->full_type;
                 return;
             }
+            /* Stage 109: float/double member-dot assignment. */
+            if (type_is_fp(f->kind)) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                codegen_expression(cg, node->children[1]);
+                emit_fp_widen_if_needed(cg, node->children[1]->result_type, f->kind);
+                fprintf(cg->output, "    pop rbx\n");
+                cg->push_depth--;
+                if (f->kind == TYPE_FLOAT)
+                    fprintf(cg->output, "    movss [rbx], xmm0\n");
+                else
+                    fprintf(cg->output, "    movsd [rbx], xmm0\n");
+                node->result_type = f->kind;
+                return;
+            }
             fprintf(cg->output, "    push rax\n");
             cg->push_depth++;
             codegen_expression(cg, node->children[1]);
@@ -2304,6 +2417,21 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 emit_struct_copy(cg, sz);
                 node->result_type = f->kind;
                 node->full_type = f->full_type;
+                return;
+            }
+            /* Stage 109: float/double member-arrow assignment. */
+            if (type_is_fp(f->kind)) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                codegen_expression(cg, node->children[1]);
+                emit_fp_widen_if_needed(cg, node->children[1]->result_type, f->kind);
+                fprintf(cg->output, "    pop rbx\n");
+                cg->push_depth--;
+                if (f->kind == TYPE_FLOAT)
+                    fprintf(cg->output, "    movss [rbx], xmm0\n");
+                else
+                    fprintf(cg->output, "    movsd [rbx], xmm0\n");
+                node->result_type = f->kind;
                 return;
             }
             fprintf(cg->output, "    push rax\n");
@@ -2425,6 +2553,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 node->full_type = lv->full_type;
                 return;
             }
+            /* Stage 109: float/double local assignment. */
+            if (type_is_fp(lv->kind)) {
+                codegen_expression(cg, node->children[0]);
+                emit_fp_widen_if_needed(cg, node->children[0]->result_type, lv->kind);
+                if (lv->is_static)
+                    emit_store_fp_global(cg, lv->static_label, lv->kind);
+                else
+                    emit_store_fp_local(cg, lv->offset, lv->kind);
+                node->result_type = lv->kind;
+                return;
+            }
             /* Stage 38: reject assigning a void function call result. */
             if (node->children[0]->type == AST_FUNCTION_CALL &&
                 node->children[0]->decl_type == TYPE_VOID) {
@@ -2489,6 +2628,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (gv->is_const) {
             compile_error(
                     "error: assignment to const variable '%s'\n", gv->name);
+        }
+        /* Stage 109: float/double global assignment. */
+        if (type_is_fp(gv->kind)) {
+            codegen_expression(cg, node->children[0]);
+            emit_fp_widen_if_needed(cg, node->children[0]->result_type, gv->kind);
+            emit_store_fp_global(cg, gv->name, gv->kind);
+            node->result_type = gv->kind;
+            return;
         }
         /* Stage 38: reject assigning a void function call result. */
         if (node->children[0]->type == AST_FUNCTION_CALL &&
@@ -4678,6 +4825,23 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             }
             return;
         }
+        /* Stage 109: float/double local variable. */
+        if (type_is_fp(node->decl_type)) {
+            int fp_size = type_kind_bytes(node->decl_type);
+            int fp_offset = codegen_add_var(cg, node->value, fp_size, fp_size,
+                                            node->decl_type, node->full_type);
+            {
+                LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
+                last_lv->is_const = node->is_const;
+            }
+            if (node->child_count > 0) {
+                codegen_expression(cg, node->children[0]);
+                TypeKind init_kind = node->children[0]->result_type;
+                emit_fp_widen_if_needed(cg, init_kind, node->decl_type);
+                emit_store_fp_local(cg, fp_offset, node->decl_type);
+            }
+            return;
+        }
         int size = type_kind_bytes(node->decl_type);
         int offset = codegen_add_var(cg, node->value, size, size,
                                      node->decl_type, node->full_type);
@@ -5434,6 +5598,28 @@ static void codegen_emit_string_pool(CodeGen *cg) {
     }
 }
 
+/* Stage 109: emit all float/double literals pooled in cg->fp_literals into
+ * a .rodata section.  Each entry is Lfc<N>: DD <value>  (float) or
+ * Lfc<N>: DQ <value>  (double).  NASM converts the decimal text to IEEE 754.
+ * The f/F suffix must be stripped — NASM does not accept it. */
+static void codegen_emit_fp_literals(CodeGen *cg) {
+    if (cg->fp_literals.len == 0) return;
+    fprintf(cg->output, "section .rodata\n");
+    for (int i = 0; i < (int)cg->fp_literals.len; i++) {
+        FpLiteral *fp = (FpLiteral *)vec_get(&cg->fp_literals, (size_t)i);
+        const char *raw = fp->raw_text;
+        size_t rlen = strlen(raw);
+        const char *dir = (fp->is_double) ? "dq" : "dd";
+        if (rlen > 0 && (raw[rlen-1] == 'f' || raw[rlen-1] == 'F')) {
+            fprintf(cg->output, "Lfc%d: %s %.*s\n",
+                    fp->label, dir, (int)(rlen-1), raw);
+        } else {
+            fprintf(cg->output, "Lfc%d: %s %s\n",
+                    fp->label, dir, raw);
+        }
+    }
+}
+
 /*
  * Stage 14-07: a function whose AST_FUNCTION_DECL has no trailing
  * AST_BLOCK is a pure declaration (parameters only). Used to decide
@@ -5527,9 +5713,11 @@ static const char *bss_res_directive(TypeKind kind) {
     switch (kind) {
     case TYPE_CHAR:               return "resb";
     case TYPE_SHORT:              return "resw";
+    case TYPE_FLOAT:              return "resd";
     case TYPE_LONG_LONG:
     case TYPE_UNSIGNED_LONG_LONG:
     case TYPE_LONG:
+    case TYPE_DOUBLE:
     case TYPE_POINTER:            return "resq";
     case TYPE_INT:
     default:                      return "resd";
@@ -5566,7 +5754,14 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
     gv->is_static_linkage = (decl->storage_class == SC_STATIC);
     if (decl->child_count > 0) {
         ASTNode *init = decl->children[0];
-        if (init->type == AST_INT_LITERAL) {
+        if (init->type == AST_FLOAT_LITERAL) {
+            /* Stage 109: float/double global initialized from FP literal.
+             * Store the raw text in init_label for codegen_emit_data to
+             * emit as DD or DQ with the decimal value for NASM to encode. */
+            gv->init_label = init->value;
+            gv->is_label_init = 0;
+            gv->is_initialized = 1;
+        } else if (init->type == AST_INT_LITERAL) {
             long v = strtol(init->value, NULL, 10);
             gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
             gv->is_initialized = 1;
@@ -5619,9 +5814,11 @@ static const char *data_init_directive(TypeKind kind) {
     case TYPE_BOOL:
     case TYPE_CHAR:               return "db";
     case TYPE_SHORT:              return "dw";
+    case TYPE_FLOAT:              return "dd";
     case TYPE_LONG_LONG:
     case TYPE_UNSIGNED_LONG_LONG:
     case TYPE_LONG:
+    case TYPE_DOUBLE:
     case TYPE_POINTER:            return "dq";
     case TYPE_INT:
     default:                      return "dd";
@@ -5879,6 +6076,19 @@ static void codegen_emit_data(CodeGen *cg) {
                         fprintf(cg->output, "    %s 0\n", dir);
                     }
                 }
+            }
+        } else if (type_is_fp(gv->kind) && gv->init_label && !gv->is_label_init) {
+            /* Stage 109: float/double global initialized from FP literal.
+             * Strip trailing f/F suffix before emitting so NASM accepts it. */
+            const char *raw = gv->init_label;
+            size_t rlen = strlen(raw);
+            if (rlen > 0 && (raw[rlen-1] == 'f' || raw[rlen-1] == 'F')) {
+                fprintf(cg->output, "%s: %s %.*s\n",
+                        gv->name, data_init_directive(gv->kind),
+                        (int)(rlen-1), raw);
+            } else {
+                fprintf(cg->output, "%s: %s %s\n",
+                        gv->name, data_init_directive(gv->kind), raw);
             }
         } else if (gv->is_label_init) {
             /* Stage 25-02 / Stage 43: label-reference initializer. */
@@ -6223,6 +6433,7 @@ void codegen_translation_unit(CodeGen *cg, ASTNode *node) {
         }
     }
     codegen_emit_string_pool(cg);
+    codegen_emit_fp_literals(cg);
     /* Stage 71: emit block-scope static variable storage accumulated
      * during function body emission. */
     codegen_emit_local_statics(cg);

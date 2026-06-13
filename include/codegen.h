@@ -155,6 +155,10 @@ typedef struct {
      * outlives `codegen_translation_unit`.
      * Stage 95-05: dynamic. */
     Vec string_pool;  /* ASTNode * */
+    /* Stage 109: per-translation-unit pool of float/double literals.
+     * Each unique raw text is assigned a Lfc<N> label and emitted to
+     * .rodata as DD or DQ for NASM to encode as IEEE 754. */
+    Vec fp_literals;  /* FpLiteral */
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
     /* Stage 71: block-scope static variable pool — accumulated across all

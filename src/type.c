@@ -21,6 +21,8 @@ static Type type_unsigned_short_singleton      = { TYPE_SHORT,                2,
 static Type type_unsigned_int_singleton        = { TYPE_INT,                  4, 4, 0, NULL, 0 };
 static Type type_unsigned_long_singleton       = { TYPE_LONG,                 8, 8, 0, NULL, 0 };
 static Type type_unsigned_long_long_singleton  = { TYPE_UNSIGNED_LONG_LONG,   8, 8, 0, NULL, 0 };
+static Type type_float_singleton               = { TYPE_FLOAT,                 4, 4, 0, NULL, 0 };
+static Type type_double_singleton              = { TYPE_DOUBLE,                8, 8, 0, NULL, 0 };
 
 Type *type_void(void)                { return &type_void_singleton;                }
 Type *type_bool(void)                { return &type_bool_singleton;                }
@@ -34,6 +36,8 @@ Type *type_unsigned_short(void)      { return &type_unsigned_short_singleton;   
 Type *type_unsigned_int(void)        { return &type_unsigned_int_singleton;        }
 Type *type_unsigned_long(void)       { return &type_unsigned_long_singleton;       }
 Type *type_unsigned_long_long(void)  { return &type_unsigned_long_long_singleton;  }
+Type *type_float(void)               { return &type_float_singleton;               }
+Type *type_double(void)              { return &type_double_singleton;              }
 
 /*
  * Stage 12-01: heap-allocate a pointer Type that wraps `base`.
@@ -165,6 +169,8 @@ const char *type_kind_name(TypeKind kind) {
     case TYPE_LONG:               return "long";
     case TYPE_LONG_LONG:          return "long long";
     case TYPE_UNSIGNED_LONG_LONG: return "unsigned long long";
+    case TYPE_FLOAT:              return "float";
+    case TYPE_DOUBLE:             return "double";
     case TYPE_POINTER:            return "pointer";
     case TYPE_ARRAY:    return "array";
     case TYPE_FUNCTION: return "function";
@@ -193,6 +199,8 @@ int type_is_integer(Type *t) {
     case TYPE_LONG_LONG:
     case TYPE_UNSIGNED_LONG_LONG:
         return 1;
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE:
     case TYPE_VOID:
     case TYPE_POINTER:
     case TYPE_ARRAY:

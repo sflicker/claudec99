@@ -864,10 +864,20 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     TypeKind kind;
     Type *t;
     switch (parser->current.type) {
-    case TOKEN_VOID:  kind = TYPE_VOID;  t = type_void();  break;
-    case TOKEN_BOOL:  kind = TYPE_BOOL;  t = type_bool();  break;
-    case TOKEN_CHAR:  kind = TYPE_CHAR;  t = type_char();  break;
-    case TOKEN_SHORT: kind = TYPE_SHORT; t = type_short(); break;
+    case TOKEN_VOID:   kind = TYPE_VOID;   t = type_void();   break;
+    case TOKEN_BOOL:   kind = TYPE_BOOL;   t = type_bool();   break;
+    case TOKEN_CHAR:   kind = TYPE_CHAR;   t = type_char();   break;
+    case TOKEN_SHORT:  kind = TYPE_SHORT;  t = type_short();  break;
+    case TOKEN_FLOAT: {
+        parser->current = lexer_next_token(parser->lexer);
+        if (out_kind) *out_kind = TYPE_FLOAT;
+        return type_float();
+    }
+    case TOKEN_DOUBLE: {
+        parser->current = lexer_next_token(parser->lexer);
+        if (out_kind) *out_kind = TYPE_DOUBLE;
+        return type_double();
+    }
     case TOKEN_LONG: {
         /* Stage 64: "long long" — peek at next token for second 'long'. */
         parser->current = lexer_next_token(parser->lexer);
@@ -1349,6 +1359,15 @@ static ASTNode *parse_primary(Parser *parser) {
         node->is_unsigned = token.is_unsigned;
         return node;
     }
+    if (parser->current.type == TOKEN_FLOAT_LITERAL ||
+        parser->current.type == TOKEN_DOUBLE_LITERAL) {
+        Token ftoken = parser->current;
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *node = parser_node(parser, AST_FLOAT_LITERAL, ftoken.value);
+        node->decl_type = (ftoken.type == TOKEN_FLOAT_LITERAL) ? TYPE_FLOAT : TYPE_DOUBLE;
+        node->full_type  = (ftoken.type == TOKEN_FLOAT_LITERAL) ? type_float() : type_double();
+        return node;
+    }
     /* Stage 14-02: a string literal is a primary expression whose
      * logical type is char[N+1], where N is the literal's byte
      * length and the trailing slot holds the implicit NUL. The
@@ -1664,6 +1683,8 @@ static ASTNode *parse_postfix(Parser *parser) {
         if (parser->current.type == TOKEN_CONST ||
             parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_FLOAT ||
+            parser->current.type == TOKEN_DOUBLE ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
@@ -1721,6 +1742,8 @@ static ASTNode *parse_unary(Parser *parser) {
         /* Peek past '(' to distinguish sizeof(type) from sizeof(expression) */
         parser->current = lexer_next_token(parser->lexer); /* consume '(' */
         if (parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_FLOAT ||
+            parser->current.type == TOKEN_DOUBLE ||
             parser->current.type == TOKEN_CONST ||
             parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_BOOL ||
@@ -1838,6 +1861,8 @@ static ASTNode *parse_cast(Parser *parser) {
         if (parser->current.type == TOKEN_CONST ||
             parser->current.type == TOKEN_VOLATILE ||
             parser->current.type == TOKEN_VOID ||
+            parser->current.type == TOKEN_FLOAT ||
+            parser->current.type == TOKEN_DOUBLE ||
             parser->current.type == TOKEN_BOOL ||
             parser->current.type == TOKEN_CHAR ||
             parser->current.type == TOKEN_SHORT ||
@@ -2528,6 +2553,8 @@ static ASTNode *parse_for_statement(Parser *parser) {
     if (parser->current.type == TOKEN_CONST ||
         parser->current.type == TOKEN_VOLATILE ||
         parser->current.type == TOKEN_VOID  ||
+        parser->current.type == TOKEN_FLOAT ||
+        parser->current.type == TOKEN_DOUBLE ||
         parser->current.type == TOKEN_BOOL  ||
         parser->current.type == TOKEN_CHAR  ||
         parser->current.type == TOKEN_SHORT ||
@@ -2646,6 +2673,8 @@ static long eval_const_primary(Parser *parser, const char *context) {
                 "error: sizeof requires a parenthesized type name in a constant expression\n");
         parser->current = lexer_next_token(parser->lexer); /* consume '(' */
         if (parser->current.type == TOKEN_VOID      ||
+            parser->current.type == TOKEN_FLOAT     ||
+            parser->current.type == TOKEN_DOUBLE    ||
             parser->current.type == TOKEN_CONST     ||
             parser->current.type == TOKEN_VOLATILE  ||
             parser->current.type == TOKEN_BOOL      ||
@@ -2984,6 +3013,8 @@ static ASTNode *parse_statement(Parser *parser) {
     }
     if (local_is_const || local_is_volatile ||
         parser->current.type == TOKEN_VOID ||
+        parser->current.type == TOKEN_FLOAT ||
+        parser->current.type == TOKEN_DOUBLE ||
         parser->current.type == TOKEN_BOOL ||
         parser->current.type == TOKEN_CHAR ||
         parser->current.type == TOKEN_SHORT ||
@@ -3467,6 +3498,8 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
             else r.sc = SC_TYPEDEF;
             parser->current = lexer_next_token(parser->lexer);
         } else if (parser->current.type == TOKEN_VOID ||
+                   parser->current.type == TOKEN_FLOAT ||
+                   parser->current.type == TOKEN_DOUBLE ||
                    parser->current.type == TOKEN_BOOL ||
                    parser->current.type == TOKEN_CHAR ||
                    parser->current.type == TOKEN_SHORT ||
@@ -3776,6 +3809,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                             d.name);
                 }
                 init = parse_initializer(parser);
+            } else if (decl->decl_type == TYPE_FLOAT ||
+                       decl->decl_type == TYPE_DOUBLE) {
+                /* Stage 109: float/double global — accept a FP literal. */
+                init = parse_assignment_expression(parser);
+                if (init->type != AST_FLOAT_LITERAL) {
+                    PARSER_ERROR(parser,
+                            "error: float/double global '%s' requires a floating-point initializer\n",
+                            d.name);
+                }
             } else if (decl->decl_type != TYPE_POINTER &&
                        decl->decl_type != TYPE_STRUCT &&
                        decl->decl_type != TYPE_UNION) {

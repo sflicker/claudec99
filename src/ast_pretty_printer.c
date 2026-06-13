@@ -120,6 +120,9 @@ void ast_pretty_print(ASTNode *node, int depth) {
     case AST_INT_LITERAL:
         printf("IntLiteral: %s\n", node->value);
         break;
+    case AST_FLOAT_LITERAL:
+        printf("FloatLiteral: %s\n", node->value);
+        break;
     case AST_CHAR_LITERAL: {
         /* Stage 15-02: print spelling and evaluated integer value.
          * The decoded byte sits at node->value[0]; re-escape it so the

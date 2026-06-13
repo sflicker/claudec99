@@ -174,6 +174,43 @@ Token lexer_next_token(Lexer *lexer) {
             lexer_advance(lexer); lexer_advance(lexer); lexer_advance(lexer);
             return token;
         }
+        /* Stage 109: leading-dot float literals (.5, .5f) */
+        if (isdigit((unsigned char)lexer->source[lexer->pos + 1])) {
+            char fp_buf[64];
+            int fi = 0;
+            fp_buf[fi++] = '.';
+            lexer_advance(lexer); /* consume '.' */
+            while (isdigit((unsigned char)lexer->source[lexer->pos]) && fi < 62) {
+                fp_buf[fi++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+            }
+            /* Optional exponent */
+            if (lexer->source[lexer->pos] == 'e' || lexer->source[lexer->pos] == 'E') {
+                fp_buf[fi++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+                if (lexer->source[lexer->pos] == '+' || lexer->source[lexer->pos] == '-') {
+                    fp_buf[fi++] = lexer->source[lexer->pos];
+                    lexer_advance(lexer);
+                }
+                while (isdigit((unsigned char)lexer->source[lexer->pos]) && fi < 62) {
+                    fp_buf[fi++] = lexer->source[lexer->pos];
+                    lexer_advance(lexer);
+                }
+            }
+            int has_f = (lexer->source[lexer->pos] == 'f' ||
+                         lexer->source[lexer->pos] == 'F');
+            if (has_f) {
+                fp_buf[fi++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+            }
+            fp_buf[fi] = '\0';
+            token.value      = lexer_store_bytes(lexer, fp_buf, (size_t)fi);
+            token.value_len  = (size_t)fi;
+            token.lexeme     = token.value;
+            token.lexeme_len = token.value_len;
+            token.type = has_f ? TOKEN_FLOAT_LITERAL : TOKEN_DOUBLE_LITERAL;
+            return token;
+        }
         token.type = TOKEN_DOT; token.value = "."; token.value_len = 1;
         token.lexeme = token.value; token.lexeme_len = 1;
         lexer_advance(lexer); return token;
@@ -443,7 +480,11 @@ Token lexer_next_token(Lexer *lexer) {
 
     /* Integer literals: decimal or hexadecimal (0x/0X prefix).
      * Optional U/u and L/l suffixes set unsigned and size.
-     * Without a suffix, type is int when value fits signed 32-bit, else long. */
+     * Without a suffix, type is int when value fits signed 32-bit, else long.
+     *
+     * Stage 109: decimal digit sequences may extend into float/double literals
+     * when followed by '.' (decimal point), 'e'/'E' (exponent), or 'f'/'F'
+     * suffix after digits with a point/exponent. Hex literals remain integers. */
     if (isdigit(c)) {
         char num_buf[64];
         int i = 0;
@@ -466,9 +507,56 @@ Token lexer_next_token(Lexer *lexer) {
                 lexer_advance(lexer);
             }
         } else {
-            while (isdigit(lexer->source[lexer->pos]) && i < 62) {
+            while (isdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
                 num_buf[i++] = lexer->source[lexer->pos];
                 lexer_advance(lexer);
+            }
+            /* Stage 109: check for floating-point continuation (decimal only). */
+            if (!is_hex) {
+                int is_fp = 0;
+                /* '.' followed by something that is not another '.' */
+                if (lexer->source[lexer->pos] == '.' &&
+                    lexer->source[lexer->pos + 1] != '.') {
+                    is_fp = 1;
+                    num_buf[i++] = '.';
+                    lexer_advance(lexer);
+                    while (isdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
+                        num_buf[i++] = lexer->source[lexer->pos];
+                        lexer_advance(lexer);
+                    }
+                }
+                /* 'e' or 'E' exponent */
+                if (lexer->source[lexer->pos] == 'e' ||
+                    lexer->source[lexer->pos] == 'E') {
+                    is_fp = 1;
+                    num_buf[i++] = lexer->source[lexer->pos];
+                    lexer_advance(lexer);
+                    if (lexer->source[lexer->pos] == '+' ||
+                        lexer->source[lexer->pos] == '-') {
+                        num_buf[i++] = lexer->source[lexer->pos];
+                        lexer_advance(lexer);
+                    }
+                    while (isdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
+                        num_buf[i++] = lexer->source[lexer->pos];
+                        lexer_advance(lexer);
+                    }
+                }
+                if (is_fp) {
+                    /* Check for f/F suffix */
+                    int has_f_suffix = (lexer->source[lexer->pos] == 'f' ||
+                                        lexer->source[lexer->pos] == 'F');
+                    if (has_f_suffix) {
+                        num_buf[i++] = lexer->source[lexer->pos];
+                        lexer_advance(lexer);
+                    }
+                    num_buf[i] = '\0';
+                    token.value     = lexer_store_bytes(lexer, num_buf, (size_t)i);
+                    token.value_len = (size_t)i;
+                    token.lexeme    = token.value;
+                    token.lexeme_len = token.value_len;
+                    token.type = has_f_suffix ? TOKEN_FLOAT_LITERAL : TOKEN_DOUBLE_LITERAL;
+                    return token;
+                }
             }
         }
         num_buf[i] = '\0';
@@ -557,6 +645,8 @@ Token lexer_next_token(Lexer *lexer) {
         else if (strcmp(ident_buf.data, "struct")   == 0) { token.type = TOKEN_STRUCT;   token.value = "struct";   token.value_len = 6; }
         else if (strcmp(ident_buf.data, "union")    == 0) { token.type = TOKEN_UNION;    token.value = "union";    token.value_len = 5; }
         else if (strcmp(ident_buf.data, "void")     == 0) { token.type = TOKEN_VOID;     token.value = "void";     token.value_len = 4; }
+        else if (strcmp(ident_buf.data, "float")    == 0) { token.type = TOKEN_FLOAT;    token.value = "float";    token.value_len = 5; }
+        else if (strcmp(ident_buf.data, "double")   == 0) { token.type = TOKEN_DOUBLE;   token.value = "double";   token.value_len = 6; }
         else if (strcmp(ident_buf.data, "const")    == 0) { token.type = TOKEN_CONST;    token.value = "const";    token.value_len = 5; }
         else if (strcmp(ident_buf.data, "volatile") == 0) { token.type = TOKEN_VOLATILE; token.value = "volatile"; token.value_len = 8; }
         else if (strcmp(ident_buf.data, "restrict") == 0) { token.type = TOKEN_RESTRICT; token.value = "restrict"; token.value_len = 8; }
@@ -616,6 +706,8 @@ const char *token_display_name(TokenType type) {
         case TOKEN_STRUCT:           return "'struct'";
         case TOKEN_UNION:            return "'union'";
         case TOKEN_VOID:             return "'void'";
+        case TOKEN_FLOAT:            return "'float'";
+        case TOKEN_DOUBLE:           return "'double'";
         case TOKEN_BOOL:             return "'_Bool'";
         case TOKEN_CONST:            return "'const'";
         case TOKEN_VOLATILE:         return "'volatile'";
@@ -625,6 +717,8 @@ const char *token_display_name(TokenType type) {
         case TOKEN_UNSIGNED:         return "'unsigned'";
         case TOKEN_IDENTIFIER:       return "identifier";
         case TOKEN_INT_LITERAL:      return "integer literal";
+        case TOKEN_FLOAT_LITERAL:    return "float literal";
+        case TOKEN_DOUBLE_LITERAL:   return "double literal";
         case TOKEN_STRING_LITERAL:   return "string literal";
         case TOKEN_CHAR_LITERAL:     return "character literal";
         case TOKEN_LPAREN:           return "'('";
