@@ -1575,6 +1575,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 13 new valid tests (EXIT codes, `labs`/`llabs`, `atoi`, `qsort`, `strtoll`/`strtoull`, `memmove`, `strstr`, `strcat`, `strtok`, `sprintf`, ctype classifiers, restrict parsing); all 1607 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1607/1607 tests pass at each step
 
+## Stage 107 — `inline` keyword, `<assert.h>`, `va_copy` codegen
+
+- [x] `include/token.h` — add `TOKEN_INLINE` keyword token (after `TOKEN_RESTRICT`)
+- [x] `src/lexer.c` — recognize `"inline"` identifier → `TOKEN_INLINE`; add token display name `"'inline'"`
+- [x] `src/parser.c` — consume `TOKEN_INLINE` in `parse_declaration_specifiers` (parse-and-ignore, same pattern as `volatile` and `restrict`)
+- [x] `src/codegen.c` — split `va_end`/`va_copy` combined no-op; implement `va_copy` as three 8-byte `rax` moves copying the 24-byte SysV AMD64 `va_list` struct
+- [x] `src/preprocessor.c` — fix `__FILE__`/`__LINE__` expansion in `expand_macros_text`: add static globals `g_expand_source_path`/`g_expand_current_line` set by `preprocess_internal` before each `expand_macros_text` call; `expand_macros_text` now expands both predefined macros
+- [x] `test/include/assert.h` — new NDEBUG-aware `assert` macro (stringification, `__FILE__`, `__LINE__`, `fprintf`, `abort`)
+- [x] `src/version.c` — `VERSION_STAGE` bumped to `"01070000"`
+- [x] `Implicit return in void functions` — already implemented at `src/codegen.c` (fall-off-end emits `ret`); checklist item closed
+- [x] Tests: 8 new valid tests (inline func, static inline, extern inline, assert pass, assert NDEBUG, assert fail/134, va_copy basic, void implicit return); all 1615 tests pass
+- [x] Self-host C0→C1→C2 passes with no bootstrap issues; all 1615/1615 tests pass at each step
+
 ---
 
 ## TODO
@@ -1645,11 +1658,11 @@ Additional improvements for designated-init and multidimensional static arrays (
 ### Functions
 - [x] Variadic function definitions: va_list, va_start, va_end, and va_arg for GP-class types (int/long/long long/pointer) (Stage 75)
   - [ ] va_arg for floating-point and struct-by-value types
-  - [ ] va_copy codegen (still a no-op stub)
+  - [x] va_copy codegen — three 8-byte moves copying the 24-byte va_list struct (Stage 107)
 - [ ] Old-style (K&R) function definitions
-- [ ] Implicit return in void functions
+- [x] Implicit return in void functions — fall-off-end emits `ret` (Stage 107 checklist close)
 - [ ] Functions returning function pointers: int (*f())(int)
-- [ ] Inline functions (inline keyword)
+- [x] Inline functions (inline keyword) — parse-and-ignore, no codegen effect (Stage 107)
 
 ### Standard Library Headers (stub or pass-through)
 - [x] <stdio.h>: `puts`, `printf` (stub; full set including `fprintf`, `fopen`, `fclose`, `fread`, `fgets`, `snprintf` not yet in stub)
@@ -1669,7 +1682,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] <stdarg.h>: `va_list`, `va_start`, `va_end`, `va_arg`, `va_copy` macros (Stage 75-02)
 - [x] <stdio.h>: remaining stub `fwrite` (Stage 106)
 - [ ] <math.h>: basic floating-point math functions
-- [ ] <assert.h>: assert macro
+- [x] <assert.h>: assert macro — NDEBUG-aware stub in `test/include/assert.h` (Stage 107)
 
 ### Code Generation and Optimization
 - [ ] Multi-file compilation (compile multiple .c files to .o files)

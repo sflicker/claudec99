@@ -15,6 +15,9 @@
                             | <type_specifier>
                             | <sign_specifier>
                             | <type_qualifier>
+                            | <function_specifier>
+
+<function_specifier> ::= "inline"
 
 <sign_specifier> ::= "signed" | "unsigned"
 

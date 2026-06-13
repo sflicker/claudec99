@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 106 (C99 header completion and restrict keyword):
+Through stage 107 (inline keyword, assert.h, and va_copy codegen):
 
-> Stage 106 completes C99 header support by adding the `restrict` type qualifier (parsed and discarded, matching the `volatile` pattern) and comprehensively filling in four primary system headers: `<ctype.h>` (4 classifiers), `<string.h>` (11 functions), `<stdlib.h>` (3 typedefs, 4 macros, 21 functions), and `<stdio.h>` (1 typedef, 7 macros, 31 functions). Minor fixes to `<stdbool.h>`, `<stddef.h>`, and `<limits.h>`. Discovered and fixed a pre-existing code generation bug where `TYPE_LONG_LONG` and `TYPE_UNSIGNED_LONG_LONG` were missing from six return-value type checks, causing long-long function returns to be incorrectly sign-extended. All 1607 tests pass (922 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
+> Stage 107 closes three independent C99 gaps: the `inline` function specifier is now parsed (consumed and discarded via the same pattern as `restrict` and `volatile`), the `<assert.h>` stub header is available with a complete NDEBUG-aware `assert` macro, and `va_copy` codegen is corrected to emit three 8-byte moves copying the 24-byte SysV AMD64 `va_list` struct (previously a silent no-op). A preprocessor bug was discovered and fixed: `__FILE__` and `__LINE__` were not expanding inside function-like macro bodies during rescan; fixed via static globals tracking current file/line context. All 1615 tests pass (930 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 cycle passes cleanly.
 
 Through stage 104 (complete constant-expression evaluators):
 
@@ -440,7 +440,7 @@ Through stage 91 (address-of member lvalues):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP register class types (int, unsigned int, long, unsigned long, long long, unsigned long long, and pointer types) including register-save area and overflow stack paths; `va_copy` remains a stub. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) to a hidden 304-byte register save area; `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP register class types (int, unsigned int, long, unsigned long, long long, unsigned long long, and pointer types) including register-save area and overflow stack paths; `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves. Code generation emits `xor eax, eax` before variadic calls to satisfy the SysV AMD64 ABI float-argument-count protocol.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant. The address-of operator `&` accepts
@@ -604,7 +604,7 @@ Through stage 91 (address-of member lvalues):
 ## Not yet supported
 
 Anonymous struct/union members (C11 feature), bit-fields; floating-point; block-scope `extern`;
-floating-point variadic arguments; `va_copy` (va_start/va_end and va_arg extraction for GP types are now implemented);
+floating-point variadic arguments; floating-point `va_arg` arguments;
 compound literals at file scope; `#elifdef`/`#elifndef`; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
@@ -633,7 +633,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 106 all tests pass (922 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1607 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 107 all tests pass (930 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1615 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
