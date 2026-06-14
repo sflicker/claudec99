@@ -6504,6 +6504,19 @@ static const char *data_init_directive(TypeKind kind) {
 /* Stage 114: forward declaration — emit_global_struct is defined below. */
 static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list);
 
+/* Stage 116: emit a string literal's bytes inline as db directives,
+ * zero-padded to field_len bytes. Used for char[N] fields/elements. */
+static void emit_string_as_bytes(CodeGen *cg, ASTNode *str, int field_len) {
+    int byte_len = str->byte_length;
+    int j;
+    for (j = 0; j < byte_len && j < field_len; j++)
+        fprintf(cg->output, "    db %d\n", (unsigned char)str->value[j]);
+    while (j < field_len) {
+        fprintf(cg->output, "    db 0\n");
+        j++;
+    }
+}
+
 /*
  * Stage 114: emit .data bytes for a global array element recursively.
  * When elem_type is itself an array and the initializer is a brace-list,
@@ -6547,6 +6560,11 @@ static void emit_global_array_elements(CodeGen *cg, Type *arr_type,
         } else if (elem->type == AST_CHAR_LITERAL) {
             long v = (long)(unsigned char)elem->value[0];
             fprintf(cg->output, "    %s %ld\n", dir, v);
+        } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                   elem_type->base && elem_type->base->kind == TYPE_CHAR &&
+                   elem->type == AST_STRING_LITERAL) {
+            /* Stage 116: char[N] sub-array initialized from string literal. */
+            emit_string_as_bytes(cg, elem, elem_type->length);
         } else {
             compile_error("error: unsupported initializer element in "
                           "global array\n");
@@ -6644,6 +6662,11 @@ static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list) {
                 int idx = (int)cg->string_pool.len;
                 vec_push(&cg->string_pool, &elem);
                 fprintf(cg->output, "    dq Lstr%d\n", idx);
+            } else if (f->kind == TYPE_ARRAY && f->full_type &&
+                       f->full_type->base && f->full_type->base->kind == TYPE_CHAR &&
+                       elem->type == AST_STRING_LITERAL) {
+                /* Stage 116: char[N] struct field initialized from string literal. */
+                emit_string_as_bytes(cg, elem, f->full_type->length);
             } else if (elem->type == AST_INT_LITERAL) {
                 long v = strtol(elem->value, NULL, 10);
                 fprintf(cg->output, "    %s %ld\n",
@@ -6800,9 +6823,16 @@ static void codegen_emit_data(CodeGen *cg) {
                         /* Stage 114: nested brace init for global multidim arrays. */
                         emit_global_array_elements(cg, elem_type, elem);
                     } else if (elem->type == AST_STRING_LITERAL) {
-                        int idx = (int)cg->string_pool.len;
-                        vec_push(&cg->string_pool, &elem);
-                        fprintf(cg->output, "    dq Lstr%d\n", idx);
+                        if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                            elem_type->base && elem_type->base->kind == TYPE_CHAR) {
+                            /* Stage 116: char[N] element — emit bytes inline. */
+                            emit_string_as_bytes(cg, elem, elem_type->length);
+                        } else {
+                            /* Pointer or other type — emit address via string pool. */
+                            int idx = (int)cg->string_pool.len;
+                            vec_push(&cg->string_pool, &elem);
+                            fprintf(cg->output, "    dq Lstr%d\n", idx);
+                        }
                     } else if (elem->type == AST_INT_LITERAL) {
                         long v = strtol(elem->value, NULL, 10);
                         fprintf(cg->output, "    %s %ld\n", dir, v);
@@ -6875,10 +6905,9 @@ static void codegen_emit_bss(CodeGen *cg) {
                 fprintf(cg->output, "%s: resb %d\n",
                         gv->name, gv->full_type->size);
             } else {
-                fprintf(cg->output, "%s: %s %d\n",
-                        gv->name,
-                        bss_res_directive(gv->full_type->base->kind),
-                        gv->full_type->length);
+                /* Stage 116: single-dimension array — always use resb × total byte size. */
+                fprintf(cg->output, "%s: resb %d\n",
+                        gv->name, gv->full_type->size);
             }
         } else if ((gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION) &&
                    gv->full_type) {
@@ -7140,11 +7169,9 @@ static void codegen_emit_local_statics(CodeGen *cg) {
                     fprintf(cg->output, "%s: resb %d\n",
                             sv->label, sv->full_type->size);
                 } else {
-                    /* Single-dimension: element-directive × length. */
-                    fprintf(cg->output, "%s: %s %d\n",
-                            sv->label,
-                            bss_res_directive(sv->full_type->base->kind),
-                            sv->full_type->length);
+                    /* Stage 116: single-dimension array — always use resb × total byte size. */
+                    fprintf(cg->output, "%s: resb %d\n",
+                            sv->label, sv->full_type->size);
                 }
             } else if ((sv->kind == TYPE_STRUCT || sv->kind == TYPE_UNION) &&
                        sv->full_type) {

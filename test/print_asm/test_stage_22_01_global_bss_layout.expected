@@ -10,7 +10,7 @@ l: resq 1
 global p
 p: resq 1
 global arr
-arr: resd 10
+arr: resb 40
 section .text
 global main
 main:
