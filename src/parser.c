@@ -3816,15 +3816,20 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             } else {
                 /* Pointer or aggregate global — keep literal/expression path. */
                 init = parse_assignment_expression(parser);
-                if (init->type == AST_COMPOUND_LITERAL) {
+                /* Stage 124: compound literals at file scope are only supported
+                 * as pointer initializers (array decay or address-of). */
+                if (init->type == AST_COMPOUND_LITERAL &&
+                    decl->decl_type != TYPE_POINTER) {
                     PARSER_ERROR(parser,
                             "error: compound literals at file scope are not yet supported\n");
                 }
                 /* Accept integer/char/string literals, function designators (VAR_REF),
-                 * and address constants (&global, &global[N]). */
+                 * address constants (&global, &global[N]), and compound literals
+                 * for pointer globals (Stage 124). */
                 if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
                     init->type != AST_STRING_LITERAL && init->type != AST_VAR_REF &&
-                    init->type != AST_ADDR_OF) {
+                    init->type != AST_ADDR_OF &&
+                    init->type != AST_COMPOUND_LITERAL) {
                     PARSER_ERROR(parser,
                             "error: non-constant initializer for global '%s'\n", d.name);
                 }

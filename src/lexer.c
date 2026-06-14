@@ -489,6 +489,7 @@ Token lexer_next_token(Lexer *lexer) {
         char num_buf[64];
         int i = 0;
         int is_hex = 0;
+        int is_octal = 0;
 
         /* Detect hex prefix 0x / 0X */
         if (c == '0' && (lexer->source[lexer->pos + 1] == 'x' ||
@@ -504,6 +505,18 @@ Token lexer_next_token(Lexer *lexer) {
             }
             while (isxdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
                 num_buf[i++] = lexer->source[lexer->pos];
+                lexer_advance(lexer);
+            }
+        } else if (c == '0' && isdigit((unsigned char)lexer->source[lexer->pos + 1])) {
+            /* Octal literal: leading '0' followed by more digits. */
+            is_octal = 1;
+            while (isdigit((unsigned char)lexer->source[lexer->pos]) && i < 62) {
+                char dc = lexer->source[lexer->pos];
+                if (dc == '8' || dc == '9') {
+                    fprintf(stderr, "error: invalid digit '%c' in octal constant\n", dc);
+                    exit(1);
+                }
+                num_buf[i++] = dc;
                 lexer_advance(lexer);
             }
         } else {
@@ -578,7 +591,7 @@ Token lexer_next_token(Lexer *lexer) {
         int has_long_suffix = (l_count == 1);
         errno = 0;
         char *end = NULL;
-        unsigned long parsed = strtoul(num_buf, &end, is_hex ? 16 : 10);
+        unsigned long parsed = strtoul(num_buf, &end, is_hex ? 16 : (is_octal ? 8 : 10));
         int too_large = (errno == ERANGE) ||
                         (!has_unsigned_suffix && !has_ll_suffix && parsed > (unsigned long)LONG_MAX);
         if (too_large) {
@@ -589,6 +602,11 @@ Token lexer_next_token(Lexer *lexer) {
         }
         token.long_value = (long)parsed;
         token.is_unsigned = has_unsigned_suffix;
+        /* Octal literals: rewrite num_buf to decimal so NASM codegen
+         * can emit the value directly (NASM doesn't use C octal notation). */
+        if (is_octal) {
+            i = snprintf(num_buf, sizeof(num_buf), "%lu", parsed);
+        }
         if (has_ll_suffix) {
             token.literal_type = has_unsigned_suffix ? TYPE_UNSIGNED_LONG_LONG : TYPE_LONG_LONG;
         } else if (has_long_suffix) {

@@ -459,6 +459,7 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->current_sret_offset = 0;
     cg->struct_ret_scratch_base = 0;
     cg->struct_ret_scratch_cursor = 0;
+    cg->compound_literal_count = 0;
     vec_init(&cg->owned_strings, sizeof(char *));
 }
 
@@ -6410,6 +6411,48 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * SysV AMD64 argument register so the full declared width is
          * preserved and nothing above it is touched.
          */
+
+        /* Stage 124: inject __func__ predefined identifier (C99 §6.4.2.2).
+         * Acts as: static const char __func__[] = "function-name";
+         * Stored as a LocalStaticVar (emitted to .data) plus a LocalVar
+         * with is_static=1 so AST_VAR_REF emits lea rax, [rel label]. */
+        {
+            const char *func_name = node->value;
+            int func_name_len = (int)strlen(func_name);
+            char label_buf[256];
+            snprintf(label_buf, sizeof(label_buf), "Lstatic_%s___func__%d",
+                     func_name, cg->label_count++);
+            const char *func_label = codegen_intern(cg, label_buf);
+
+            ASTNode *str = ast_new(AST_STRING_LITERAL, func_name);
+            str->byte_length = func_name_len + 1;
+
+            LocalStaticVar func_sv;
+            func_sv.label        = func_label;
+            func_sv.kind         = TYPE_ARRAY;
+            func_sv.full_type    = type_array(type_char(), func_name_len + 1);
+            func_sv.size         = func_name_len + 1;
+            func_sv.is_initialized = 1;
+            func_sv.init_value   = 0;
+            func_sv.is_unsigned  = 0;
+            func_sv.init_node    = str;
+            func_sv.is_label_init = 0;
+            func_sv.init_label   = NULL;
+            vec_push(&cg->local_statics, &func_sv);
+
+            LocalVar func_lv;
+            func_lv.name         = "__func__";
+            func_lv.offset       = 0;
+            func_lv.size         = 8;
+            func_lv.kind         = TYPE_ARRAY;
+            func_lv.full_type    = func_sv.full_type;
+            func_lv.is_const     = 1;
+            func_lv.is_unsigned  = 0;
+            func_lv.is_static    = 1;
+            func_lv.static_label = func_label;
+            vec_push(&cg->locals, &func_lv);
+        }
+
         if (!prologue_struct) {
         int reg_params = num_params < 6 ? num_params : 6;
         for (int i = 0; i < reg_params; i++) {
@@ -6873,6 +6916,11 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             /* Address-constant initializer: &global or &global[N]. */
             gv->init_node = init;
             gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_POINTER && init->type == AST_COMPOUND_LITERAL) {
+            /* Stage 124: file-scope compound literal decaying to pointer,
+             * e.g. int *p = (int[]){1,2,3}. */
+            gv->init_node = init;
+            gv->is_initialized = 1;
         }
     }
     vec_push(&cg->globals, gv);
@@ -7257,6 +7305,44 @@ static void codegen_emit_data(CodeGen *cg) {
                 }
             }
         } else if (gv->kind == TYPE_POINTER && gv->init_node &&
+                   gv->init_node->type == AST_COMPOUND_LITERAL &&
+                   gv->init_node->full_type &&
+                   gv->init_node->full_type->kind == TYPE_ARRAY) {
+            /* Stage 124: array compound literal decaying to pointer.
+             * e.g. int *p = (int[]){1,2,3}; emits an anonymous array
+             * then a pointer to it. */
+            char anon_buf[64];
+            snprintf(anon_buf, sizeof(anon_buf), "Lcompound_%d",
+                     cg->compound_literal_count++);
+            const char *anon = codegen_intern(cg, anon_buf);
+            ASTNode *lit = gv->init_node;
+            Type *arr_type = lit->full_type;
+            int arr_len = arr_type->length;
+            Type *elem_type = arr_type->base;
+            const char *dir = data_init_directive(elem_type->kind);
+            ASTNode *list = (lit->child_count > 0) ? lit->children[0] : NULL;
+            int j;
+            fprintf(cg->output, "%s:\n", anon);
+            for (j = 0; j < arr_len; j++) {
+                if (list && j < list->child_count) {
+                    ASTNode *e = list->children[j];
+                    if (e->type == AST_INT_LITERAL) {
+                        long v = strtol(e->value, NULL, 0);
+                        fprintf(cg->output, "    %s %ld\n", dir, v);
+                    } else if (e->type == AST_CHAR_LITERAL) {
+                        long v = (long)(unsigned char)e->value[0];
+                        fprintf(cg->output, "    %s %ld\n", dir, v);
+                    } else {
+                        compile_error(
+                            "error: unsupported element in file-scope "
+                            "compound literal\n");
+                    }
+                } else {
+                    fprintf(cg->output, "    %s 0\n", dir);
+                }
+            }
+            fprintf(cg->output, "%s: dq %s\n", gv->name, anon);
+        } else if (gv->kind == TYPE_POINTER && gv->init_node &&
                    gv->init_node->type == AST_ADDR_OF) {
             /* Address-constant initializer: &global or &global[N]. */
             ASTNode *addr = gv->init_node;
@@ -7279,6 +7365,27 @@ static void codegen_emit_data(CodeGen *cg) {
                 else
                     fprintf(cg->output, "%s: dq %s + %ld\n",
                             gv->name, arr_name, idx * elem_sz);
+            } else if (child && child->type == AST_COMPOUND_LITERAL) {
+                /* Stage 124: &(type){...} — emit anonymous object, pointer to it. */
+                char anon_buf[64];
+                snprintf(anon_buf, sizeof(anon_buf), "Lcompound_%d",
+                         cg->compound_literal_count++);
+                const char *anon = codegen_intern(cg, anon_buf);
+                ASTNode *lit = child;
+                if (lit->full_type && lit->full_type->kind == TYPE_STRUCT) {
+                    fprintf(cg->output, "%s:\n", anon);
+                    ASTNode *list = (lit->child_count > 0) ? lit->children[0] : NULL;
+                    if (list) emit_global_struct(cg, lit->full_type, list);
+                } else {
+                    /* Scalar compound literal: &(int){42} or similar. */
+                    TypeKind sk = lit->decl_type;
+                    ASTNode *val = (lit->child_count > 0) ? lit->children[0] : NULL;
+                    long v = (val && val->type == AST_INT_LITERAL)
+                             ? strtol(val->value, NULL, 0) : 0;
+                    fprintf(cg->output, "%s: %s %ld\n",
+                            anon, data_init_directive(sk), v);
+                }
+                fprintf(cg->output, "%s: dq %s\n", gv->name, anon);
             } else {
                 compile_error(
                     "error: unsupported address-constant initializer for '%s'\n",

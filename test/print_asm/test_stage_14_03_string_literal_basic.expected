@@ -15,5 +15,7 @@ main:
 section .rodata
 Lstr0:
     db 104, 105, 0
+section .data
+Lstatic_main___func__0: db 109, 97, 105, 110, 0
 
 section .note.GNU-stack noalloc noexec nowrite progbits

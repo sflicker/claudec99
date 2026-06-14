@@ -205,6 +205,9 @@ typedef struct {
      * a single owned list so codegen_free() can release them all without
      * per-field ownership tracking. */
     Vec owned_strings;  /* char * */
+    /* Stage 124: counter for anonymous compound literal labels at file scope
+     * (Lcompound_0, Lcompound_1, ...). */
+    int compound_literal_count;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
