@@ -275,6 +275,27 @@ with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
 | C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
 
+## Issues found during stage 118 self-hosting test
+
+None. The compiler's own source uses pointer relational comparisons in several
+places (e.g. `p < end`-style loops in string-processing helpers and `vec_get`
+bounds checks). These expressions are now routed through the new `is_pointer_cmp`
+path and emit unsigned `setb`/`setbe`/`seta`/`setae` variants instead of the
+signed variants. The generated code is functionally equivalent because heap and
+stack addresses always have the high bit clear on x86-64 Linux, and the self-host
+run confirmed correctness: C1 and C2 produced identical test output to C0 on all
+1872 tests. No source changes needed during bootstrap.
+
+## Result (stage 118)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01180000.00926` | `gcc_Ubuntu_13_3_0` | 1872/1872 |
+| C1 | `build/ccompiler-c1` | `00.02.01180000.00927` | `ClaudeC99_v00_02_01180000_00926` | 1872/1872 |
+| C2 | `build/ccompiler-c2` | `00.02.01180000.00928` | `ClaudeC99_v00_02_01180000_00927` | 1872/1872 |
+
 ## Issues found during stage 116 self-hosting test
 
 None. Bug 1 (BSS struct array size) and Bug 2 (char[N] string-literal inline
