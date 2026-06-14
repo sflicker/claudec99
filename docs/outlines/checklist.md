@@ -1846,8 +1846,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type), relational, equality, logical, ternary) — Stages 77, 99–104
 - [ ] Floating-point constant expressions
 - [ ] Lvalue conversion rules for all expression contexts
-- [ ] Unary + on floating-point
-- [ ] Mixed integer/floating-point arithmetic (usual arithmetic conversions)
+- [x] Unary + on floating-point (Stage 110)
+- [x] Mixed integer/floating-point arithmetic (usual arithmetic conversions) (Stage 110)
 - [ ] Integer and floating-point promotions in function arguments (default argument promotions)
 
 ### Statements

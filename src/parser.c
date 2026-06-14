@@ -3797,12 +3797,24 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 init = parse_initializer(parser);
             } else if (decl->decl_type == TYPE_FLOAT ||
                        decl->decl_type == TYPE_DOUBLE) {
-                /* Stage 109: float/double global — accept a FP literal. */
+                /* Stage 109/125: float/double global — accept FP or integer literal. */
                 init = parse_assignment_expression(parser);
-                if (init->type != AST_FLOAT_LITERAL) {
-                    PARSER_ERROR(parser,
-                            "error: float/double global '%s' requires a floating-point initializer\n",
-                            d.name);
+                if (init->type != AST_FLOAT_LITERAL && init->type != AST_INT_LITERAL) {
+                    /* Stage 125: fold negated integer literal (e.g. double x = -7;). */
+                    if (init->type == AST_UNARY_OP && init->child_count == 1 &&
+                        init->children[0]->type == AST_INT_LITERAL &&
+                        init->value[0] == '-') {
+                        long v = -strtol(init->children[0]->value, NULL, 0);
+                        char neg_buf[32];
+                        snprintf(neg_buf, sizeof(neg_buf), "%ld", v);
+                        init = parser_node(parser, AST_INT_LITERAL,
+                                           lexer_store_bytes(parser->lexer, neg_buf,
+                                                             strlen(neg_buf)));
+                    } else {
+                        PARSER_ERROR(parser,
+                                "error: float/double global '%s' requires a constant initializer\n",
+                                d.name);
+                    }
                 }
             } else if (decl->decl_type != TYPE_POINTER &&
                        decl->decl_type != TYPE_STRUCT &&

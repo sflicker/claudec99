@@ -3771,10 +3771,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     /* FP stack arg (overflow beyond xmm7). */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
-                    if (s->nbytes == 4)
-                        fprintf(cg->output, "    movss [rsp + %d], xmm0\n", s->stack_off);
-                    else
+                    /* Stage 125: C99 §6.5.2.2p7 — float→double promotion in variadic calls.
+                     * Variadic float extras have s->nbytes==8 (compute_call_layout default).
+                     * xmm0 holds 32-bit float bits; cvtss2sd produces a proper double. */
+                    if (callee && callee->is_variadic && actual_types[i] == TYPE_FLOAT) {
+                        fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
                         fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
+                    } else if (s->nbytes == 4) {
+                        fprintf(cg->output, "    movss [rsp + %d], xmm0\n", s->stack_off);
+                    } else {
+                        fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
+                    }
                 } else {
                     /* GP stack arg. */
                     codegen_expression(cg, node->children[i]);
@@ -3835,6 +3842,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     /* FP register arg: evaluate into xmm0, spill to stack. */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
+                    /* Stage 125: C99 §6.5.2.2p7 — float→double promotion in variadic calls.
+                     * Variadic float extras have s->nbytes==8; promote before spilling. */
+                    if (callee && callee->is_variadic && actual_types[i] == TYPE_FLOAT)
+                        fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
                     fprintf(cg->output, "    sub rsp, 8\n");
                     cg->push_depth++;
                     if (s->nbytes == 4)
@@ -6876,9 +6887,29 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             gv->is_label_init = 0;
             gv->is_initialized = 1;
         } else if (init->type == AST_INT_LITERAL) {
-            long v = strtol(init->value, NULL, 10);
-            gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
-            gv->is_initialized = 1;
+            long v = strtol(init->value, NULL, 0);
+            if (gv->kind == TYPE_FLOAT || gv->kind == TYPE_DOUBLE) {
+                /* Stage 125: integer literal initializing a float/double global.
+                 * Emit via init_label so NASM encodes IEEE 754, not raw integer bits. */
+                char fp_buf[64];
+                if (gv->kind == TYPE_FLOAT) {
+                    float fv = (float)v;
+                    snprintf(fp_buf, sizeof(fp_buf), "%.9g", (double)fv);
+                } else {
+                    double dv = (double)v;
+                    snprintf(fp_buf, sizeof(fp_buf), "%.17g", dv);
+                }
+                if (!strchr(fp_buf, '.') && !strchr(fp_buf, 'e') && !strchr(fp_buf, 'E')) {
+                    int flen = (int)strlen(fp_buf);
+                    fp_buf[flen] = '.'; fp_buf[flen+1] = '0'; fp_buf[flen+2] = '\0';
+                }
+                gv->init_label = codegen_intern(cg, fp_buf);
+                gv->is_label_init = 0;
+                gv->is_initialized = 1;
+            } else {
+                gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
+                gv->is_initialized = 1;
+            }
         } else if (init->type == AST_CHAR_LITERAL) {
             long v = (long)(unsigned char)init->value[0];
             gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
