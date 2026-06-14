@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 118 (pointer relational operators):
+
+> Stage 118 adds support for the four pointer relational comparison operators (`<`, `<=`, `>`, `>=`) when applied to pointer operands. Previously these operators fell to a compile error; now they are handled by extending `is_pointer_cmp` in `codegen_expression()` to cover all six comparison operators, adding a validation guard that rejects `pointer < integer` (only `==`/`!=` against the null pointer constant are valid per C99), and selecting unsigned `setb`/`setbe`/`seta`/`setae` setcc variants (pointer addresses are unsigned 64-bit values). No tokenizer, parser, or AST changes. All 1872 tests pass (1188 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 117 (FP struct member rvalue reads):
 
 > Stage 117 fixes three codegen bugs affecting floating-point struct and union field reads. Bug 1: the rvalue load instruction for `double`/`float` struct fields was `mov eax, [rax]` (4-byte integer) instead of `movsd xmm0, [rax]` / `movss xmm0, [rax]`. Fixed in both `codegen_expression()` AST_MEMBER_ACCESS and AST_ARROW_ACCESS rvalue blocks by adding FP early-return branches before the `int sz = ...` calculation. Affects all three member-access forms: direct dot (`s.x`), arrow (`p->x`), and subscript-then-dot (`arr[i].x`). Bug 2: `expr_result_type()` reported TYPE_INT for FP struct fields, causing binary arithmetic on struct fields (`a.x - b.x`) to incorrectly use the integer code path. Fixed by adding `else if (type_is_fp(f->kind)) { t = f->kind; }` branches to the AST_MEMBER_ACCESS (VAR_REF and DEREF bases) and AST_ARROW_ACCESS cases. Bug 3: `expr_result_type()` and `sizeof_type_of_expr()` fell through to TYPE_INT when the base of a member access was an AST_ARRAY_INDEX node (`bodies[j].x`). Fixed by adding a new AST_ARRAY_INDEX base handler that walks to the array variable, resolves the element type, finds the named field, and returns the correct FP/pointer/int kind. No tokenizer, parser, or AST changes. All 1863 tests pass (1181 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm, 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -476,6 +480,8 @@ Through stage 91 (address-of member lvalues):
   `NULL` as a null pointer constant. The address-of operator `&` accepts
   any addressable lvalue: identifiers, array subscripts, struct/union
   member access via `.` (e.g. `&s.x`) and `->` (e.g. `&p->x`).
+  Pointer relational comparisons (`<`, `<=`, `>`, `>=`) are supported
+  in addition to equality comparisons (`==`, `!=`).
 - **void type**: `void` return type for functions; void functions may use bare `return;`
   or fall off the end without an explicit return. `void *` generic object pointer with
   implicit conversion to/from any non-function pointer type. `f(void)` parameter list
