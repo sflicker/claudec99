@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 122 (ABI callee-saved register preservation):
+
+> Stage 122 fixes the generated code to preserve the `rbx` register across function calls, as required by the SysV AMD64 ABI (§3.2.1: `rbx` is callee-saved). The compiler uses `rbx` as a scratch register for address arithmetic (array indexing, struct member access, lvalue increment/decrement) via balanced push/pop pairs within expression subtrees — but without a save/restore in the function prologue/epilogue, external callers (e.g., glibc `qsort`) that rely on `rbx` being preserved across a call to our generated functions suffered silent data corruption. The fix reserves a dedicated 8-byte slot at `[rbp - 8]` in every function's stack frame: `cg->stack_offset` now starts at 8, `stack_size` adds +8 for the slot, variadic functions add an extra +8 alignment pad before the 176-byte register save area (so XMM `movaps` slots remain 16-byte aligned), and each of the four epilogue paths restores rbx before `mov rsp, rbp`. All 21 `test/print_asm/` expected files were regenerated to reflect the new instructions and shifted local-variable offsets. No tokenizer, parser, or AST changes. Two new `qsort`-based callback tests added. All 1894 tests pass (1210 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 121 (switch on long/long long discriminants):
 
 > Stage 121 fixes the `switch` statement so that `long`, `long long`, and `unsigned long long` discriminants are compared with 64-bit instructions. Previously the dispatch loop emitted `mov eax, [rsp]` (32-bit load), truncating the top 32 bits of 64-bit values and causing incorrect case matching. The fix captures `disc_kind = node->children[0]->result_type` after `codegen_expression` and emits `mov rax, [rsp]` / `cmp rax, <val>` for 64-bit types; `int`, `char`, and `short` discriminants continue to use the 32-bit path (they are integer-promoted before evaluation). No tokenizer, parser, or AST changes. All 1892 tests pass (1208 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -487,7 +491,7 @@ Through stage 91 (address-of member lvalues):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
-  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) and all 8 XMM argument registers (xmm0–xmm7) to a 176-byte register-save area (48 GP + 128 XMM, 16-byte aligned); `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP types (int, unsigned int, long, unsigned long, long long, unsigned long long, pointer) and `double` (via fp_offset into the XMM save area); `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves; `va_arg(ap, float)` is rejected (float is promoted to double in variadic calls per C99 §6.5.2.2p6). Code generation emits `mov al, <xmm_count>` before variadic calls to set the SSE register count per the SysV AMD64 ABI.
+  Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) and all 8 XMM argument registers (xmm0–xmm7) to a 176-byte register-save area (48 GP + 128 XMM, 16-byte aligned); `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP types (int, unsigned int, long, unsigned long, long long, unsigned long long, pointer) and `double` (via fp_offset into the XMM save area); `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves; `va_arg(ap, float)` is rejected (float is promoted to double in variadic calls per C99 §6.5.2.2p6). Code generation emits `mov al, <xmm_count>` before variadic calls to set the SSE register count per the SysV AMD64 ABI. Callee-saved `rbx` is preserved in every function prologue and epilogue per the SysV AMD64 ABI.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
   `NULL` as a null pointer constant. The address-of operator `&` accepts
@@ -681,7 +685,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 121 all 1892 tests pass (1208 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 122 all 1894 tests pass (1210 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
