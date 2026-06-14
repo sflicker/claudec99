@@ -1858,7 +1858,10 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
             if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
                 lv->full_type) {
                 StructField *f = find_struct_field(lv->full_type, node->value);
-                if (f) return f->kind;
+                if (f) {
+                    if (type_is_fp(f->kind)) return f->kind;
+                    return f->kind;
+                }
             }
         }
         /* Stage 34: (*ptr).field */
@@ -1870,7 +1873,36 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
                 (plv->full_type->base->kind == TYPE_STRUCT ||
                  plv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(plv->full_type->base, node->value);
-                if (f) return f->kind;
+                if (f) {
+                    if (type_is_fp(f->kind)) return f->kind;
+                    return f->kind;
+                }
+            }
+        }
+        /* Stage 117: arr[i].field — base is a subscript expression. */
+        if (base->type == AST_ARRAY_INDEX && base->child_count > 0) {
+            ASTNode *arr_base = base->children[0];
+            Type *elem_type = NULL;
+            if (arr_base->type == AST_VAR_REF) {
+                LocalVar *lv = codegen_find_var(cg, arr_base->value);
+                if (lv && lv->full_type &&
+                    (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER))
+                    elem_type = lv->full_type->base;
+                if (!elem_type) {
+                    GlobalVar *gv = codegen_find_global(cg, arr_base->value);
+                    if (gv && gv->full_type &&
+                        (gv->kind == TYPE_ARRAY || gv->kind == TYPE_POINTER))
+                        elem_type = gv->full_type->base;
+                }
+            }
+            if (elem_type &&
+                (elem_type->kind == TYPE_STRUCT || elem_type->kind == TYPE_UNION)) {
+                StructField *f = find_struct_field(elem_type, node->value);
+                if (f) {
+                    if (type_is_fp(f->kind)) return f->kind;
+                    return (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                           : promote_kind(f->kind);
+                }
             }
         }
         return TYPE_INT;
@@ -1884,7 +1916,10 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
                 (lv->full_type->base->kind == TYPE_STRUCT ||
                  lv->full_type->base->kind == TYPE_UNION)) {
                 StructField *f = find_struct_field(lv->full_type->base, node->value);
-                if (f) return f->kind;
+                if (f) {
+                    if (type_is_fp(f->kind)) return f->kind;
+                    return f->kind;
+                }
             }
         }
         return TYPE_INT;
@@ -2068,6 +2103,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
                         t = TYPE_POINTER;
                         node->full_type = type_pointer(f->full_type->base);
+                    } else if (type_is_fp(f->kind)) {
+                        /* Stage 117: FP fields return their kind directly. */
+                        t = f->kind;
                     } else {
                         t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
                             : promote_kind(f->kind);
@@ -2090,6 +2128,42 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
                         t = TYPE_POINTER;
                         node->full_type = type_pointer(f->full_type->base);
+                    } else if (type_is_fp(f->kind)) {
+                        /* Stage 117: FP fields return their kind directly. */
+                        t = f->kind;
+                    } else {
+                        t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
+                            : promote_kind(f->kind);
+                        if (f->kind == TYPE_POINTER) node->full_type = f->full_type;
+                    }
+                }
+            }
+        }
+        /* Stage 117: arr[i].field — base is a subscript expression. */
+        if (base_node->type == AST_ARRAY_INDEX && base_node->child_count > 0) {
+            ASTNode *arr_base = base_node->children[0];
+            Type *elem_type = NULL;
+            if (arr_base->type == AST_VAR_REF) {
+                LocalVar *lv = codegen_find_var(cg, arr_base->value);
+                if (lv && lv->full_type &&
+                    (lv->kind == TYPE_ARRAY || lv->kind == TYPE_POINTER))
+                    elem_type = lv->full_type->base;
+                if (!elem_type) {
+                    GlobalVar *gv = codegen_find_global(cg, arr_base->value);
+                    if (gv && gv->full_type &&
+                        (gv->kind == TYPE_ARRAY || gv->kind == TYPE_POINTER))
+                        elem_type = gv->full_type->base;
+                }
+            }
+            if (elem_type &&
+                (elem_type->kind == TYPE_STRUCT || elem_type->kind == TYPE_UNION)) {
+                StructField *f = find_struct_field(elem_type, node->value);
+                if (f) {
+                    if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
+                        t = TYPE_POINTER;
+                        node->full_type = type_pointer(f->full_type->base);
+                    } else if (type_is_fp(f->kind)) {
+                        t = f->kind;
                     } else {
                         t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
                             : promote_kind(f->kind);
@@ -2114,6 +2188,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
                         t = TYPE_POINTER;
                         node->full_type = type_pointer(f->full_type->base);
+                    } else if (type_is_fp(f->kind)) {
+                        /* Stage 117: FP fields return their kind directly. */
+                        t = f->kind;
                     } else {
                         t = (f->kind == TYPE_POINTER) ? TYPE_POINTER
                             : promote_kind(f->kind);
@@ -3012,6 +3089,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             node->full_type = type_pointer(f->full_type->base);
             return;
         }
+        /* Stage 117: FP fields must load into xmm0, not integer registers. */
+        if (f->kind == TYPE_FLOAT) {
+            fprintf(cg->output, "    movss xmm0, [rax]\n");
+            node->result_type = TYPE_FLOAT;
+            return;
+        }
+        if (f->kind == TYPE_DOUBLE) {
+            fprintf(cg->output, "    movsd xmm0, [rax]\n");
+            node->result_type = TYPE_DOUBLE;
+            return;
+        }
         int sz = type_size(f->full_type ? f->full_type : NULL);
         if (sz == 0) {
             /* scalar field — derive size from kind */
@@ -3044,6 +3132,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(f->full_type->base);
+            return;
+        }
+        /* Stage 117: FP fields must load into xmm0, not integer registers. */
+        if (f->kind == TYPE_FLOAT) {
+            fprintf(cg->output, "    movss xmm0, [rax]\n");
+            node->result_type = TYPE_FLOAT;
+            return;
+        }
+        if (f->kind == TYPE_DOUBLE) {
+            fprintf(cg->output, "    movsd xmm0, [rax]\n");
+            node->result_type = TYPE_DOUBLE;
             return;
         }
         int sz = f->full_type ? type_size(f->full_type) : 0;
