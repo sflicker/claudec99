@@ -1119,15 +1119,11 @@ static Type *parse_type_name(Parser *parser) {
                 dims[dim_count++] = 0;
                 continue;
             }
-            if (parser->current.type != TOKEN_INT_LITERAL) {
-                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
-            }
-            int length = (int)parser->current.long_value;
-            parser->current = lexer_next_token(parser->lexer);
+            long length = eval_const_expr(parser, "array dimension");
             if (length <= 0) {
                 PARSER_ERROR(parser, "error: array size must be greater than zero\n");
             }
-            dims[dim_count++] = length;
+            dims[dim_count++] = (int)length;
             parser_expect(parser, TOKEN_RBRACKET);
         }
         t = build_array_type_from_dims(t, dims, dim_count);
@@ -1204,17 +1200,13 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         if (parser->current.type == TOKEN_LBRACKET) {
             d.is_array = 1;
             parser->current = lexer_next_token(parser->lexer);
-            if (parser->current.type == TOKEN_INT_LITERAL) {
-                Token size_tok = parser->current;
-                parser->current = lexer_next_token(parser->lexer);
-                int length = (int)size_tok.long_value;
+            if (parser->current.type != TOKEN_RBRACKET) {
+                long length = eval_const_expr(parser, "array dimension");
                 if (length <= 0) {
                     PARSER_ERROR(parser, "error: array size must be greater than zero\n");
                 }
-                d.array_length = length;
+                d.array_length = (int)length;
                 d.has_size = 1;
-            } else if (parser->current.type != TOKEN_RBRACKET) {
-                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
             }
             parser_expect(parser, TOKEN_RBRACKET);
         }
@@ -1285,18 +1277,14 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         d.is_array = 1;
         /* Stage 86: parse first dimension (may be empty for initializer inference). */
         parser->current = lexer_next_token(parser->lexer);
-        if (parser->current.type == TOKEN_INT_LITERAL) {
-            Token size_tok = parser->current;
-            parser->current = lexer_next_token(parser->lexer);
-            int length = (int)size_tok.long_value;
+        if (parser->current.type != TOKEN_RBRACKET) {
+            long length = eval_const_expr(parser, "array dimension");
             if (length <= 0) {
                 PARSER_ERROR(parser, "error: array size must be greater than zero\n");
             }
-            d.array_dims[d.array_dim_count++] = length;
-            d.array_length = length;
+            d.array_dims[d.array_dim_count++] = (int)length;
+            d.array_length = (int)length;
             d.has_size = 1;
-        } else if (parser->current.type != TOKEN_RBRACKET) {
-            PARSER_ERROR(parser, "error: array size must be an integer literal\n");
         }
         parser_expect(parser, TOKEN_RBRACKET);
         /* Stage 86: parse additional dimensions [N2][N3]... — all must be explicit. */
@@ -1306,16 +1294,11 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                         "error: too many array dimensions (max %d)\n", MAX_ARRAY_DIMS);
             }
             parser->current = lexer_next_token(parser->lexer);
-            if (parser->current.type != TOKEN_INT_LITERAL) {
-                PARSER_ERROR(parser, "error: array size must be an integer literal\n");
-            }
-            Token size_tok = parser->current;
-            parser->current = lexer_next_token(parser->lexer);
-            int length = (int)size_tok.long_value;
+            long length = eval_const_expr(parser, "array dimension");
             if (length <= 0) {
                 PARSER_ERROR(parser, "error: array size must be greater than zero\n");
             }
-            d.array_dims[d.array_dim_count++] = length;
+            d.array_dims[d.array_dim_count++] = (int)length;
             parser_expect(parser, TOKEN_RBRACKET);
         }
     } else if (parser->current.type == TOKEN_LPAREN) {
