@@ -1754,6 +1754,42 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] `VERSION_STAGE` bumped to "01190000"
 - [x] All 1,879 tests pass; self-host C0→C1→C2 all pass with no source changes
 
+## Stage 120 — FP Increment/Decrement on Struct Members
+
+- [x] Fix Bug 1 — `TYPE_DOUBLE` fell to `default: sz = 4` in `codegen_inc_dec_general` fallback size switch (should be 8 bytes)
+- [x] Fix Bug 2 — integer `add`/`sub` instructions were used regardless of FP type in `codegen_inc_dec_general`
+- [x] Add FP early-return path using SSE2 instructions (`movsd`/`movss`, `addsd`/`addss`, `subsd`/`subss`)
+- [x] Add `.rodata` constants `Lfp_one_f64` and `Lfp_one_f32`; new `CodeGen` flags `fp_one_f64_emitted` / `fp_one_f32_emitted`
+- [x] Postfix forms: save old value in `xmm1` before the operation; return old value
+- [x] Bonus: same FP path also corrects `++`/`--` on FP array elements and FP pointer dereferences
+- [x] 7 new valid tests in `test/valid/structs/`: prefix inc/dec on double fields, postfix returning old values, arrow member access, float field, loop accumulation
+- [x] `VERSION_STAGE` bumped to "01200000"
+- [x] All 1,886 tests pass; self-host C0→C1→C2 all pass with no source changes
+
+## Stage 121 — Switch on Long/Long Long Discriminants
+
+- [x] Capture discriminant type after `codegen_expression`: `disc_kind = node->children[0]->result_type`
+- [x] Emit `mov rax, [rsp]` / `cmp rax, <val>` for `TYPE_LONG` / `TYPE_LONG_LONG` / `TYPE_UNSIGNED_LONG_LONG` discriminants
+- [x] Keep 32-bit `mov eax, [rsp]` / `cmp eax, <val>` path for `int`/`char`/`short` (already integer-promoted to `int`)
+- [x] 6 new valid tests in `test/valid/control_flow/`: switch on `long` (small values), `long` with default, `long long`, `unsigned long long`, `char` regression, `int` regression
+- [x] `VERSION_STAGE` bumped to "01210000"
+- [x] All 1,892 tests pass; self-host C0→C1→C2 with no source changes
+
+## Stage 122 — ABI Callee-Saved rbx Preservation
+
+- [x] `cg->stack_offset` starts at 8 (was 0) to reserve `[rbp - 8]` as the rbx save slot
+- [x] `stack_size` adds +8 for the rbx slot; variadic functions add +8 alignment pad before the 176-byte XMM save area (so `movaps` XMM slots stay 16-byte aligned)
+- [x] Round `cg->stack_offset` to 16 before `+= 176` in variadic functions (variadic alignment fix)
+- [x] Prologue: emit `mov [rbp - 8], rbx` immediately after `sub rsp, N`
+- [x] Epilogue A (bare `return;` in void function): `mov rbx, [rbp - 8]` before `mov rsp, rbp`
+- [x] Epilogue B (struct-by-value return): `mov rbx, [rbp - 8]` before `mov rsp, rbp`
+- [x] Epilogue C (normal `return <expr>;`): `mov rbx, [rbp - 8]` before `mov rsp, rbp`
+- [x] Epilogue D (implicit fall-off-end for void functions): `mov rbx, [rbp - 8]` before `mov rsp, rbp`
+- [x] All 21 `test/print_asm/` expected files regenerated (every function's prologue/epilogue changed; local offsets shifted by +8)
+- [x] 2 new valid tests in `test/valid/pointers/`: `test_qsort_struct_cmp__0.c` (arrow access in qsort comparator), `test_array_index_in_callback__0.c` (array subscript in qsort comparator)
+- [x] `VERSION_STAGE` bumped to "01220000"
+- [x] All 1,894 tests pass; self-host C0→C1→C2 with no source changes
+
 ---
 
 ## TODO
@@ -1816,7 +1852,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ### Statements
 - [x] For-loop initializer declarations (Stage 76)
-- [ ] switch with long / char / short discriminant (after promotion)
+- [x] switch with long / long long / unsigned long long discriminant — 64-bit `cmp rax` path (Stage 121); `char`/`short` already promoted to `int` (32-bit path unchanged)
 - [ ] Case labels with unsigned and long constant values
 - [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions; Stage 104: extended to relational, equality, logical, and ternary)
 - [ ] goto across declarations (only legal in C under restrictions)
