@@ -4313,7 +4313,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             TypeKind lt = expr_result_type(cg, node->children[0]);
             TypeKind rt = expr_result_type(cg, node->children[1]);
             if (lt == TYPE_POINTER || rt == TYPE_POINTER) {
-                if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+                if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+                    strcmp(op, "<")  == 0 || strcmp(op, "<=") == 0 ||
+                    strcmp(op, ">")  == 0 || strcmp(op, ">=") == 0) {
                     is_pointer_cmp = 1;
                     common = TYPE_LONG;
                 } else if (strcmp(op, "+") == 0) {
@@ -4379,11 +4381,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             ASTNode *rhs = node->children[1];
             int lhs_ptr = (lhs->result_type == TYPE_POINTER);
             int rhs_ptr = (rhs->result_type == TYPE_POINTER);
+            int is_relcmp = (strcmp(op, "<")  == 0 || strcmp(op, "<=") == 0 ||
+                             strcmp(op, ">")  == 0 || strcmp(op, ">=") == 0);
             if (lhs_ptr && rhs_ptr) {
                 if (!pointer_types_equal(lhs->full_type, rhs->full_type)) {
                     compile_error(
                             "error: incompatible pointer types in comparison\n");
                 }
+            } else if (is_relcmp) {
+                compile_error(
+                        "error: relational comparison requires two pointer operands\n");
             } else if (lhs_ptr && !rhs_ptr) {
                 if (!is_null_pointer_constant(rhs)) {
                     compile_error(
@@ -4577,7 +4584,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             const char *setcc = NULL;
             if      (strcmp(op, "==") == 0) setcc = "sete";
             else if (strcmp(op, "!=") == 0) setcc = "setne";
-            else if (op_is_unsigned) {
+            else if (op_is_unsigned || is_pointer_cmp) {
                 if      (strcmp(op, "<")  == 0) setcc = "setb";
                 else if (strcmp(op, "<=") == 0) setcc = "setbe";
                 else if (strcmp(op, ">")  == 0) setcc = "seta";
