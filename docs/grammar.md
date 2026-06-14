@@ -1,5 +1,5 @@
 ```ebnf
-# Claude C99 Grammar (Current through Stage 109)
+# Claude C99 Grammar (Current through Stage 124)
 
 
 <translation_unit> ::= <external_declaration> { <external_declaration> }
@@ -266,9 +266,11 @@
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
-<integer_literal> ::= <decimal_literal> | <hex_literal>
+<integer_literal> ::= <decimal_literal> | <octal_literal> | <hex_literal>
 
 <decimal_literal> ::= [0-9]+ [ <integer_suffix> ]
+
+<octal_literal> ::= "0" [0-7]+ [ <integer_suffix> ]
 
 <hex_literal> ::= ( "0x" | "0X" ) [0-9a-fA-F]+ [ <integer_suffix> ]
 
