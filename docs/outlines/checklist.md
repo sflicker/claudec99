@@ -1733,6 +1733,27 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] `VERSION_STAGE` bumped to "01170000"
 - [x] All 1,863 tests pass; self-host C0→C1→C2 all pass with no source changes
 
+## Stage 118 — Pointer Relational Operators
+
+- [x] Extend `is_pointer_cmp` in `codegen_expression()` AST_BINARY_OP to cover all six comparison operators (was `==`/`!=` only)
+	- [x] Add validation guard `is_relcmp` that rejects `pointer < integer` before the null-pointer-constant check
+	- [x] Add `|| is_pointer_cmp` to setcc selection — emit unsigned `setb`/`setbe`/`seta`/`setae` instead of signed `setl`/`setle`/`setg`/`setge` for pointer relational comparisons
+- [x] 9 new tests: 7 valid pointer comparison patterns, 2 invalid rejections
+- [x] `VERSION_STAGE` bumped to "01180000"
+- [x] All 1,872 tests pass; self-host C0→C1→C2 all pass with no source changes
+
+## Stage 119 — FP Compound Assignment on Struct Members
+
+- [x] Fix Bug 1 — `expr_result_type()` AST_MEMBER_ACCESS VAR_REF base: add `codegen_find_global` fallback for global struct variables
+- [x] Fix Bug 2 — `expr_result_type()` AST_MEMBER_ACCESS DEREF base: add global pointer-to-struct fallback
+- [x] Fix Bug 3 — `expr_result_type()` AST_ARROW_ACCESS: add global pointer-to-struct fallback
+- [x] Fix Bug 4 — `sizeof_type_of_expr()` AST_MEMBER_ACCESS VAR_REF base: add global struct fallback
+- [x] Fix Bug 5 — `sizeof_type_of_expr()` AST_ARROW_ACCESS: add global pointer-to-struct fallback
+- [x] Fix Bug 6 (discovered during testing) — `emit_arrow_addr()` VAR_REF base: add global pointer-to-struct fallback so `gp->field` works as lvalue when `gp` is file-scope
+- [x] 7 new valid tests in `test/valid/structs/`: global struct `+=`, `-=`, `*=`; global pointer-to-struct arrow `+=`; local struct regression; mixed storage; accumulator loop
+- [x] `VERSION_STAGE` bumped to "01190000"
+- [x] All 1,879 tests pass; self-host C0→C1→C2 all pass with no source changes
+
 ---
 
 ## TODO
@@ -1776,7 +1797,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ### Expressions
 - [ ] sizeof with unsigned result type (size_t)
-- [ ] Pointer comparison operators (< <= > >= on pointers)
+- [x] Pointer comparison operators (`<` `<=` `>` `>=` on pointers) — unsigned `setb`/`setbe`/`seta`/`setae` variants; rejects pointer-vs-integer relational (Stage 118)
 - [ ] Pointer equality with non-null constants
 - [x] Integer constant expressions in case labels (Stage 77; Stage 99: extended to full bitwise/shift/multiplicative operators)
 - [x] Integer constant expressions in file-scope initializers (Stage 100)
