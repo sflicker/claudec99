@@ -4082,7 +4082,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 }
 
                 /* Phase 2: register-passed args — spill, then restore. */
-                int sp_is_xmm[26], sp_reg[26], sp_is_float[26], nsp = 0;
+                int sp_is_xmm[26];
+                int sp_reg[26];
+                int sp_is_float[26];
+                int nsp = 0;
                 for (int i = 0; i < nargs; i++) {
                     ArgSlot *s = &IL.items[i];
                     if (s->mem) continue;
