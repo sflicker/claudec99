@@ -275,6 +275,25 @@ with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
 | C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
 
+## Issues found during stage 121 self-hosting test
+
+None. The compiler's own source uses `switch` extensively on `int`-typed
+discriminants (TypeKind enums, token types, AST node types, etc.). None of
+the existing switches use a `long`, `long long`, or `unsigned long long`
+discriminant, so `disc_is_64` is 0 for every switch during C0→C1→C2 bootstrap
+and the new 64-bit branch is never taken. Bootstrap produced identical output
+at C0, C1, and C2. All 1892 tests passed with no source changes needed.
+
+## Result (stage 121)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01210000.00946` | `GNU_13_3_0` | 1892/1892 |
+| C1 | `build/ccompiler-c1` | `00.02.01210000.00947` | `ClaudeC99_v00_02_01210000_00946` | 1892/1892 |
+| C2 | `build/ccompiler-c2` | `00.02.01210000.00948` | `ClaudeC99_v00_02_01210000_00947` | 1892/1892 |
+
 ## Issues found during stage 120 self-hosting test
 
 None. The compiler's own source does not use `++`/`--` on float or double
