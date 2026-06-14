@@ -873,6 +873,30 @@ names C1's exact version. The compiler is self-hosting and the bootstrap is
 reproducible. Timeout guards (300 s per file) added in stage 93 were confirmed
 active — all modules compiled well within the limit.
 
+## Issues found during stage 125 self-hosting test
+
+None. The new FP-global-from-integer-initializer path in `codegen_add_global`
+is triggered only when a file-scope `float` or `double` variable is initialized
+from an integer literal — the compiler's own source has no such declarations
+(all global FP data in the compiler uses explicit floating-point literals or is
+uninitialized). The variadic float→double promotion (`cvtss2sd` in the
+`involves_special` call path) is triggered only for `float`-typed arguments in
+variadic calls — the compiler's own source does not pass any `float` variables
+to variadic functions. The parser change (accepting `AST_INT_LITERAL` for
+float/double globals) adds a new branch that the compiler's own source never
+exercises. Bootstrap produced identical output at C0, C1, and C2.
+All 1919 tests passed with no source changes needed during bootstrap.
+
+## Result (stage 125)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01250000.00970` | `gcc_Ubuntu_13_3_0` | 1919/1919 |
+| C1 | `build/ccompiler-c1` | `00.02.01250000.00971` | `ClaudeC99_v00_02_01250000_00970` | 1919/1919 |
+| C2 | `build/ccompiler-c2` | `00.02.01250000.00972` | `ClaudeC99_v00_02_01250000_00971` | 1919/1919 |
+
 ## Known limitation surfaced by self-compilation
 
 Self-hosting works against the current `src/` tree as written, which avoids
