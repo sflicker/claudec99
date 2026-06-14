@@ -164,6 +164,10 @@ typedef struct {
      * Set on first use; the emit helper checks these before writing. */
     int fp_sign_mask_f32_emitted;
     int fp_sign_mask_f64_emitted;
+    /* Stage 120: track whether the FP 1.0 constants for ++/-- on FP struct
+     * members have been emitted (Lfp_one_f64 / Lfp_one_f32). */
+    int fp_one_f64_emitted;
+    int fp_one_f32_emitted;
     /* Stage 66: when set, warnings are promoted to errors (exit 1). */
     int warnings_are_errors;
     /* Stage 71: block-scope static variable pool — accumulated across all

@@ -446,6 +446,8 @@ void codegen_init(CodeGen *cg, FILE *output) {
     vec_init(&cg->fp_literals, sizeof(FpLiteral));
     cg->fp_sign_mask_f32_emitted = 0;
     cg->fp_sign_mask_f64_emitted = 0;
+    cg->fp_one_f64_emitted = 0;
+    cg->fp_one_f32_emitted = 0;
     cg->warnings_are_errors = 0;
     vec_init(&cg->local_statics, sizeof(LocalStaticVar));
     cg->variadic_reg_save_offset = 0;
@@ -2357,6 +2359,40 @@ static void codegen_inc_dec_general(CodeGen *cg, ASTNode *node) {
 
     /* rbx = &operand (preserved across the load/adjust/store). */
     fprintf(cg->output, "    mov rbx, rax\n");
+
+    /* Stage 120: FP struct member ++/-- — use SSE2 instructions. */
+    if (kind == TYPE_DOUBLE || kind == TYPE_FLOAT) {
+        int use_double = (kind == TYPE_DOUBLE);
+        if (use_double) {
+            cg->fp_one_f64_emitted = 1;
+            if (is_post) {
+                fprintf(cg->output, "    movsd xmm1, [rbx]\n");
+            }
+            fprintf(cg->output, "    movsd xmm0, [rbx]\n");
+            if (is_inc)
+                fprintf(cg->output, "    addsd xmm0, [rel Lfp_one_f64]\n");
+            else
+                fprintf(cg->output, "    subsd xmm0, [rel Lfp_one_f64]\n");
+            fprintf(cg->output, "    movsd [rbx], xmm0\n");
+            if (is_post)
+                fprintf(cg->output, "    movsd xmm0, xmm1\n");
+        } else {
+            cg->fp_one_f32_emitted = 1;
+            if (is_post) {
+                fprintf(cg->output, "    movss xmm1, [rbx]\n");
+            }
+            fprintf(cg->output, "    movss xmm0, [rbx]\n");
+            if (is_inc)
+                fprintf(cg->output, "    addss xmm0, [rel Lfp_one_f32]\n");
+            else
+                fprintf(cg->output, "    subss xmm0, [rel Lfp_one_f32]\n");
+            fprintf(cg->output, "    movss [rbx], xmm0\n");
+            if (is_post)
+                fprintf(cg->output, "    movss xmm0, xmm1\n");
+        }
+        node->result_type = kind;
+        return;
+    }
 
     /* Load the current value into rax with the element width. Mirrors the
      * sign-extending rvalue load paths used for these lvalue kinds. */
@@ -6448,7 +6484,9 @@ static void codegen_emit_string_pool(CodeGen *cg) {
 static void codegen_emit_fp_literals(CodeGen *cg) {
     int need_section = (cg->fp_literals.len > 0 ||
                         cg->fp_sign_mask_f32_emitted ||
-                        cg->fp_sign_mask_f64_emitted);
+                        cg->fp_sign_mask_f64_emitted ||
+                        cg->fp_one_f64_emitted ||
+                        cg->fp_one_f32_emitted);
     if (!need_section) return;
     fprintf(cg->output, "section .rodata\n");
     for (int i = 0; i < (int)cg->fp_literals.len; i++) {
@@ -6475,6 +6513,15 @@ static void codegen_emit_fp_literals(CodeGen *cg) {
         fprintf(cg->output,
                 "align 16\n"
                 "Lfp_smask_f64: dq 0x8000000000000000, 0\n");
+    /* Stage 120: 1.0 constants for FP ++/-- on struct members.
+     * addsd/subsd and addss/subss take m64/m32 operands with no alignment
+     * requirement, so no align 16 padding is needed. */
+    if (cg->fp_one_f64_emitted)
+        fprintf(cg->output,
+                "Lfp_one_f64: dq 0x3FF0000000000000\n");
+    if (cg->fp_one_f32_emitted)
+        fprintf(cg->output,
+                "Lfp_one_f32: dd 0x3F800000\n");
 }
 
 /*

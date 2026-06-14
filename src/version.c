@@ -3,7 +3,7 @@
 
 #define VERSION_MAJOR  "00"
 #define VERSION_MINOR  "02"
-#define VERSION_STAGE  "01190000"
+#define VERSION_STAGE  "01200000"
 
 #ifndef VERSION_BUILD
 #define VERSION_BUILD  0
@@ -16,7 +16,7 @@
 #define CC99_STR(x) CC99_STR_HELPER(x)
 
 #ifndef VERSION_BUILTBY
-#define VERSION_BUILTBY gcc_Ubuntu_13_3_0
+#define VERSION_BUILTBY gcc_Ubuntu_13_3_0_6ubuntu2_24_04_1
 #endif
 
 static char version_buf[256];
