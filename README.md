@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 123 (ABI bug fixes: FP stack args, indirect FP calls, address-constant initializers, FP short-circuit):
+
+> Stage 123 fixes five correctness bugs reported in `docs/defects/CC99_FIX_REPORT-02.md`. **CC99-001/002**: A new `is_fp` field added to `ArgSlot` disambiguates floating-point stack-overflow arguments from GP stack arguments; previously both had `xmm_idx == -1` so Phase 1 of the direct-call emission loop used `mov [rsp + off], rax` for all memory-class arguments, writing integer register bits instead of IEEE 754 values for the 9th+ `double`. The same bug affected variadic callee-reads via `va_arg(ap, double)` on the 9th+ double argument. Now FP stack args use `movsd`/`movss`. **CC99-003**: The `AST_INDIRECT_CALL` handler only had GP-register paths; XMM registers were never loaded for function-pointer calls. A new FP-aware path mirrors the direct-call Phase 1/Phase 2 logic: `compute_call_layout` classifies arguments, Phase 1 writes memory-class args with `movss`/`movsd`, Phase 2 spills then restores register-class args into `xmm0`–`xmm7` or GP registers before `call r10`. **CC99-004**: Global pointer initializers with `&global` or `&global[N]` forms were rejected by both the parser (which only accepted integer/char/string literals and bare `AST_VAR_REF` function designators) and codegen (which had no `AST_ADDR_OF` emission path). Parser validation now accepts `AST_ADDR_OF`; `codegen_emit_data` emits `dq label` or `dq label + offset`; block-scope static pointers bypass `eval_const_init` for address-constant initializers, using two new `LocalStaticVar` fields (`is_label_init`, `init_label`). **CC99-005**: The `&&` and `||` handlers skipped calling `emit_fp_bool_to_rax` before the short-circuit branch when the left operand was FP, so the branch used raw XMM bits instead of a boolean value and both sides always evaluated. Now the branch is correctly conditioned on the FP truth value. No tokenizer or AST changes. Seven new tests added. All 1901 tests pass (1217 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 122 (ABI callee-saved register preservation):
 
 > Stage 122 fixes the generated code to preserve the `rbx` register across function calls, as required by the SysV AMD64 ABI (§3.2.1: `rbx` is callee-saved). The compiler uses `rbx` as a scratch register for address arithmetic (array indexing, struct member access, lvalue increment/decrement) via balanced push/pop pairs within expression subtrees — but without a save/restore in the function prologue/epilogue, external callers (e.g., glibc `qsort`) that rely on `rbx` being preserved across a call to our generated functions suffered silent data corruption. The fix reserves a dedicated 8-byte slot at `[rbp - 8]` in every function's stack frame: `cg->stack_offset` now starts at 8, `stack_size` adds +8 for the slot, variadic functions add an extra +8 alignment pad before the 176-byte register save area (so XMM `movaps` slots remain 16-byte aligned), and each of the four epilogue paths restores rbx before `mov rsp, rbp`. All 21 `test/print_asm/` expected files were regenerated to reflect the new instructions and shifted local-variable offsets. No tokenizer, parser, or AST changes. Two new `qsort`-based callback tests added. All 1894 tests pass (1210 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -576,7 +580,9 @@ Through stage 91 (address-of member lvalues):
 - **File-scope objects**: file-scope (global) object declarations (scalars,
   pointers, arrays, structs), both initialized (integer-typed scalars accept full compile-time
   constant expressions with arithmetic, bitwise, shift, and unary operators, plus `sizeof(type-name)`;
-  string-literal initialization for pointer globals, brace-list initialization for array globals,
+  string-literal initialization for pointer globals; address-constant initialization for pointer
+  globals and block-scope static pointers (`&global`, `&global[N]`, and function designators per C99 §6.6p9);
+  brace-list initialization for array globals;
   and aggregate-initializer support for struct globals and arrays of structs,
   emitted to `.data` and `.rodata`) and uninitialized (with zero-initialization, emitted to
   `.bss`). Duplicate declarations and type mismatches are rejected. Function
@@ -685,7 +691,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 122 all 1894 tests pass (1210 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 123 all 1901 tests pass (1217 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
