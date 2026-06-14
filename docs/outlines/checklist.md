@@ -1790,6 +1790,37 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] `VERSION_STAGE` bumped to "01220000"
 - [x] All 1,894 tests pass; self-host C0→C1→C2 with no source changes
 
+## Stage 123 — ABI Bug Fixes: FP Stack Args, Indirect FP Calls, Address Constants, FP Short-Circuit
+
+- [x] Parser: extended global pointer initializer validation to accept `AST_VAR_REF` (function designators) and `AST_ADDR_OF` (address-of expressions) alongside integer/string literals
+- [x] CC99-001/002 (FP stack args): `is_fp` field added to `ArgSlot`; Phase 1 direct-call path emits `movss`/`movsd` instead of `mov rax` for FP stack arguments beyond 8 XMM registers; also fixes `va_arg(ap, double)` for 9th+ double arguments
+- [x] CC99-003 (indirect FP calls): `AST_INDIRECT_CALL` handler detects any FP argument and switches to `CallLayout`-based spill/restore path (the `involves_special` path) instead of the GP-register-only push/pop path
+- [x] CC99-004 (address-constant initializers): `codegen_add_global` stores `AST_ADDR_OF` init nodes; `codegen_emit_data` emits `dq label` or `dq label + offset` for `&global` and `&global[N]` forms; `LocalStaticVar` gains `is_label_init`/`init_label` fields; block-scope static pointers detect address-constant initializers before `eval_const_init`; `codegen_emit_local_statics` emits matching `.data` entries
+- [x] CC99-005 (FP logical short-circuit): `&&`/`||` handlers call `emit_fp_bool_to_rax` when operand result type is FP before the conditional branch, preserving C short-circuit evaluation for float/double operands
+- [x] 7 new tests across `floating_point/`, `varargs/`, `functions/`, `pointers/`
+- [x] `VERSION_STAGE` bumped to "01230000"
+- [x] All 1,901 tests pass (1217 valid + 260 invalid + 88 integration + 50 print-AST + 100 print-tokens + 21 print-asm + 165 unit); self-host C0→C1→C2 verified with no source changes
+
+## Stage 124 — Octal Literals, __func__, File-Scope Compound Literals
+
+- [x] Octal integer literals (`0NNN`): lexer detects leading `0` + octal digit; digits 8 and 9 rejected with compile error; `strtoul` base 8 conversion; decimal rewrite via `snprintf` (NASM does not understand C99 octal notation)
+- [x] Grammar: `<octal_literal>` production `0[0-7]+` [ `<integer_suffix>` ] added to `docs/grammar.md`
+- [x] `__func__` predefined identifier (codegen): `compound_literal_count` field added to `CodeGen` struct; `codegen_function` injects a `LocalStaticVar` (`Lstatic_<funcname>___func__<N>`, `TYPE_ARRAY`, null-terminated function-name string) and a `LocalVar` named `__func__` pointing to it; reuses existing `LocalStaticVar`/`LocalVar` infrastructure
+- [x] File-scope compound literals (pointer types only): parser removes early rejection of `AST_COMPOUND_LITERAL` at file scope; adds guard rejecting non-pointer compound literals; `AST_COMPOUND_LITERAL` added to valid pointer-global initializer list
+- [x] Codegen for file-scope compound literals: Case A (array compound literal → anonymous `Lcompound_N` label + `dq` pointer) and Case B (address-of compound literal → anonymous label + `dq` pointer) in `codegen_emit_data`
+- [x] 5 new octal tests (3 valid in `arithmetic/`, 2 invalid in `expressions/`); 4 new `__func__` test files in `functions/`; 3 pointer-global compound literal tests in `pointers/`; 21 print-asm golden files regenerated
+- [x] Bootstrap fix: `src/codegen.c` multi-declarator with array brackets on multiple declarators split into four separate declarations for ClaudeC99 self-compatibility
+- [x] `VERSION_STAGE` bumped to "01240000"
+- [x] All 1,912 tests pass (1226 valid + 262 invalid + 88 integration + 50 print-AST + 100 print-tokens + 21 print-asm + 165 unit); self-host C0→C1→C2 verified (1912/1912 at each step)
+
+## Stage 125 — FP Globals from Integer Initializers, Variadic Float Promotion
+
+- [x] FP globals from integer initializers (parser): accepts `AST_INT_LITERAL` in `TYPE_FLOAT`/`TYPE_DOUBLE` global initializer branch; negated integer literals folded (`AST_UNARY_OP("-", AST_INT_LITERAL("7"))` → `AST_INT_LITERAL("-7")`) via `strtol`/`snprintf`/`lexer_store_bytes`
+- [x] FP globals from integer initializers (codegen): `codegen_add_global` integer-literal case checks `TYPE_FLOAT`/`TYPE_DOUBLE`; converts integer to decimal string with `%.17g` (double) / `%.9g` (float) and appends `.0` if no decimal point/exponent present; stored via `init_label` path so NASM emits IEEE 754 encoding (e.g., `dq 5.0` not `dq 5`)
+- [x] Variadic float→double promotion: `involves_special` call-emission path promotes `float` args to `double` in variadic calls per C99 §6.5.2.2p7; variadic float extras assigned `s->nbytes = 8` in `compute_call_layout`; both Phase 1 (stack-overflow) and Phase 2 (XMM-register) paths emit `cvtss2sd xmm0, xmm0` for float variadic args; condition: `callee && callee->is_variadic && actual_types[i] == TYPE_FLOAT`
+- [x] 4 new FP-global valid tests in `floating_point/` (`test_double_global_from_int__0.c`, `test_float_global_from_int__0.c`, `test_double_global_from_zero__0.c`, `test_double_global_negative_from_int__0.c`); 3 new variadic float promotion tests in `varargs/`/`functions/`
+- [x] All 1,919 tests pass (1233 valid + 262 invalid + 88 integration + 50 print-AST + 100 print-tokens + 21 print-asm + 165 unit); self-host C0→C1→C2 all pass 1919/1919 with no source changes
+
 ---
 
 ## TODO
@@ -1809,7 +1840,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Multidimensional arrays (Stage 86; up to 8 dimensions)
 - [ ] Bit-field members in structs
 - [ ] Flexible array members in structs
-- [x] Compound literals: `(Type){ ... }` (Stage 98; file-scope and designated union non-first-member not yet supported)
+- [x] Compound literals: `(Type){ ... }` (Stage 98; file-scope pointer-type compound literals now supported Stage 124; non-pointer file-scope compound literals and designated union non-first-member not yet supported)
 - [x] volatile qualifier (Stage 82-04; parsed and tracked, no codegen effect yet)
 - [x] restrict qualifier on pointers (Stage 106; parse-and-ignore, no codegen effect)
 - [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)
@@ -1849,6 +1880,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Unary + on floating-point (Stage 110)
 - [x] Mixed integer/floating-point arithmetic (usual arithmetic conversions) (Stage 110)
 - [ ] Integer and floating-point promotions in function arguments (default argument promotions)
+  - [x] Variadic float arguments promoted to double per C99 §6.5.2.2p7 (`cvtss2sd` in both stack-overflow and XMM-register paths) (Stage 125)
 
 ### Statements
 - [x] For-loop initializer declarations (Stage 76)
@@ -1903,6 +1935,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Dead code elimination
 - [ ] Unreachable code warning
 - [ ] Callee-saved register preservation (rbx, rbp, r12–r15)
+  - [x] rbx preserved in every function prologue (`mov [rbp - 8], rbx`) and all four epilogue paths per SysV AMD64 ABI (Stage 122)
 - [ ] Red-zone usage or avoidance
 
 ### Diagnostics and Error Recovery
