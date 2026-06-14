@@ -257,6 +257,24 @@ four sites take exactly the same code path before and after this change during
 bootstrap. All 1850 tests passed at C0, C1, and C2 with no source changes
 needed during the bootstrap.
 
+## Issues found during stage 117 self-hosting test
+
+None. The compiler's own source does not use struct members of type `double`
+or `float` in arithmetic expressions — all FP computation uses local `double`
+variables, not struct fields. The bootstrap produced identical output to the
+pre-fix compiler for all three passes. All 1863 tests passed at C0, C1, and C2
+with no source changes needed during bootstrap.
+
+## Result (stage 117)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01170000.00918` | `gcc_Ubuntu_13_3_0` | 1863/1863 |
+| C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
+| C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
+
 ## Issues found during stage 116 self-hosting test
 
 None. Bug 1 (BSS struct array size) and Bug 2 (char[N] string-literal inline
