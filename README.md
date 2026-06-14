@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 125 (FP global init, variadic float promotion):
+
+> Stage 125 fixes two floating-point correctness bugs and closes stale checklist items. **FP globals from integer initializers**: `double x = 5;` and `float f = 3;` at file scope now emit IEEE 754 floating-point encoding (`dq 5.0`, `dd 3.0`) instead of raw integer bits (`dq 5`, `dd 3`). The parser now accepts integer literals (and folded negated integer literals) as initializers for `float`/`double` globals; `codegen_add_global` converts the integer to a `%.17g`/`%.9g` decimal string and stores it via `init_label` so NASM encodes the correct bit pattern. **Variadic float→double promotion** (C99 §6.5.2.2p7): `float` arguments passed to variadic functions (including `printf`, user-defined `...` functions) are now promoted to `double` at the call site. The `involves_special` call-emission path emits `cvtss2sd xmm0, xmm0` for `float` variadic extras in both the XMM-register (Phase 2) and stack-overflow (Phase 1) sub-paths; detection uses the existing `s->nbytes == 8` assignment that `compute_call_layout` applies to all variadic extras. **Checklist cleanup**: two items already implemented in Stage 110 ("Mixed integer/floating-point arithmetic" and "Unary + on floating-point") are now marked done. Seven new tests added. All 1919 tests pass (1233 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 124 (octal integer literals, `__func__`, file-scope compound literals):
 
 > Stage 124 adds three independent C99 language features. **Octal integer literals** (`0NNN`): the lexer detects a leading `0` followed by digits, reads the octal digits (rejecting `8` or `9` with a compile error), converts the value via `strtoul` with base 8, then rewrites the token as a decimal string before emission — necessary because NASM does not understand C octal notation. **`__func__` predefined identifier** (C99 §6.4.2.2): at the start of every function, the codegen injects a `static const char __func__[] = "funcname"` anonymous object using the existing `LocalStaticVar`/`LocalVar` infrastructure; the variable is visible in the function body as a const char array. **File-scope compound literals for pointer globals**: `int *p = (int[]){1,2,3}` and `struct S *q = &(struct S){3,5}` are now accepted at file scope for pointer-typed globals; the parser admits `AST_COMPOUND_LITERAL` as a valid pointer initializer and codegen emits an anonymous `Lcompound_N` static object followed by a `dq` pointer. Non-pointer compound literals at file scope remain an error. One bootstrap fix was needed: `int sp_is_xmm[26], sp_reg[26], sp_is_float[26], nsp = 0;` (multi-declarator with array dimensions, introduced in stage 123) was split into four separate declarations. All 1912 tests pass (1226 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified.
@@ -695,7 +699,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 123 all 1901 tests pass (1217 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 125 all 1919 tests pass (1233 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
