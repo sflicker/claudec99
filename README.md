@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 119 (FP compound assignment on struct members):
+
+> Stage 119 fixes compound assignment on floating-point struct fields when both operands are members of file-scope (global) struct variables. Five bugs in `expr_result_type()` and `sizeof_type_of_expr()` were missing global-variable fallbacks, causing the FP arithmetic path to be silently skipped and integer instructions to run on IEEE 754 bit patterns. A sixth related bug in `emit_arrow_addr()` prevented `gp->field` from working as an lvalue for global pointer-to-struct variables. No tokenizer, parser, or AST changes. All 1879 tests pass (1195 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 118 (pointer relational operators):
 
 > Stage 118 adds support for the four pointer relational comparison operators (`<`, `<=`, `>`, `>=`) when applied to pointer operands. Previously these operators fell to a compile error; now they are handled by extending `is_pointer_cmp` in `codegen_expression()` to cover all six comparison operators, adding a validation guard that rejects `pointer < integer` (only `==`/`!=` against the null pointer constant are valid per C99), and selecting unsigned `setb`/`setbe`/`seta`/`setae` setcc variants (pointer addresses are unsigned 64-bit values). No tokenizer, parser, or AST changes. All 1872 tests pass (1188 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -668,7 +672,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 117 all tests pass (1181 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit; 1863 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 119 all 1879 tests pass (1195 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
