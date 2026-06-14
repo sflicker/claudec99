@@ -1450,29 +1450,52 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
         return f;
     }
     LocalVar *lv = codegen_find_var(cg, base->value);
-    if (!lv) {
+    if (lv) {
+        if (lv->kind != TYPE_POINTER || !lv->full_type ||
+            !lv->full_type->base || (lv->full_type->base->kind != TYPE_STRUCT &&
+                                      lv->full_type->base->kind != TYPE_UNION)) {
+            compile_error(
+                    "error: '->' applied to non-pointer-to-struct/union '%s'\n",
+                    base->value);
+        }
+        Type *st = lv->full_type->base;
+        StructField *f = find_struct_field(st, field_name);
+        if (!f) {
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(st->kind), field_name);
+        }
+        if (lv->is_static)
+            fprintf(cg->output, "    mov rax, [rel %s]\n", lv->static_label);
+        else
+            fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
+    }
+    /* Stage 119: fall back to global pointer-to-struct. */
+    GlobalVar *gv = codegen_find_global(cg, base->value);
+    if (!gv) {
         compile_error( "error: undeclared variable '%s'\n", base->value);
     }
-    if (lv->kind != TYPE_POINTER || !lv->full_type ||
-        !lv->full_type->base || (lv->full_type->base->kind != TYPE_STRUCT &&
-                                  lv->full_type->base->kind != TYPE_UNION)) {
+    if (gv->kind != TYPE_POINTER || !gv->full_type ||
+        !gv->full_type->base || (gv->full_type->base->kind != TYPE_STRUCT &&
+                                  gv->full_type->base->kind != TYPE_UNION)) {
         compile_error(
                 "error: '->' applied to non-pointer-to-struct/union '%s'\n",
                 base->value);
     }
-    Type *st = lv->full_type->base;
-    StructField *f = find_struct_field(st, field_name);
-    if (!f) {
-        compile_error( "error: '%s' has no member '%s'\n",
-                type_kind_name(st->kind), field_name);
+    {
+        Type *st = gv->full_type->base;
+        StructField *f = find_struct_field(st, field_name);
+        if (!f) {
+            compile_error( "error: '%s' has no member '%s'\n",
+                    type_kind_name(st->kind), field_name);
+        }
+        fprintf(cg->output, "    mov rax, [rel %s]\n", gv->name);
+        if (f->offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", f->offset);
+        return f;
     }
-    if (lv->is_static)
-        fprintf(cg->output, "    mov rax, [rel %s]\n", lv->static_label);
-    else
-        fprintf(cg->output, "    mov rax, [rbp - %d]\n", lv->offset);
-    if (f->offset != 0)
-        fprintf(cg->output, "    add rax, %d\n", f->offset);
-    return f;
 }
 
 /*
@@ -1854,10 +1877,18 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
     case AST_MEMBER_ACCESS: {
         ASTNode *base = node->children[0];
         if (base->type == AST_VAR_REF) {
+            Type *struct_type = NULL;
             LocalVar *lv = codegen_find_var(cg, base->value);
-            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
-                lv->full_type) {
-                StructField *f = find_struct_field(lv->full_type, node->value);
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION))
+                struct_type = lv->full_type;
+            /* Stage 119: fall back to global struct when local not found. */
+            if (!struct_type) {
+                GlobalVar *gv = codegen_find_global(cg, base->value);
+                if (gv && (gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION))
+                    struct_type = gv->full_type;
+            }
+            if (struct_type) {
+                StructField *f = find_struct_field(struct_type, node->value);
                 if (f) {
                     if (type_is_fp(f->kind)) return f->kind;
                     return f->kind;
@@ -1910,12 +1941,24 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
     case AST_ARROW_ACCESS: {
         ASTNode *base = node->children[0];
         if (base->type == AST_VAR_REF) {
+            Type *ptr_base = NULL;
             LocalVar *lv = codegen_find_var(cg, base->value);
             if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
                 lv->full_type->base &&
                 (lv->full_type->base->kind == TYPE_STRUCT ||
-                 lv->full_type->base->kind == TYPE_UNION)) {
-                StructField *f = find_struct_field(lv->full_type->base, node->value);
+                 lv->full_type->base->kind == TYPE_UNION))
+                ptr_base = lv->full_type->base;
+            /* Stage 119: fall back to global pointer-to-struct. */
+            if (!ptr_base) {
+                GlobalVar *gv = codegen_find_global(cg, base->value);
+                if (gv && gv->kind == TYPE_POINTER && gv->full_type &&
+                    gv->full_type->base &&
+                    (gv->full_type->base->kind == TYPE_STRUCT ||
+                     gv->full_type->base->kind == TYPE_UNION))
+                    ptr_base = gv->full_type->base;
+            }
+            if (ptr_base) {
+                StructField *f = find_struct_field(ptr_base, node->value);
                 if (f) {
                     if (type_is_fp(f->kind)) return f->kind;
                     return f->kind;
@@ -2094,10 +2137,18 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_MEMBER_ACCESS: {
         ASTNode *base_node = node->children[0];
         if (base_node->type == AST_VAR_REF) {
+            Type *struct_type = NULL;
             LocalVar *lv = codegen_find_var(cg, base_node->value);
-            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION) &&
-                lv->full_type) {
-                StructField *f = find_struct_field(lv->full_type, node->value);
+            if (lv && (lv->kind == TYPE_STRUCT || lv->kind == TYPE_UNION))
+                struct_type = lv->full_type;
+            /* Stage 119: fall back to global struct when local not found. */
+            if (!struct_type) {
+                GlobalVar *gv = codegen_find_global(cg, base_node->value);
+                if (gv && (gv->kind == TYPE_STRUCT || gv->kind == TYPE_UNION))
+                    struct_type = gv->full_type;
+            }
+            if (struct_type) {
+                StructField *f = find_struct_field(struct_type, node->value);
                 if (f) {
                     /* Stage 85: array member decays to pointer-to-element. */
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
@@ -2117,12 +2168,24 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         /* Stage 34: (*ptr).field */
         if (base_node->type == AST_DEREF && base_node->child_count > 0 &&
             base_node->children[0]->type == AST_VAR_REF) {
+            Type *ptr_base = NULL;
             LocalVar *plv = codegen_find_var(cg, base_node->children[0]->value);
             if (plv && plv->kind == TYPE_POINTER && plv->full_type &&
                 plv->full_type->base &&
                 (plv->full_type->base->kind == TYPE_STRUCT ||
-                 plv->full_type->base->kind == TYPE_UNION)) {
-                StructField *f = find_struct_field(plv->full_type->base, node->value);
+                 plv->full_type->base->kind == TYPE_UNION))
+                ptr_base = plv->full_type->base;
+            /* Stage 119: fall back to global pointer-to-struct. */
+            if (!ptr_base) {
+                GlobalVar *gv = codegen_find_global(cg, base_node->children[0]->value);
+                if (gv && gv->kind == TYPE_POINTER && gv->full_type &&
+                    gv->full_type->base &&
+                    (gv->full_type->base->kind == TYPE_STRUCT ||
+                     gv->full_type->base->kind == TYPE_UNION))
+                    ptr_base = gv->full_type->base;
+            }
+            if (ptr_base) {
+                StructField *f = find_struct_field(ptr_base, node->value);
                 if (f) {
                     /* Stage 85: array member decays to pointer-to-element. */
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
@@ -2177,12 +2240,24 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
     case AST_ARROW_ACCESS: {
         ASTNode *base_node = node->children[0];
         if (base_node->type == AST_VAR_REF) {
+            Type *ptr_base = NULL;
             LocalVar *lv = codegen_find_var(cg, base_node->value);
             if (lv && lv->kind == TYPE_POINTER && lv->full_type &&
                 lv->full_type->base &&
                 (lv->full_type->base->kind == TYPE_STRUCT ||
-                 lv->full_type->base->kind == TYPE_UNION)) {
-                StructField *f = find_struct_field(lv->full_type->base, node->value);
+                 lv->full_type->base->kind == TYPE_UNION))
+                ptr_base = lv->full_type->base;
+            /* Stage 119: fall back to global pointer-to-struct. */
+            if (!ptr_base) {
+                GlobalVar *gv = codegen_find_global(cg, base_node->value);
+                if (gv && gv->kind == TYPE_POINTER && gv->full_type &&
+                    gv->full_type->base &&
+                    (gv->full_type->base->kind == TYPE_STRUCT ||
+                     gv->full_type->base->kind == TYPE_UNION))
+                    ptr_base = gv->full_type->base;
+            }
+            if (ptr_base) {
+                StructField *f = find_struct_field(ptr_base, node->value);
                 if (f) {
                     /* Stage 85: array member decays to pointer-to-element. */
                     if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
