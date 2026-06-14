@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 121 (switch on long/long long discriminants):
+
+> Stage 121 fixes the `switch` statement so that `long`, `long long`, and `unsigned long long` discriminants are compared with 64-bit instructions. Previously the dispatch loop emitted `mov eax, [rsp]` (32-bit load), truncating the top 32 bits of 64-bit values and causing incorrect case matching. The fix captures `disc_kind = node->children[0]->result_type` after `codegen_expression` and emits `mov rax, [rsp]` / `cmp rax, <val>` for 64-bit types; `int`, `char`, and `short` discriminants continue to use the 32-bit path (they are integer-promoted before evaluation). No tokenizer, parser, or AST changes. All 1892 tests pass (1208 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 120 (FP increment/decrement on struct members):
 
 > Stage 120 adds support for prefix and postfix `++`/`--` operators on floating-point (`float`/`double`) struct fields accessed via dot (`.`) and arrow (`->`) operators. Two codegen bugs in `codegen_inc_dec_general` were fixed: Bug 1: `TYPE_DOUBLE` fell to `default: sz = 4` in the fallback size switch (should be 8 bytes). Bug 2: integer `add`/`sub` instructions were used regardless of FP type. The fix adds an FP early-return path using SSE2 instructions (`movsd`/`movss`, `addsd`/`subsd`, `subsd`/`subss`) and two new `.rodata` constants (`Lfp_one_f64` and `Lfp_one_f32`) for the 1.0 increment/decrement operand. Postfix forms save the old value in `xmm1` before the operation. Bonus fixes: the same path also corrects `++`/`--` on FP array elements and FP pointer dereferences. No tokenizer, parser, or AST changes. All 1886 tests pass (1202 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -441,7 +445,8 @@ Through stage 91 (address-of member lvalues):
     includes search `-I` directories only, in order.
 - **Statements**: `if/else`, `while`, `do/while`, `for` (with C99 declaration initializers), `switch/case/default`
   (case labels support integer literals, character literals, enum constants, and compile-time constant expressions
-  with unary/binary `+`/`-` operators), `break`, `continue`, `goto`/labels, block scopes with shadowing.
+  with unary/binary `+`/`-` operators; discriminant may be any integer type including `long`, `long long`, and
+  `unsigned long long`), `break`, `continue`, `goto`/labels, block scopes with shadowing.
 - **Declarations**: comma-separated init-declarator lists (e.g., `int a, b;`,
   `int a=3, b=4;`, `int *p, q;`). Parenthesized declarators provide grouping syntax
   for pointers (e.g., `int (*p)` and `int (**pp)`) with semantics equivalent to
@@ -676,7 +681,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 120 all 1886 tests pass (1202 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 121 all 1892 tests pass (1208 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
