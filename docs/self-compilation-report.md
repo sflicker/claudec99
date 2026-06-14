@@ -232,6 +232,31 @@ After all three fixes, 1650/1650 tests passed at C0, C1, and C2 with no further 
 | C1 | `build/ccompiler-c1` | `00.02.01120000.00890` | `ClaudeC99_v00_02_01120000_00889` | 1650/1650 |
 | C2 | `build/ccompiler-c2` | `00.02.01120000.00891` | `ClaudeC99_v00_02_01120000_00890` | 1650/1650 |
 
+## Issues found during stage 114 self-hosting test
+
+None. The new codegen paths (FP array subscript read/write, nested brace local
+array initialization, mixed FP/int ternary normalization, string literal
+subscript, global nested-brace array initialization) all involve data types and
+patterns that the compiler's own source code does not exercise: no `float` or
+`double` arrays, no nested-brace multidimensional initializers, no FP branches
+in ternary expressions, and no string-literal subscripting. The `emit_local_array_init`
+and `emit_global_array_elements` helper additions are pure additions with no
+interaction with existing bootstrap paths. The parser change (allowing
+`AST_STRING_LITERAL` as subscript base) is only triggered by string literals
+used as subscript targets, which the compiler source never does.
+All 1841 tests passed at C0, C1, and C2 with no source changes needed during
+the bootstrap.
+
+## Result (stage 114)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01140000.00899` | `GNU_13_3_0` | 1841/1841 |
+| C1 | `build/ccompiler-c1` | `00.02.01140000.00900` | `ClaudeC99_v00_02_01140000_00899` | 1841/1841 |
+| C2 | `build/ccompiler-c2` | `00.02.01140000.00901` | `ClaudeC99_v00_02_01140000_00900` | 1841/1841 |
+
 ## Issues found during stage 111 self-hosting test
 
 None. The FP comparison and boolean-context additions (`emit_fp_bool_to_rax`,

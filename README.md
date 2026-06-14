@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 114 (legacy test fixes: FP array subscript, nested brace init, mixed FP/int ternary, string literal subscript):
+
+> Stage 114 resolves 24 failing tests from an imported legacy project and migrates 219 legacy tests to the appropriate category subdirectories. Compiler fixes: (1) FP array subscript write now emits `movss [rbx], xmm0` / `movsd [rbx], xmm0` instead of `mov [rbx], rax`; (2) FP array subscript read now emits `movss xmm0, [rax]` / `movsd xmm0, [rax]` instead of the truncating `mov rax, [rax]` + `movsxd rax, eax`; (3) `expr_result_type` for `AST_ARRAY_INDEX` now returns `TYPE_FLOAT`/`TYPE_DOUBLE` for FP element types instead of `TYPE_LONG`, so FP binary ops use the correct SSE2 path; (4) nested-brace local array initializers (`int A[2][3] = {{1,2,3},{4,5,6}}`) now populate all elements via a new `emit_local_array_init` recursive helper; (5) nested-brace global array initializers work via a new `emit_global_array_elements` helper; (6) mixed FP/int ternary branches (`a ? float_val : int_val`) now widen both branches to a common FP type before the merge point; (7) string literal subscript (`"abc"[2]`) is now supported in both the parser and codegen. Four test files were also corrected for Linux exit-code range (8-bit truncation). All 1841 tests pass (1161 valid, 256 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 112 (FP calling convention, va_arg for double, and math.h):
 
 > Stage 112 completes floating-point support through the SysV AMD64 ABI calling convention. FP arguments (float/double) go in xmm0–xmm7 (counted independently from GP args in rdi–r9); non-variadic function prologues move xmmN values to local stack slots; variadic prologues save xmm0–xmm7 to the register-save area (176 bytes: 48 GP + 128 XMM); `al` is set to the XMM register count before variadic calls; `va_arg(ap, double)` fetches from reg_save_area or overflow_arg_area; `va_arg(ap, float)` is rejected per C99 (float is always promoted to double). A `test/include/math.h` stub declares common math functions so programs can call `sqrt`, `pow`, etc. from libm. All 1650 tests pass (965 valid, 255 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified.
@@ -646,7 +650,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 112 all tests pass (970 valid, 256 invalid, 86 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1650 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 114 all tests pass (1161 valid, 256 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1841 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
