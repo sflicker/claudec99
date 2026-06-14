@@ -3,19 +3,21 @@ global main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 16
+    sub rsp, 32
+    mov [rbp - 8], rbx
     mov rax, 20
-    mov [rbp - 8], rax
-    mov rax, 6
     mov [rbp - 16], rax
-    mov rax, [rbp - 8]
-    push rax
+    mov rax, 6
+    mov [rbp - 24], rax
     mov rax, [rbp - 16]
+    push rax
+    mov rax, [rbp - 24]
     pop rcx
     xchg rax, rcx
     cqo
     idiv rcx
     mov rax, rdx
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

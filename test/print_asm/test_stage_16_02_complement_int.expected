@@ -3,8 +3,11 @@ global main
 main:
     push rbp
     mov rbp, rsp
+    sub rsp, 16
+    mov [rbp - 8], rbx
     mov eax, 2
     not eax
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

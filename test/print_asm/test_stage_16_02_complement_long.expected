@@ -4,10 +4,12 @@ f:
     push rbp
     mov rbp, rsp
     sub rsp, 16
+    mov [rbp - 8], rbx
     mov rax, 2
-    mov [rbp - 8], rax
-    mov rax, [rbp - 8]
+    mov [rbp - 16], rax
+    mov rax, [rbp - 16]
     not rax
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret
@@ -15,7 +17,10 @@ global main
 main:
     push rbp
     mov rbp, rsp
+    sub rsp, 16
+    mov [rbp - 8], rbx
     call f
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

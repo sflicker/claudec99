@@ -4,14 +4,16 @@ f:
     push rbp
     mov rbp, rsp
     sub rsp, 16
+    mov [rbp - 8], rbx
     mov rax, 8
-    mov [rbp - 8], rax
-    mov rax, [rbp - 8]
+    mov [rbp - 16], rax
+    mov rax, [rbp - 16]
     push rax
     mov eax, 2
     pop rcx
     xchg rax, rcx
     shl rax, cl
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

@@ -3,11 +3,13 @@ global main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 16
-    mov byte [rbp - 3], 104
-    mov byte [rbp - 2], 105
-    mov byte [rbp - 1], 0
+    sub rsp, 32
+    mov [rbp - 8], rbx
+    mov byte [rbp - 11], 104
+    mov byte [rbp - 10], 105
+    mov byte [rbp - 9], 0
     mov eax, 0
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

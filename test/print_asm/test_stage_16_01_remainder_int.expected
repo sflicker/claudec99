@@ -3,6 +3,8 @@ global main
 main:
     push rbp
     mov rbp, rsp
+    sub rsp, 16
+    mov [rbp - 8], rbx
     mov eax, 20
     push rax
     mov eax, 6
@@ -11,6 +13,7 @@ main:
     cdq
     idiv ecx
     mov eax, edx
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret

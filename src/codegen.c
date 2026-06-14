@@ -5743,6 +5743,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         cg->current_func);
             }
             if (cg->has_frame) {
+                fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                 fprintf(cg->output, "    mov rsp, rbp\n");
                 fprintf(cg->output, "    pop rbp\n");
             }
@@ -5783,6 +5784,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         fprintf(cg->output, "    mov rdx, [r11 + 8]\n");
                 }
                 if (cg->has_frame) {
+                    fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                     fprintf(cg->output, "    mov rsp, rbp\n");
                     fprintf(cg->output, "    pop rbp\n");
                 }
@@ -5842,6 +5844,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
              * __libc_start_main's return-from-main value, which it then
              * passes to exit. */
             if (cg->has_frame) {
+                fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                 fprintf(cg->output, "    mov rsp, rbp\n");
                 fprintf(cg->output, "    pop rbp\n");
             }
@@ -6119,7 +6122,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
 
         /* Reset per-function symbol table */
         cg->locals.len = 0;
-        cg->stack_offset = 0;
+        cg->stack_offset = 8;   /* Stage 122: [rbp - 8] reserved for rbx */
         cg->scope_start = 0;
         cg->push_depth = 0;
         vec_clear(&cg->user_labels);
@@ -6167,9 +6170,14 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Stage 98: include stack space for compound literals in expression trees. */
         int compound_lit_bytes = compute_compound_literal_bytes(body);
         int stack_size = param_bytes + compute_decl_bytes(body) + compound_lit_bytes +
-                         scratch_bytes + sret_bytes;
-        if (node->is_variadic)
+                         scratch_bytes + sret_bytes + 8; /* Stage 122: rbx save slot */
+        if (node->is_variadic) {
+            /* Stage 122: the rbx slot shifts the save-area base by 8; add 8 bytes
+             * of alignment padding so the variadic register save area starts at an
+             * offset ≡ 0 mod 16 (required for movaps on the XMM slots). */
+            stack_size += 8;
             stack_size += 176;
+        }
         if (stack_size % 16 != 0)
             stack_size = (stack_size + 15) & ~15;
 
@@ -6192,6 +6200,9 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         if (stack_size > 0) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
         }
+        /* Stage 122: save rbx in the dedicated slot ([rbp - 8]) reserved
+         * in Task 1/2.  stack_size >= 8 always after Task 1. */
+        fprintf(cg->output, "    mov [rbp - 8], rbx\n");
 
         /* Stage 75-04/112: variadic function register save area.
          * Reserve 176 bytes: 48 for 6 GP regs + 128 for 8 XMM regs (no padding needed).
@@ -6208,6 +6219,11 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
                 else
                     named_gp++;
             }
+            /* Stage 122: round to 16 before adding the save area so
+             * XMM slots (16-byte movaps) remain 16-byte aligned.
+             * With stack_offset = 8 (rbx slot), this adds 8 bytes of pad. */
+            if (cg->stack_offset % 16 != 0)
+                cg->stack_offset = (cg->stack_offset + 15) & ~15;
             cg->stack_offset += 176;
             cg->variadic_reg_save_offset    = cg->stack_offset;
             cg->variadic_named_gp_params    = named_gp < 6 ? named_gp : 6;
@@ -6455,6 +6471,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * returns cleanly.  For non-void functions the behaviour of
          * falling off the end is undefined; we don't emit a spurious ret. */
         if (node->decl_type == TYPE_VOID) {
+            fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
             fprintf(cg->output, "    mov rsp, rbp\n");
             fprintf(cg->output, "    pop rbp\n");
             fprintf(cg->output, "    ret\n");

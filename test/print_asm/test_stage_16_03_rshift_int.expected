@@ -3,12 +3,15 @@ global main
 main:
     push rbp
     mov rbp, rsp
+    sub rsp, 16
+    mov [rbp - 8], rbx
     mov eax, 16
     push rax
     mov eax, 2
     pop rcx
     xchg rax, rcx
     sar eax, cl
+    mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
     ret
