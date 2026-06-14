@@ -1623,11 +1623,14 @@ static ASTNode *parse_postfix_suffixes(Parser *parser, ASTNode *expr) {
              * Stage 78: also allow member/arrow access as subscript base so
              * that expr.field[i] and expr->field[i] chains work.
              * Stage 98: also allow compound literals as subscript base. */
+            /* Stage 114: also allow string literals as subscript base
+             * so "abc"[2] works (the literal decays to const char *). */
             if (expr->type != AST_VAR_REF && expr->type != AST_DEREF &&
                 expr->type != AST_ARRAY_INDEX &&
                 expr->type != AST_MEMBER_ACCESS &&
                 expr->type != AST_ARROW_ACCESS &&
-                expr->type != AST_COMPOUND_LITERAL) {
+                expr->type != AST_COMPOUND_LITERAL &&
+                expr->type != AST_STRING_LITERAL) {
                 PARSER_ERROR(parser, "error: subscript base must be an identifier\n");
             }
             parser->current = lexer_next_token(parser->lexer);

@@ -841,6 +841,10 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node);
  * codegen_expression but called from the compound literal case within it. */
 static void emit_local_struct_init(CodeGen *cg, Type *st, int base_offset,
                                    ASTNode *list);
+/* Stage 114: forward declaration — emit_local_array_init recursively
+ * initializes a sub-array slot from a brace list. */
+static void emit_local_array_init(CodeGen *cg, Type *arr_type, int base_offset,
+                                  ASTNode *list);
 
 /*
  * Stage 86: return the element Type* of a subscript expression without
@@ -1131,6 +1135,25 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
         return element;
     }
 
+    /* Stage 114: string literal subscript — "abc"[2] decays to const char *. */
+    if (base_node->type == AST_STRING_LITERAL) {
+        codegen_expression(cg, base_node);
+        Type *element = type_char();
+        fprintf(cg->output, "    push rax\n");
+        cg->push_depth++;
+        codegen_expression(cg, index_node);
+        TypeKind index_kind = index_node->result_type;
+        if (index_kind != TYPE_INT && index_kind != TYPE_LONG) {
+            compile_error( "error: array subscript index must be an integer\n");
+        }
+        if (index_kind != TYPE_LONG) {
+            fprintf(cg->output, "    movsxd rax, eax\n");
+        }
+        fprintf(cg->output, "    pop rbx\n");
+        cg->push_depth--;
+        fprintf(cg->output, "    add rax, rbx\n");
+        return element;
+    }
     if (base_node->type != AST_VAR_REF) {
         compile_error( "error: subscript base must be an identifier\n");
     }
@@ -1993,7 +2016,9 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
         /* The result is the element type, promoted to int for
          * char/short. Pointer elements stay TYPE_POINTER. The base
          * may be an array local (Stage 13-02) or a pointer local
-         * (Stage 13-03). */
+         * (Stage 13-03).
+         * Stage 114: FP element types (float/double) return their kind
+         * directly so the FP binary operator path is correctly entered. */
         ASTNode *base_node = node->children[0];
         if (base_node->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, base_node->value);
@@ -2002,8 +2027,23 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                 Type *element = lv->full_type->base;
                 if (element->kind == TYPE_POINTER) {
                     t = TYPE_POINTER;
+                } else if (type_is_fp(element->kind)) {
+                    t = element->kind;
                 } else {
                     t = promote_kind(type_kind_from_size(element->size));
+                }
+            } else if (!lv) {
+                GlobalVar *gv = codegen_find_global(cg, base_node->value);
+                if (gv && gv->full_type &&
+                    (gv->kind == TYPE_ARRAY || gv->kind == TYPE_POINTER)) {
+                    Type *element = gv->full_type->base;
+                    if (element->kind == TYPE_POINTER) {
+                        t = TYPE_POINTER;
+                    } else if (type_is_fp(element->kind)) {
+                        t = element->kind;
+                    } else {
+                        t = promote_kind(type_kind_from_size(element->size));
+                    }
                 }
             }
         }
@@ -2377,6 +2417,21 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 emit_struct_copy(cg, sz);
                 node->result_type = element->kind;
                 node->full_type = element;
+                return;
+            }
+            /* Stage 114: float/double array-element assignment. */
+            if (type_is_fp(element->kind)) {
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                codegen_expression(cg, node->children[1]);
+                emit_fp_widen_if_needed(cg, node->children[1]->result_type, element->kind);
+                fprintf(cg->output, "    pop rbx\n");
+                cg->push_depth--;
+                if (element->kind == TYPE_FLOAT)
+                    fprintf(cg->output, "    movss [rbx], xmm0\n");
+                else
+                    fprintf(cg->output, "    movsd [rbx], xmm0\n");
+                node->result_type = element->kind;
                 return;
             }
             fprintf(cg->output, "    push rax\n");
@@ -2916,11 +2971,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
          * for char/short and loaded directly for int/long/pointer.
          * Stage 86: when the element type is itself TYPE_ARRAY (e.g. A[i]
          * where A is int[M][N]), decay to a pointer to the first element
-         * of the inner array — rax already holds the sub-array's address. */
+         * of the inner array — rax already holds the sub-array's address.
+         * Stage 114: float/double elements load into xmm0 via movss/movsd. */
         Type *element = emit_array_index_addr(cg, node);
         if (element->kind == TYPE_ARRAY) {
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(element->base);
+            return;
+        }
+        if (type_is_fp(element->kind)) {
+            if (element->kind == TYPE_FLOAT)
+                fprintf(cg->output, "    movss xmm0, [rax]\n");
+            else
+                fprintf(cg->output, "    movsd xmm0, [rax]\n");
+            node->result_type = element->kind;
             return;
         }
         int sz = type_size(element);
@@ -4442,6 +4506,17 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         ASTNode *true_node  = node->children[1];
         ASTNode *false_node = node->children[2];
 
+        /* Stage 114: pre-compute the common result type so we can normalize
+         * each branch at code-gen time (before the jmp / end label).
+         * When one branch is FP and the other is int, emit_fp_widen_if_needed
+         * converts the int result in rax to xmm0 so both paths leave the
+         * value in the same register. */
+        TypeKind pre_tk = sizeof_type_of_expr(cg, true_node);
+        TypeKind pre_fk = sizeof_type_of_expr(cg, false_node);
+        TypeKind common_fp = TYPE_INT; /* TYPE_INT means "not FP" here */
+        if (type_is_fp(pre_tk) || type_is_fp(pre_fk))
+            common_fp = fp_common_arith_kind(pre_tk, pre_fk);
+
         codegen_expression(cg, cond_node);
         if (type_is_fp(cond_node->result_type)) {
             emit_fp_bool_to_rax(cg, cond_node->result_type);
@@ -4455,10 +4530,14 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         fprintf(cg->output, "    je .L_cond_false_%d\n", label_id);
 
         codegen_expression(cg, true_node);
+        if (type_is_fp(common_fp))
+            emit_fp_widen_if_needed(cg, true_node->result_type, common_fp);
         fprintf(cg->output, "    jmp .L_cond_end_%d\n", label_id);
 
         fprintf(cg->output, ".L_cond_false_%d:\n", label_id);
         codegen_expression(cg, false_node);
+        if (type_is_fp(common_fp))
+            emit_fp_widen_if_needed(cg, false_node->result_type, common_fp);
         fprintf(cg->output, ".L_cond_end_%d:\n", label_id);
 
         TypeKind tk = true_node->result_type;
@@ -4479,6 +4558,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         } else if (fk == TYPE_POINTER && true_is_null) {
             node->result_type = TYPE_POINTER;
             node->full_type   = false_node->full_type;
+        } else if (type_is_fp(common_fp)) {
+            node->result_type = common_fp;
         } else {
             node->result_type = common_arith_kind(promote_kind(tk), promote_kind(fk));
         }
@@ -4772,13 +4853,22 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 if (elem_type && elem_type->kind == TYPE_STRUCT &&
                     elem->type == AST_INITIALIZER_LIST) {
                     emit_local_struct_init(cg, elem_type, elem_offset, elem);
+                } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                           elem->type == AST_INITIALIZER_LIST) {
+                    /* Stage 114: nested brace init for sub-array element. */
+                    emit_local_array_init(cg, elem_type, elem_offset, elem);
                 } else {
                     codegen_expression(cg, elem);
-                    int src_is_long = (elem->result_type == TYPE_LONG ||
-                                       elem->result_type == TYPE_LONG_LONG ||
-                                       elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
-                                       elem->result_type == TYPE_POINTER);
-                    emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                    if (elem_type && type_is_fp(elem_type->kind)) {
+                        emit_fp_widen_if_needed(cg, elem->result_type, elem_type->kind);
+                        emit_store_fp_local(cg, elem_offset, elem_type->kind);
+                    } else {
+                        int src_is_long = (elem->result_type == TYPE_LONG ||
+                                           elem->result_type == TYPE_LONG_LONG ||
+                                           elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
+                                           elem->result_type == TYPE_POINTER);
+                        emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                    }
                 }
                 cur++;
             }
@@ -4819,6 +4909,65 @@ static void emit_cond_cmp_zero(CodeGen *cg, ASTNode *cond) {
         fprintf(cg->output, "    cmp rax, 0\n");
     } else {
         fprintf(cg->output, "    cmp eax, 0\n");
+    }
+}
+
+/*
+ * Stage 114: recursively initialize a local array slot from a brace-list.
+ * base_offset is the rbp-relative address of the first element of the array.
+ * list is an AST_INITIALIZER_LIST.
+ * The caller must have already zero-filled the memory region.
+ */
+static void emit_local_array_init(CodeGen *cg, Type *arr_type, int base_offset,
+                                  ASTNode *list) {
+    int length   = arr_type->length;
+    int elem_size = arr_type->base->size;
+    Type *elem_type = arr_type->base;
+    int cur = 0;
+    int ninit = list ? list->child_count : 0;
+    int j;
+    for (j = 0; j < ninit; j++) {
+        ASTNode *child = list->children[j];
+        ASTNode *elem;
+        if (child->type == AST_DESIGNATED_INIT && child->value == NULL) {
+            int idx = child->byte_length;
+            if (idx < 0 || idx >= length) {
+                compile_error("error: array designator index %d out of bounds\n", idx);
+                return;
+            }
+            cur = idx;
+            elem = child->children[0];
+        } else if (child->type == AST_DESIGNATED_INIT) {
+            compile_error("error: member designator in array initializer\n");
+            return;
+        } else {
+            elem = child;
+        }
+        if (cur >= length) {
+            compile_error("error: too many initializers in array\n");
+            return;
+        }
+        int elem_offset = base_offset - cur * elem_size;
+        if (elem_type && elem_type->kind == TYPE_STRUCT &&
+            elem->type == AST_INITIALIZER_LIST) {
+            emit_local_struct_init(cg, elem_type, elem_offset, elem);
+        } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                   elem->type == AST_INITIALIZER_LIST) {
+            emit_local_array_init(cg, elem_type, elem_offset, elem);
+        } else {
+            codegen_expression(cg, elem);
+            if (elem_type && type_is_fp(elem_type->kind)) {
+                emit_fp_widen_if_needed(cg, elem->result_type, elem_type->kind);
+                emit_store_fp_local(cg, elem_offset, elem_type->kind);
+            } else {
+                int src_is_long = (elem->result_type == TYPE_LONG ||
+                                   elem->result_type == TYPE_LONG_LONG ||
+                                   elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
+                                   elem->result_type == TYPE_POINTER);
+                emit_store_local(cg, elem_offset, elem_size, src_is_long);
+            }
+        }
+        cur++;
     }
 }
 
@@ -5250,13 +5399,22 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         elem->type == AST_INITIALIZER_LIST) {
                         /* Struct element: slot already zeroed; recurse. */
                         emit_local_struct_init(cg, elem_type, elem_offset, elem);
+                    } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                               elem->type == AST_INITIALIZER_LIST) {
+                        /* Stage 114: nested brace init for sub-array element. */
+                        emit_local_array_init(cg, elem_type, elem_offset, elem);
                     } else {
                         codegen_expression(cg, elem);
-                        int src_is_long = (elem->result_type == TYPE_LONG ||
-                                           elem->result_type == TYPE_LONG_LONG ||
-                                           elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
-                                           elem->result_type == TYPE_POINTER);
-                        emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                        if (elem_type && type_is_fp(elem_type->kind)) {
+                            emit_fp_widen_if_needed(cg, elem->result_type, elem_type->kind);
+                            emit_store_fp_local(cg, elem_offset, elem_type->kind);
+                        } else {
+                            int src_is_long = (elem->result_type == TYPE_LONG ||
+                                               elem->result_type == TYPE_LONG_LONG ||
+                                               elem->result_type == TYPE_UNSIGNED_LONG_LONG ||
+                                               elem->result_type == TYPE_POINTER);
+                            emit_store_local(cg, elem_offset, elem_size, src_is_long);
+                        }
                     }
                     cur++;
                 }
@@ -6343,6 +6501,74 @@ static const char *data_init_directive(TypeKind kind) {
     }
 }
 
+/* Stage 114: forward declaration — emit_global_struct is defined below. */
+static void emit_global_struct(CodeGen *cg, Type *st, ASTNode *list);
+
+/*
+ * Stage 114: emit .data bytes for a global array element recursively.
+ * When elem_type is itself an array and the initializer is a brace-list,
+ * flatten the nested braces into sequential scalar directive emissions.
+ */
+static void emit_global_array_elements(CodeGen *cg, Type *arr_type,
+                                       ASTNode *list) {
+    int length    = arr_type->length;
+    Type *elem_type = arr_type->base;
+    TypeKind elem_kind = elem_type ? elem_type->kind : TYPE_INT;
+    const char *dir = data_init_directive(elem_kind);
+    int ninit = list ? list->child_count : 0;
+    int cur = 0;
+    int j;
+    for (j = 0; j < ninit; j++) {
+        ASTNode *child = list->children[j];
+        ASTNode *elem;
+        if (child->type == AST_DESIGNATED_INIT && child->value == NULL) {
+            cur = child->byte_length;
+            elem = child->children[0];
+        } else if (child->type == AST_DESIGNATED_INIT) {
+            compile_error("error: member designator in array initializer\n");
+            return;
+        } else {
+            elem = child;
+        }
+        if (cur >= length) {
+            compile_error("error: too many initializers in global array\n");
+            return;
+        }
+        if (elem_type && elem_type->kind == TYPE_ARRAY &&
+            elem->type == AST_INITIALIZER_LIST) {
+            /* Nested sub-array: recurse. */
+            emit_global_array_elements(cg, elem_type, elem);
+        } else if (elem_type && elem_type->kind == TYPE_STRUCT &&
+                   elem->type == AST_INITIALIZER_LIST) {
+            emit_global_struct(cg, elem_type, elem);
+        } else if (elem->type == AST_INT_LITERAL) {
+            long v = strtol(elem->value, NULL, 10);
+            fprintf(cg->output, "    %s %ld\n", dir, v);
+        } else if (elem->type == AST_CHAR_LITERAL) {
+            long v = (long)(unsigned char)elem->value[0];
+            fprintf(cg->output, "    %s %ld\n", dir, v);
+        } else {
+            compile_error("error: unsupported initializer element in "
+                          "global array\n");
+        }
+        cur++;
+    }
+    /* Zero-fill remaining elements. */
+    while (cur < length) {
+        if (elem_type && elem_type->kind == TYPE_ARRAY) {
+            /* Zero-fill a sub-array by emitting zeros for each element. */
+            int sub_total = elem_type->size / (elem_type->base ? elem_type->base->size : 4);
+            int b;
+            for (b = 0; b < sub_total; b++)
+                fprintf(cg->output, "    %s 0\n",
+                        data_init_directive(elem_type->base ? elem_type->base->kind : TYPE_INT));
+        } else {
+            fprintf(cg->output, "    %s 0\n", dir);
+        }
+        cur++;
+    }
+}
+
 /*
  * Stage 44: emit .data bytes for a struct value from a brace-list.
  * Recursive: nested struct fields recurse; pointer fields from string
@@ -6569,6 +6795,10 @@ static void codegen_emit_data(CodeGen *cg) {
                     if (elem_type && elem_type->kind == TYPE_STRUCT &&
                         elem->type == AST_INITIALIZER_LIST) {
                         emit_global_struct(cg, elem_type, elem);
+                    } else if (elem_type && elem_type->kind == TYPE_ARRAY &&
+                               elem->type == AST_INITIALIZER_LIST) {
+                        /* Stage 114: nested brace init for global multidim arrays. */
+                        emit_global_array_elements(cg, elem_type, elem);
                     } else if (elem->type == AST_STRING_LITERAL) {
                         int idx = (int)cg->string_pool.len;
                         vec_push(&cg->string_pool, &elem);
@@ -6587,6 +6817,11 @@ static void codegen_emit_data(CodeGen *cg) {
                 } else {
                     /* Zero-fill empty slots. */
                     if (elem_type && elem_type->kind == TYPE_STRUCT) {
+                        int b;
+                        for (b = 0; b < elem_type->size; b++)
+                            fprintf(cg->output, "    db 0\n");
+                    } else if (elem_type && elem_type->kind == TYPE_ARRAY) {
+                        /* Stage 114: zero-fill an empty sub-array slot. */
                         int b;
                         for (b = 0; b < elem_type->size; b++)
                             fprintf(cg->output, "    db 0\n");
