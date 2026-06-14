@@ -275,6 +275,26 @@ with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
 | C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
 
+## Issues found during stage 119 self-hosting test
+
+None. The compiler's own source does not use file-scope struct variables with
+FP fields in arithmetic expressions — all floating-point computation is done
+via local `double` variables, not fields of global structs. The five
+global-fallback patches to `expr_result_type()` and `sizeof_type_of_expr()`,
+and the global-pointer fallback in `emit_arrow_addr()`, all extend code paths
+that are never taken during a self-host build. Bootstrap produced identical
+output at C0, C1, and C2. All 1879 tests passed with no source changes needed.
+
+## Result (stage 119)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01190000.00932` | `GNU_13_3_0` | 1879/1879 |
+| C1 | `build/ccompiler-c1` | `00.02.01190000.00933` | `ClaudeC99_v00_02_01190000_00932` | 1879/1879 |
+| C2 | `build/ccompiler-c2` | `00.02.01190000.00934` | `ClaudeC99_v00_02_01190000_00933` | 1879/1879 |
+
 ## Issues found during stage 118 self-hosting test
 
 None. The compiler's own source uses pointer relational comparisons in several
