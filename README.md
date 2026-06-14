@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 116 (global struct array BSS fix and char[N] string-literal initialization):
+
+> Stage 116 fixes two codegen bugs affecting global struct arrays. Bug 1: uninitialized single-dimension struct/union arrays emitted `resd N` (N × 4 bytes) in BSS instead of `resb (N × struct_size)`, causing data corruption for structs larger than 4 bytes. Fixed in both `codegen_emit_bss()` and `codegen_emit_local_statics()` by using `resb full_type->size` directly. As a side effect, all single-dimension BSS arrays now emit `resb total` uniformly. Bug 2: string literals used to initialize `char[N]` sub-arrays or struct fields emitted an 8-byte pointer (`dq LstrN`) instead of inline bytes. Fixed by adding an `emit_string_as_bytes()` helper and wiring it into three emission sites: `codegen_emit_data()` global array loop, `emit_global_array_elements()` recursive helper, and `emit_global_struct()` field emitter. No tokenizer, parser, or AST changes. All 1857 tests pass (1175 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm, 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 115 (constant expressions in array dimension bounds):
 
 > Stage 115 extends the array-dimension parser to accept full C99 integer constant expressions (arithmetic, bitwise, shift, relational, equality, logical AND/OR, ternary, `sizeof`, parentheses, enum constants, macro identifiers) instead of requiring bare integer literals. Four sites in `src/parser.c` now call `eval_const_expr()` instead of checking for `TOKEN_INT_LITERAL` only: `parse_type_name` bracket loop for `sizeof(int[N])` and compound literals, `parse_direct_declarator` parenthesized form for `int (*a)[N]`, non-paren first dimension for `int a[N]`, and non-paren additional dimensions for second+ dims in multidimensional arrays. No AST or codegen changes; dimensions are evaluated at parse time via the existing evaluator (available since stage 99). The compiler's own source uses only literal constants in array dimensions, so bootstrap paths are unaffected. All 1850 tests pass (1168 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm, 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -654,7 +658,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 114 all tests pass (1161 valid, 256 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 1841 total).
+`Aggregate: P passed, F failed, T total` line. As of stage 116 all tests pass (1175 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit; 1857 total).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
