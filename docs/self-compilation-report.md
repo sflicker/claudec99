@@ -257,6 +257,25 @@ four sites take exactly the same code path before and after this change during
 bootstrap. All 1850 tests passed at C0, C1, and C2 with no source changes
 needed during the bootstrap.
 
+## Issues found during stage 116 self-hosting test
+
+None. Bug 1 (BSS struct array size) and Bug 2 (char[N] string-literal inline
+bytes) do not appear in the compiler's own source: the compiler uses no
+file-scope uninitialized struct arrays (struct data lives in heap-allocated
+types, not BSS), and uses `char *` pointer members rather than `char[N]`
+embedded arrays. All 1857 tests passed at C0, C1, and C2 with no source
+changes needed during bootstrap.
+
+## Result (stage 116)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01160000.00912` | `GNU_13_3_0` | 1857/1857 |
+| C1 | `build/ccompiler-c1` | `00.02.01160000.00913` | `ClaudeC99_v00_02_01160000_00912` | 1857/1857 |
+| C2 | `build/ccompiler-c2` | `00.02.01160000.00914` | `ClaudeC99_v00_02_01160000_00913` | 1857/1857 |
+
 ## Result (stage 115)
 
 **Date:** 2026-06-13
