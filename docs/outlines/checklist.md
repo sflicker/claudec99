@@ -1661,6 +1661,59 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Tests: 7 new valid tests (fp_func_call, fp_mixed_params, fp_return_float, fp_sqrt, fp_printf, fp_varargs, fp_pow); all 1650 tests pass
 - [x] Self-host C0→C1→C2 passes after 3 bootstrap fixes (movaps alignment, decl_type=0 bug, array dim arithmetic); 1650 tests at each step
 
+## Stage 113 — Test Suite Reorganization
+
+- [x] Reorganized 1,426 test files from flat directories into category subfolders
+	- [x] `test/valid/`: 21 category subfolders (arithmetic, bitwise, assignment, comparisons, casting, control_flow, functions, pointers, arrays, strings, chars, structs, unions, enums, typedefs, declarations, expressions, preprocessor, stdlib, floating_point, varargs)
+	- [x] `test/invalid/`: legacy/ + 9 category subfolders (aggregates, declarations, types, const, pointers, functions, expressions, control_flow, preprocessor)
+	- [x] `test/print_ast/`: legacy/ + constructs/
+	- [x] `test/print_tokens/`: tokens/ + programs/
+	- [x] `test/print_asm/`: flat (unchanged)
+- [x] Updated 5 runner scripts to use `find`-based recursive discovery
+- [x] Updated companion file lookups to `$(dirname "$src")`-relative (covers .expected, .libs, .cflags, .args, .input, .status)
+- [x] All 1,650 tests pass; no compiler source changes
+
+## Stage 114 — Fix Legacy Valid Tests
+
+- [x] Fix FP array subscript WRITE: emit `movss`/`movsd` instead of `mov` for float/double elements
+- [x] Fix FP array subscript READ: emit `movss xmm0, [rax]`/`movsd xmm0, [rax]` instead of truncating `mov rax, [rax]` + `movsxd rax, eax`
+- [x] Fix `expr_result_type` for `AST_ARRAY_INDEX`: return element kind directly for FP types instead of `TYPE_LONG`
+- [x] Fix nested brace local array init: add `emit_local_array_init()` recursive helper for multidimensional arrays
+- [x] Fix nested brace global array init: add `emit_global_array_elements()` recursive helper
+- [x] Fix mixed FP/int ternary: find common FP type and widen both branches before merge point
+- [x] Fix string literal subscript: `AST_STRING_LITERAL` now accepted as subscript base in `parse_postfix` and `emit_array_index_addr()`
+- [x] 219 legacy tests migrated to 13 category subfolders; 24 previously failing tests fixed
+- [x] `VERSION_STAGE` bumped to "01140000"
+- [x] All 1,841 tests pass; self-host C0→C1→C2 all pass with no source changes
+
+## Stage 115 — Constant Expressions in Array Dimension Bounds
+
+- [x] `parse_type_name` bracket loop calls `eval_const_expr(parser, "array dimension")` (was `TOKEN_INT_LITERAL` check)
+- [x] `parse_direct_declarator` parenthesized form calls `eval_const_expr()` for bounds
+- [x] `parse_direct_declarator` non-paren first dimension calls `eval_const_expr()`
+- [x] `parse_direct_declarator` non-paren additional dimensions call `eval_const_expr()`
+	- [x] Enables: `int a[N*2]`, `int a[sizeof(int)*8]`, `int a[MACRO]`, `int a[A+B]`
+	- [x] Rejects: runtime variable as dimension ("is not an integer constant expression")
+	- [x] Rejects: negative constant dimension ("array size must be greater than zero")
+- [x] 9 new tests (7 valid, 2 invalid); 3 invalid tests renamed for new error messages
+- [x] `VERSION_STAGE` bumped to "01150000"
+- [x] All 1,850 tests pass; self-host C0→C1→C2 all pass with no source changes
+
+## Stage 116 — Global Struct Array BSS Fix and Char[N] String-Literal Initialization
+
+- [x] Fix BSS sizing for single-dimension struct/union arrays:
+	- [x] `codegen_emit_bss()` else-branch: `resb full_type->size` (was `bss_res_directive(base->kind) × length`)
+	- [x] `codegen_emit_local_statics()` else-branch: same fix for block-scope static struct arrays
+	- [x] Side effect: all single-dimension BSS arrays now uniformly emit `resb total` (scalar arrays unchanged semantically)
+- [x] Add `emit_string_as_bytes(cg, str, field_len)` helper: emits string as inline `db` bytes + zero-padding
+- [x] Fix `codegen_emit_data()` global array loop: `AST_STRING_LITERAL` with `char[N]` element type emits bytes inline (was always `dq LstrN` pointer)
+- [x] Fix `emit_global_array_elements()` recursive helper: add char[N]-from-string branch before catch-all compile_error
+- [x] Fix `emit_global_struct()` field handler: add char[N]-from-string branch alongside TYPE_POINTER string branch
+- [x] 7 new valid tests (struct BSS, struct BSS large, static struct BSS, struct init, char 2D string, char 2D row access, struct char field)
+- [x] Print-asm expected updated (`int arr[10]` now emits `resb 40` instead of `resd 10`)
+- [x] `VERSION_STAGE` bumped to "01160000"
+- [x] All 1,857 tests pass; self-host C0→C1→C2 all pass with no source changes
+
 ---
 
 ## TODO
