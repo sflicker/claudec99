@@ -295,6 +295,33 @@ fixed point. All 1894 tests passed at C0, C1, and C2 with no source changes need
 | C1 | `build/ccompiler-c1` | `00.02.01220000.00954` | `ClaudeC99_v00_02_01220000_00953` | 1894/1894 |
 | C2 | `build/ccompiler-c2` | `00.02.01220000.00955` | `ClaudeC99_v00_02_01220000_00954` | 1894/1894 |
 
+## Issues found during stage 123 self-hosting test
+
+Stage 123 (five ABI/codegen bug fixes from CC99_FIX_REPORT-02) did not include
+a self-hosting test during its implementation session. A latent bootstrap
+incompatibility introduced in that stage was discovered and fixed during stage
+124 (see below).
+
+## Issues found during stage 124 self-hosting test
+
+One bootstrap failure was surfaced and fixed.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | C0→C1 bootstrap of `src/codegen.c` failed: `error: expected ';', got ',' (',')` at line 4085 | Stage 123 introduced `int sp_is_xmm[26], sp_reg[26], sp_is_float[26], nsp = 0;` — a single declaration with multiple declarators where some include array-dimension brackets. ClaudeC99's parser handles multi-declarator scalar declarations but does not support array-dimension syntax in any but the first declarator. | Split the single declaration into four separate `int` declarations (`src/codegen.c`). |
+
+After the fix, all 1912 tests passed at C0, C1, and C2 with no further changes needed.
+
+## Result (stage 124)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01240000.00964` | `gcc_Ubuntu_13_3_0` | 1912/1912 |
+| C1 | `build/ccompiler-c1` | `00.02.01240000.00965` | `ClaudeC99_v00_02_01240000_00964` | 1912/1912 |
+| C2 | `build/ccompiler-c2` | `00.02.01240000.00966` | `ClaudeC99_v00_02_01240000_00965` | 1912/1912 |
+
 ## Issues found during stage 121 self-hosting test
 
 None. The compiler's own source uses `switch` extensively on `int`-typed
