@@ -5976,13 +5976,26 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
         fprintf(cg->output, "    push rax\n");
         cg->push_depth++;
 
+        /* Stage 121: use 64-bit reload and compare for long/long long
+         * discriminants; 32-bit is correct for int/char/short (promoted). */
+        TypeKind disc_kind = node->children[0]->result_type;
+        int disc_is_64 = (disc_kind == TYPE_LONG ||
+                          disc_kind == TYPE_LONG_LONG ||
+                          disc_kind == TYPE_UNSIGNED_LONG_LONG);
+
         for (int i = 0; i < (int)ctx->entries.len; i++) {
             SwitchLabel *entry = (SwitchLabel *)vec_get(&ctx->entries, i);
             ASTNode *label_node = entry->node;
             if (label_node->type == AST_CASE_SECTION) {
-                fprintf(cg->output, "    mov eax, [rsp]\n");
-                fprintf(cg->output, "    cmp eax, %s\n",
-                        label_node->children[0]->value);
+                if (disc_is_64) {
+                    fprintf(cg->output, "    mov rax, [rsp]\n");
+                    fprintf(cg->output, "    cmp rax, %s\n",
+                            label_node->children[0]->value);
+                } else {
+                    fprintf(cg->output, "    mov eax, [rsp]\n");
+                    fprintf(cg->output, "    cmp eax, %s\n",
+                            label_node->children[0]->value);
+                }
                 fprintf(cg->output, "    je .L_switch_sec_%d\n",
                         entry->label);
             }
