@@ -275,6 +275,25 @@ with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
 | C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
 
+## Issues found during stage 120 self-hosting test
+
+None. The compiler's own source does not use `++`/`--` on float or double
+struct members — all FP increment patterns in the compiler source use scalar
+local variables, not struct fields. The new FP early-return path in
+`codegen_inc_dec_general` is never triggered during a self-host build.
+Bootstrap produced identical output at C0, C1, and C2. All 1886 tests passed
+with no source changes needed during bootstrap.
+
+## Result (stage 120)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01200000.00940` | `GNU_13_3_0` | 1886/1886 |
+| C1 | `build/ccompiler-c1` | `00.02.01200000.00941` | `ClaudeC99_v00_02_01200000_00940` | 1886/1886 |
+| C2 | `build/ccompiler-c2` | `00.02.01200000.00942` | `ClaudeC99_v00_02_01200000_00941` | 1886/1886 |
+
 ## Issues found during stage 119 self-hosting test
 
 None. The compiler's own source does not use file-scope struct variables with
