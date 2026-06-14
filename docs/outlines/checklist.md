@@ -1716,6 +1716,25 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ---
 
+## Stage 117 — FP Struct Member Rvalue Read
+
+- [x] Fix Bug 1 — rvalue FP load uses wrong instruction for struct FP fields:
+	- [x] `AST_MEMBER_ACCESS` rvalue block: add FP early-return before `int sz = ...` — emit `movss xmm0, [rax]` / `movsd xmm0, [rax]` and set `node->result_type`
+	- [x] `AST_ARROW_ACCESS` rvalue block: same FP early-return (Task 1b)
+	- [x] Applies to all three member-access forms: dot (`s.x`), arrow (`p->x`), subscript-then-dot (`arr[i].x`)
+- [x] Fix Bug 2 — `expr_result_type()` reported TYPE_INT for FP struct fields:
+	- [x] `AST_MEMBER_ACCESS` VAR_REF base: add `else if (type_is_fp(f->kind)) { t = f->kind; }` before `promote_kind`
+	- [x] `AST_MEMBER_ACCESS` DEREF base: same FP-aware branch (Task 2b)
+	- [x] `AST_ARROW_ACCESS` VAR_REF base: same FP-aware branch (Task 2c)
+- [x] Fix Bug 3 — `expr_result_type()` fell through for subscript-then-member (`arr[i].x`):
+	- [x] Add `AST_ARRAY_INDEX` base handler to `expr_result_type()` AST_MEMBER_ACCESS case (Task 3a)
+	- [x] Add same handler to `sizeof_type_of_expr()` AST_MEMBER_ACCESS case; add FP-aware branches to existing base cases (Task 3b)
+- [x] 6 new valid tests: dot arithmetic, arrow arithmetic, subscript-then-dot arithmetic, struct array field update, float field arithmetic, double field subtraction
+- [x] `VERSION_STAGE` bumped to "01170000"
+- [x] All 1,863 tests pass; self-host C0→C1→C2 all pass with no source changes
+
+---
+
 ## TODO
 
 ### Preprocessor
