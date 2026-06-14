@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 120 (FP increment/decrement on struct members):
+
+> Stage 120 adds support for prefix and postfix `++`/`--` operators on floating-point (`float`/`double`) struct fields accessed via dot (`.`) and arrow (`->`) operators. Two codegen bugs in `codegen_inc_dec_general` were fixed: Bug 1: `TYPE_DOUBLE` fell to `default: sz = 4` in the fallback size switch (should be 8 bytes). Bug 2: integer `add`/`sub` instructions were used regardless of FP type. The fix adds an FP early-return path using SSE2 instructions (`movsd`/`movss`, `addsd`/`subsd`, `subsd`/`subss`) and two new `.rodata` constants (`Lfp_one_f64` and `Lfp_one_f32`) for the 1.0 increment/decrement operand. Postfix forms save the old value in `xmm1` before the operation. Bonus fixes: the same path also corrects `++`/`--` on FP array elements and FP pointer dereferences. No tokenizer, parser, or AST changes. All 1886 tests pass (1202 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+
 Through stage 119 (FP compound assignment on struct members):
 
 > Stage 119 fixes compound assignment on floating-point struct fields when both operands are members of file-scope (global) struct variables. Five bugs in `expr_result_type()` and `sizeof_type_of_expr()` were missing global-variable fallbacks, causing the FP arithmetic path to be silently skipped and integer instructions to run on IEEE 754 bit patterns. A sixth related bug in `emit_arrow_addr()` prevented `gp->field` from working as an lvalue for global pointer-to-struct variables. No tokenizer, parser, or AST changes. All 1879 tests pass (1195 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
@@ -672,7 +676,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 119 all 1879 tests pass (1195 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 120 all 1886 tests pass (1202 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
