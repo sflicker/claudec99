@@ -247,6 +247,26 @@ used as subscript targets, which the compiler source never does.
 All 1841 tests passed at C0, C1, and C2 with no source changes needed during
 the bootstrap.
 
+## Issues found during stage 115 self-hosting test
+
+None. The change replaces four literal-only array dimension reads in
+`src/parser.c` with calls to `eval_const_expr()`. The compiler's own source
+code uses only plain integer literals as array dimensions (e.g.
+`int dims[MAX_ARRAY_DIMS]`) — never a macro arithmetic expression — so all
+four sites take exactly the same code path before and after this change during
+bootstrap. All 1850 tests passed at C0, C1, and C2 with no source changes
+needed during the bootstrap.
+
+## Result (stage 115)
+
+**Date:** 2026-06-13
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01150000.00906` | `GNU_13_3_0` | 1850/1850 |
+| C1 | `build/ccompiler-c1` | `00.02.01150000.00907` | `ClaudeC99_v00_02_01150000_00906` | 1850/1850 |
+| C2 | `build/ccompiler-c2` | `00.02.01150000.00908` | `ClaudeC99_v00_02_01150000_00907` | 1850/1850 |
+
 ## Result (stage 114)
 
 **Date:** 2026-06-13
