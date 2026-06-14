@@ -275,6 +275,26 @@ with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01170000.00919` | `ClaudeC99_v00_02_01170000_00918` | 1863/1863 |
 | C2 | `build/ccompiler-c2` | `00.02.01170000.00920` | `ClaudeC99_v00_02_01170000_00919` | 1863/1863 |
 
+## Issues found during stage 122 self-hosting test
+
+None. Stage 122 changes the prologue and epilogue of every generated function,
+but C0 (GCC-built) already applies this change when compiling the stage-122 source.
+The print_asm expected files were regenerated from the GCC-built compiler before the
+self-host run, so all 21 print_asm tests pass at C0. C1 and C2 both generate the
+same `mov [rbp - 8], rbx` / `mov rbx, [rbp - 8]` instructions and the same
+shifted local-variable offsets as C0, confirming the bootstrap reached a stable
+fixed point. All 1894 tests passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 122)
+
+**Date:** 2026-06-14
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.01220000.00953` | `gcc_Ubuntu_13_3_0` | 1894/1894 |
+| C1 | `build/ccompiler-c1` | `00.02.01220000.00954` | `ClaudeC99_v00_02_01220000_00953` | 1894/1894 |
+| C2 | `build/ccompiler-c2` | `00.02.01220000.00955` | `ClaudeC99_v00_02_01220000_00954` | 1894/1894 |
+
 ## Issues found during stage 121 self-hosting test
 
 None. The compiler's own source uses `switch` extensively on `int`-typed
