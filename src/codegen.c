@@ -100,6 +100,7 @@ static int count_params(ASTNode *fn_decl) {
  */
 typedef struct {
     int is_struct;   /* argument is a struct/union value */
+    int is_fp;       /* argument is a floating-point type */
     int mem;         /* passed on the stack (memory class or out of registers) */
     int nbytes;      /* object size in bytes (8 for scalars/pointers) */
     int gp_start;    /* first GP register index (0=rdi..5=r9), or -1 if not GP */
@@ -152,6 +153,7 @@ static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs,
         int is_struct = p && is_struct_or_union_kind(p->decl_type);
         int is_fp = p ? type_is_fp(p->decl_type) : type_is_fp(actual_kind);
         s->is_struct = is_struct;
+        s->is_fp = is_fp;
 
         if (is_struct) {
             int sz = p->full_type ? p->full_type->size : 0;
@@ -3764,12 +3766,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     fprintf(cg->output, "    mov rsi, rax\n");
                     fprintf(cg->output, "    lea rdi, [rsp + %d]\n", s->stack_off);
                     emit_struct_copy(cg, sz);
-                } else if (s->xmm_idx < 0) {
-                    /* GP stack arg. */
-                    codegen_expression(cg, node->children[i]);
-                    EMIT_ARG_CONVERT(node, callee, i);
-                    fprintf(cg->output, "    mov [rsp + %d], rax\n", s->stack_off);
-                } else {
+                } else if (s->is_fp) {
                     /* FP stack arg (overflow beyond xmm7). */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
@@ -3777,6 +3774,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         fprintf(cg->output, "    movss [rsp + %d], xmm0\n", s->stack_off);
                     else
                         fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
+                } else {
+                    /* GP stack arg. */
+                    codegen_expression(cg, node->children[i]);
+                    EMIT_ARG_CONVERT(node, callee, i);
+                    fprintf(cg->output, "    mov [rsp + %d], rax\n", s->stack_off);
                 }
             }
 
@@ -4019,62 +4021,166 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     } \
 } while (0)
 
-        if (nargs <= 6) {
-            for (int i = 0; i < nargs; i++) {
-                codegen_expression(cg, node->children[i + 1]);
-                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
-                fprintf(cg->output, "    push rax\n");
-                cg->push_depth++;
+        /* Detect whether any argument is FP; if so, use the layout-based path. */
+        {
+            int indirect_has_fp = 0;
+            for (int _fi = 0; _fi < nargs; _fi++) {
+                TypeKind _pt = (_fi < fn->param_count)
+                               ? fn->params[_fi]->kind : TYPE_LONG;
+                if (type_is_fp(_pt)) { indirect_has_fp = 1; break; }
             }
-            for (int i = nargs - 1; i >= 0; i--) {
-                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+            if (indirect_has_fp) {
+                /* Build a CallLayout from the function-pointer type. */
+                CallLayout IL;
+                IL.sret = 0;
+                IL.count = nargs;
+                int _gp_next = 0, _xmm_next = 0, _stk_off = 0;
+                for (int i = 0; i < nargs; i++) {
+                    ArgSlot *s = &IL.items[i];
+                    s->gp_start = -1; s->gp_count = 0; s->xmm_idx = -1;
+                    s->stack_off = -1; s->mem = 0; s->is_struct = 0;
+                    TypeKind _pt = (i < fn->param_count)
+                                   ? fn->params[i]->kind : TYPE_LONG;
+                    s->is_fp = type_is_fp(_pt);
+                    s->nbytes = type_kind_bytes(_pt);
+                    if (s->is_fp) {
+                        if (_xmm_next < 8) { s->xmm_idx = _xmm_next++; }
+                        else { s->mem = 1; s->stack_off = _stk_off; _stk_off += 8; }
+                    } else {
+                        s->nbytes = 8;
+                        if (_gp_next < 6) { s->gp_start = _gp_next++; s->gp_count = 1; }
+                        else { s->mem = 1; s->stack_off = _stk_off; _stk_off += 8; }
+                    }
+                }
+                IL.stack_bytes = _stk_off;
+
+                /* Outgoing stack area — callee addr was already pushed so
+                 * push_depth already accounts for it when computing alignment. */
+                int region = (IL.stack_bytes + 7) & ~7;
+                if (((cg->push_depth * 8 + region) % 16) != 0)
+                    region += 8;
+                if (region > 0) {
+                    fprintf(cg->output, "    sub rsp, %d\n", region);
+                    cg->push_depth += region / 8;
+                }
+
+                /* Phase 1: stack-passed args. */
+                for (int i = 0; i < nargs; i++) {
+                    ArgSlot *s = &IL.items[i];
+                    if (!s->mem) continue;
+                    codegen_expression(cg, node->children[i + 1]);
+                    EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                    if (s->is_fp) {
+                        if (s->nbytes == 4)
+                            fprintf(cg->output, "    movss [rsp + %d], xmm0\n", s->stack_off);
+                        else
+                            fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
+                    } else {
+                        fprintf(cg->output, "    mov [rsp + %d], rax\n", s->stack_off);
+                    }
+                }
+
+                /* Phase 2: register-passed args — spill, then restore. */
+                int sp_is_xmm[26], sp_reg[26], sp_is_float[26], nsp = 0;
+                for (int i = 0; i < nargs; i++) {
+                    ArgSlot *s = &IL.items[i];
+                    if (s->mem) continue;
+                    codegen_expression(cg, node->children[i + 1]);
+                    EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                    if (s->xmm_idx >= 0) {
+                        fprintf(cg->output, "    sub rsp, 8\n");
+                        cg->push_depth++;
+                        if (s->nbytes == 4)
+                            fprintf(cg->output, "    movss [rsp], xmm0\n");
+                        else
+                            fprintf(cg->output, "    movsd [rsp], xmm0\n");
+                        sp_is_xmm[nsp] = 1;
+                        sp_reg[nsp] = s->xmm_idx;
+                        sp_is_float[nsp] = (s->nbytes == 4) ? 1 : 0;
+                    } else {
+                        fprintf(cg->output, "    push rax\n");
+                        cg->push_depth++;
+                        sp_is_xmm[nsp] = 0;
+                        sp_reg[nsp] = s->gp_start;
+                        sp_is_float[nsp] = 0;
+                    }
+                    nsp++;
+                }
+                for (int j = 0; j < nsp; j++) {
+                    int off = (nsp - 1 - j) * 8;
+                    if (sp_is_xmm[j]) {
+                        if (sp_is_float[j])
+                            fprintf(cg->output, "    movss xmm%d, [rsp + %d]\n",
+                                    sp_reg[j], off);
+                        else
+                            fprintf(cg->output, "    movsd xmm%d, [rsp + %d]\n",
+                                    sp_reg[j], off);
+                    } else {
+                        fprintf(cg->output, "    mov %s, [rsp + %d]\n",
+                                arg_regs[sp_reg[j]], off);
+                    }
+                }
+                if (nsp > 0) {
+                    fprintf(cg->output, "    add rsp, %d\n", nsp * 8);
+                    cg->push_depth -= nsp;
+                }
+
+                /* Callee address sits just above the stack arg area. */
+                fprintf(cg->output, "    mov r10, [rsp + %d]\n", region);
+                fprintf(cg->output, "    call r10\n");
+                int total_cleanup = region + 8;
+                if (total_cleanup > 0) {
+                    fprintf(cg->output, "    add rsp, %d\n", total_cleanup);
+                    cg->push_depth -= total_cleanup / 8;
+                }
+            } else if (nargs <= 6) {
+                for (int i = 0; i < nargs; i++) {
+                    codegen_expression(cg, node->children[i + 1]);
+                    EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                    fprintf(cg->output, "    push rax\n");
+                    cg->push_depth++;
+                }
+                for (int i = nargs - 1; i >= 0; i--) {
+                    fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                    cg->push_depth--;
+                }
+                fprintf(cg->output, "    pop r10\n");
                 cg->push_depth--;
+                int needs_pad = (cg->push_depth % 2) != 0;
+                if (needs_pad) fprintf(cg->output, "    sub rsp, 8\n");
+                fprintf(cg->output, "    call r10\n");
+                if (needs_pad) fprintf(cg->output, "    add rsp, 8\n");
+            } else {
+                /* Stage 68: N > 6 indirect call, no FP args. */
+                int num_stack = nargs - 6;
+                int pad = ((cg->push_depth + num_stack) % 2) != 0 ? 1 : 0;
+                if (pad) {
+                    fprintf(cg->output, "    sub rsp, 8\n");
+                    cg->push_depth++;
+                }
+                for (int i = nargs - 1; i >= 6; i--) {
+                    codegen_expression(cg, node->children[i + 1]);
+                    EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                    fprintf(cg->output, "    push rax\n");
+                    cg->push_depth++;
+                }
+                for (int i = 0; i < 6; i++) {
+                    codegen_expression(cg, node->children[i + 1]);
+                    EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
+                    fprintf(cg->output, "    push rax\n");
+                    cg->push_depth++;
+                }
+                for (int i = 5; i >= 0; i--) {
+                    fprintf(cg->output, "    pop %s\n", arg_regs[i]);
+                    cg->push_depth--;
+                }
+                int callee_slot = (num_stack + pad) * 8;
+                fprintf(cg->output, "    mov r10, [rsp + %d]\n", callee_slot);
+                fprintf(cg->output, "    call r10\n");
+                int cleanup = (num_stack + pad + 1) * 8;
+                fprintf(cg->output, "    add rsp, %d\n", cleanup);
+                cg->push_depth -= (num_stack + pad + 1);
             }
-            fprintf(cg->output, "    pop r10\n");
-            cg->push_depth--;
-            int needs_pad = (cg->push_depth % 2) != 0;
-            if (needs_pad) fprintf(cg->output, "    sub rsp, 8\n");
-            fprintf(cg->output, "    call r10\n");
-            if (needs_pad) fprintf(cg->output, "    add rsp, 8\n");
-        } else {
-            /* Stage 68: N > 6 indirect call.
-             * Callee addr was pushed first (deepest).  Push padding if
-             * needed (accounting for the callee slot), push stack args
-             * right-to-left, push reg args, pop reg args, then read
-             * callee addr via rsp-relative load before calling. */
-            int num_stack = nargs - 6;
-            int pad = ((cg->push_depth + num_stack) % 2) != 0 ? 1 : 0;
-            /* Note: push_depth already incremented by the callee push above.
-             * We need (push_depth + pad + num_stack) % 2 == 0 for alignment.
-             * Since push_depth was already incremented: pad compensates for
-             * (updated_push_depth + num_stack) being odd. */
-            if (pad) {
-                fprintf(cg->output, "    sub rsp, 8\n");
-                cg->push_depth++;
-            }
-            for (int i = nargs - 1; i >= 6; i--) {
-                codegen_expression(cg, node->children[i + 1]);
-                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
-                fprintf(cg->output, "    push rax\n");
-                cg->push_depth++;
-            }
-            for (int i = 0; i < 6; i++) {
-                codegen_expression(cg, node->children[i + 1]);
-                EMIT_INDIRECT_ARG_CONVERT(fn, node, i);
-                fprintf(cg->output, "    push rax\n");
-                cg->push_depth++;
-            }
-            for (int i = 5; i >= 0; i--) {
-                fprintf(cg->output, "    pop %s\n", arg_regs[i]);
-                cg->push_depth--;
-            }
-            /* Callee addr is below stack args and padding. */
-            int callee_slot = (num_stack + pad) * 8;
-            fprintf(cg->output, "    mov r10, [rsp + %d]\n", callee_slot);
-            fprintf(cg->output, "    call r10\n");
-            int cleanup = (num_stack + pad + 1) * 8;
-            fprintf(cg->output, "    add rsp, %d\n", cleanup);
-            cg->push_depth -= (num_stack + pad + 1);
         }
 #undef EMIT_INDIRECT_ARG_CONVERT
         /* Result type from the function's declared return type. */
@@ -4092,14 +4198,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (strcmp(bop, "&&") == 0) {
             int label_id = cg->label_count++;
             codegen_expression(cg, node->children[0]);
-            if (node->children[0]->result_type == TYPE_LONG) {
+            if (type_is_fp(node->children[0]->result_type)) {
+                emit_fp_bool_to_rax(cg, node->children[0]->result_type);
+                fprintf(cg->output, "    test rax, rax\n");
+            } else if (node->children[0]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
                 fprintf(cg->output, "    cmp eax, 0\n");
             }
             fprintf(cg->output, "    je .L_and_false_%d\n", label_id);
             codegen_expression(cg, node->children[1]);
-            if (node->children[1]->result_type == TYPE_LONG) {
+            if (type_is_fp(node->children[1]->result_type)) {
+                emit_fp_bool_to_rax(cg, node->children[1]->result_type);
+                fprintf(cg->output, "    test rax, rax\n");
+            } else if (node->children[1]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
                 fprintf(cg->output, "    cmp eax, 0\n");
@@ -4116,14 +4228,20 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (strcmp(bop, "||") == 0) {
             int label_id = cg->label_count++;
             codegen_expression(cg, node->children[0]);
-            if (node->children[0]->result_type == TYPE_LONG) {
+            if (type_is_fp(node->children[0]->result_type)) {
+                emit_fp_bool_to_rax(cg, node->children[0]->result_type);
+                fprintf(cg->output, "    test rax, rax\n");
+            } else if (node->children[0]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
                 fprintf(cg->output, "    cmp eax, 0\n");
             }
             fprintf(cg->output, "    jne .L_or_true_%d\n", label_id);
             codegen_expression(cg, node->children[1]);
-            if (node->children[1]->result_type == TYPE_LONG) {
+            if (type_is_fp(node->children[1]->result_type)) {
+                emit_fp_bool_to_rax(cg, node->children[1]->result_type);
+                fprintf(cg->output, "    test rax, rax\n");
+            } else if (node->children[1]->result_type == TYPE_LONG) {
                 fprintf(cg->output, "    cmp rax, 0\n");
             } else {
                 fprintf(cg->output, "    cmp eax, 0\n");
@@ -5383,6 +5501,8 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 new_sv.init_value = 0;
                 new_sv.is_unsigned = 0;
                 new_sv.init_node = init_node;
+                new_sv.is_label_init = 0;
+                new_sv.init_label = NULL;
                 vec_push(&cg->local_statics, &new_sv);
                 return;
             }
@@ -5427,14 +5547,26 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                 new_sv.init_value = 0;
                 new_sv.is_unsigned = 0;
                 new_sv.init_node = init_node;
+                new_sv.is_label_init = 0;
+                new_sv.init_label = NULL;
                 vec_push(&cg->local_statics, &new_sv);
                 return;
             }
-            /* Scalar static: evaluate the initializer as a compile-time constant. */
+            /* Scalar static: evaluate the initializer as a compile-time constant.
+             * Pointer statics may also be initialized from address constants. */
             long init_value = 0;
             int is_initialized = 0;
+            ASTNode *addr_init_node = NULL;
             if (node->child_count > 0) {
-                init_value = eval_const_init(node->children[0], node->value);
+                ASTNode *init = node->children[0];
+                int is_addr_const =
+                    (node->decl_type == TYPE_POINTER) &&
+                    (init->type == AST_VAR_REF || init->type == AST_ADDR_OF);
+                if (is_addr_const) {
+                    addr_init_node = init;
+                } else {
+                    init_value = eval_const_init(init, node->value);
+                }
                 is_initialized = 1;
             }
             /* Generate a unique label: Lstatic_<func>_<counter>. */
@@ -5464,7 +5596,9 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             new_sv.is_initialized = is_initialized;
             new_sv.init_value = init_value;
             new_sv.is_unsigned = node->is_unsigned;
-            new_sv.init_node = NULL;
+            new_sv.init_node = addr_init_node;
+            new_sv.is_label_init = (addr_init_node != NULL) ? 1 : 0;
+            new_sv.init_label = NULL;
             vec_push(&cg->local_statics, &new_sv);
             return;
         }
@@ -6735,6 +6869,10 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
             /* Stage 44/72: struct/union global initialized from brace list. */
             gv->init_node = init;
             gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_POINTER && init->type == AST_ADDR_OF) {
+            /* Address-constant initializer: &global or &global[N]. */
+            gv->init_node = init;
+            gv->is_initialized = 1;
         }
     }
     vec_push(&cg->globals, gv);
@@ -7118,6 +7256,34 @@ static void codegen_emit_data(CodeGen *cg) {
                     }
                 }
             }
+        } else if (gv->kind == TYPE_POINTER && gv->init_node &&
+                   gv->init_node->type == AST_ADDR_OF) {
+            /* Address-constant initializer: &global or &global[N]. */
+            ASTNode *addr = gv->init_node;
+            ASTNode *child = (addr->child_count > 0) ? addr->children[0] : NULL;
+            if (child && child->type == AST_VAR_REF) {
+                fprintf(cg->output, "%s: dq %s\n", gv->name, child->value);
+            } else if (child && child->type == AST_ARRAY_INDEX &&
+                       child->child_count == 2 &&
+                       child->children[0]->type == AST_VAR_REF &&
+                       child->children[1]->type == AST_INT_LITERAL) {
+                const char *arr_name = child->children[0]->value;
+                long idx = strtol(child->children[1]->value, NULL, 0);
+                int elem_sz = (gv->full_type && gv->full_type->base)
+                              ? (gv->full_type->base->size > 0
+                                 ? gv->full_type->base->size
+                                 : type_kind_bytes(gv->full_type->base->kind))
+                              : 4;
+                if (idx == 0)
+                    fprintf(cg->output, "%s: dq %s\n", gv->name, arr_name);
+                else
+                    fprintf(cg->output, "%s: dq %s + %ld\n",
+                            gv->name, arr_name, idx * elem_sz);
+            } else {
+                compile_error(
+                    "error: unsupported address-constant initializer for '%s'\n",
+                    gv->name);
+            }
         } else if (type_is_fp(gv->kind) && gv->init_label && !gv->is_label_init) {
             /* Stage 109: float/double global initialized from FP literal.
              * Strip trailing f/F suffix before emitting so NASM accepts it. */
@@ -7406,6 +7572,38 @@ static void codegen_emit_local_statics(CodeGen *cg) {
                         fprintf(cg->output, "    db 0\n");
                         cur_off++;
                     }
+                }
+            } else if (sv->is_label_init && sv->init_node &&
+                       sv->init_node->type == AST_VAR_REF) {
+                /* Static pointer initialized from function designator. */
+                fprintf(cg->output, "%s: dq %s\n", sv->label, sv->init_node->value);
+            } else if (sv->is_label_init && sv->init_node &&
+                       sv->init_node->type == AST_ADDR_OF &&
+                       sv->init_node->child_count == 1) {
+                /* Static pointer initialized from address constant. */
+                ASTNode *child = sv->init_node->children[0];
+                if (child->type == AST_VAR_REF) {
+                    fprintf(cg->output, "%s: dq %s\n", sv->label, child->value);
+                } else if (child->type == AST_ARRAY_INDEX &&
+                           child->child_count == 2 &&
+                           child->children[0]->type == AST_VAR_REF &&
+                           child->children[1]->type == AST_INT_LITERAL) {
+                    const char *arr_name = child->children[0]->value;
+                    long idx = strtol(child->children[1]->value, NULL, 0);
+                    int elem_sz = (sv->full_type && sv->full_type->base)
+                                  ? (sv->full_type->base->size > 0
+                                     ? sv->full_type->base->size
+                                     : type_kind_bytes(sv->full_type->base->kind))
+                                  : 4;
+                    if (idx == 0)
+                        fprintf(cg->output, "%s: dq %s\n", sv->label, arr_name);
+                    else
+                        fprintf(cg->output, "%s: dq %s + %ld\n",
+                                sv->label, arr_name, idx * elem_sz);
+                } else {
+                    compile_error(
+                        "error: unsupported address-constant initializer for "
+                        "block-scope static\n");
                 }
             } else {
                 /* Scalar fallthrough. */

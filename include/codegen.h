@@ -44,6 +44,9 @@ typedef struct {
     /* Stage 101: array/struct brace-list or string-literal initializer node;
      * NULL for scalars and for any uninitialized (.bss) entry. */
     struct ASTNode *init_node;
+    /* address-constant initializer for block-scope static pointers */
+    int is_label_init;
+    const char *init_label;
 } LocalStaticVar;
 
 /* Stage 22-01: file-scope (global) variable. Accessed via RIP-relative

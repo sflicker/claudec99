@@ -3820,8 +3820,11 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                     PARSER_ERROR(parser,
                             "error: compound literals at file scope are not yet supported\n");
                 }
+                /* Accept integer/char/string literals, function designators (VAR_REF),
+                 * and address constants (&global, &global[N]). */
                 if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
-                    init->type != AST_STRING_LITERAL) {
+                    init->type != AST_STRING_LITERAL && init->type != AST_VAR_REF &&
+                    init->type != AST_ADDR_OF) {
                     PARSER_ERROR(parser,
                             "error: non-constant initializer for global '%s'\n", d.name);
                 }
