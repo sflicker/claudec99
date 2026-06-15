@@ -897,6 +897,26 @@ All 1919 tests passed with no source changes needed during bootstrap.
 | C1 | `build/ccompiler-c1` | `00.02.01250000.00971` | `ClaudeC99_v00_02_01250000_00970` | 1919/1919 |
 | C2 | `build/ccompiler-c2` | `00.02.01250000.00972` | `ClaudeC99_v00_02_01250000_00971` | 1919/1919 |
 
+## Issues found during stage 131 self-hosting test
+
+One bootstrap failure was surfaced and fixed.
+
+| # | Symptom | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | C0→C1 bootstrap of `src/parser.c` failed: `error: call to undefined function 'strtod'` | Stage 126-130 added a call to `strtod` in `src/parser.c` for FP constant expression evaluation, but `test/include/stdlib.h` did not declare `strtod`. | Added `double strtod(const char *nptr, char **endptr);` to `test/include/stdlib.h`. |
+
+After the fix, all 1935 tests passed at C0, C1, and C2 with no further changes needed.
+
+## Result (stage 131)
+
+**Date:** 2026-06-15
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13100000.00982` | `gcc_Ubuntu_13_3_0` | 1935/1935 |
+| C1 | `build/ccompiler-c1` | `00.02.13100000.00983` | `ClaudeC99_v00_02_13100000_00982` | 1935/1935 |
+| C2 | `build/ccompiler-c2` | `00.02.13100000.00984` | `ClaudeC99_v00_02_13100000_00983` | 1935/1935 |
+
 ## Known limitation surfaced by self-compilation
 
 Self-hosting works against the current `src/` tree as written, which avoids
