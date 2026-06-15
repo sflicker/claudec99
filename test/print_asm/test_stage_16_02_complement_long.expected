@@ -3,12 +3,20 @@ global f
 f:
     push rbp
     mov rbp, rsp
-    sub rsp, 16
+    sub rsp, 48
     mov [rbp - 8], rbx
+    mov [rbp - 16], r12
+    mov [rbp - 24], r13
+    mov [rbp - 32], r14
+    mov [rbp - 40], r15
     mov rax, 2
-    mov [rbp - 16], rax
-    mov rax, [rbp - 16]
+    mov [rbp - 48], rax
+    mov rax, [rbp - 48]
     not rax
+    mov r12, [rbp - 16]
+    mov r13, [rbp - 24]
+    mov r14, [rbp - 32]
+    mov r15, [rbp - 40]
     mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp
@@ -17,9 +25,17 @@ global main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 16
+    sub rsp, 48
     mov [rbp - 8], rbx
+    mov [rbp - 16], r12
+    mov [rbp - 24], r13
+    mov [rbp - 32], r14
+    mov [rbp - 40], r15
     call f
+    mov r12, [rbp - 16]
+    mov r13, [rbp - 24]
+    mov r14, [rbp - 32]
+    mov r15, [rbp - 40]
     mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp

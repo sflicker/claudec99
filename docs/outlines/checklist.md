@@ -1040,7 +1040,8 @@
 	- [x] Full SysV AMD64 impl: gp_offset range check, register-save-area path, overflow-stack path
 	- [x] int / unsigned int (4-byte) and long / long long / unsigned long long / pointer (8-byte) loads
 	- [x] Rejects small promoted types (char, short, _Bool), aggregates by value, arrays, void
-- [ ] `va_arg` for floating-point and struct-by-value types (deferred)
+- [x] Stage 112: `va_arg` for `double` (XMM register path)
+- [x] Stage 130: `va_arg` for struct/union by value (SysV AMD64 register classification: 1-eightbyte, 2-eightbyte, and memory class)
 - [ ] `va_copy` codegen (still a no-op stub)
 
 ## Stage 76 - For-Loop Initializer Declarations
@@ -1851,11 +1852,11 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] static storage class (block scope — local static variables: scalar/pointer Stage 71; arrays/structs/unions Stage 101; designated-init arrays, struct/union element types, 2D arrays Stage 102; full constant-expression initializers Stage 103)
 - [ ] register storage class (hint only)
 - [ ] auto storage class (explicit)
-- [ ] Tentative definitions for file-scope variables
+- [x] Tentative definitions for file-scope variables (Stage 126)
 - [x] For-loop initializer declarations: for (int i = 0; ...) (Stage 76)
 - [ ] Multiple pointer levels in multi-declarator lists
-- [ ] Function declarations at block scope
-- [ ] Incomplete array types in extern declarations
+- [x] Function declarations at block scope (Stage 129)
+- [x] Incomplete array types in extern declarations (Stage 129)
 
 ### Initializers
 - [x] Designated initializers for arrays: [idx] = value (Stage 97)
@@ -1875,7 +1876,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Address-of on member/subscript lvalues: &s.m, &p->m, &a[i].m (Stage 91)
 - [x] Compound assignment and ++/-- on general lvalues (Stages 79, 80)
 - [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type), relational, equality, logical, ternary) — Stages 77, 99–104
-- [ ] Floating-point constant expressions
+- [x] Floating-point constant expressions at file scope (arithmetic of FP/int literals) (Stage 128)
 - [ ] Lvalue conversion rules for all expression contexts
 - [x] Unary + on floating-point (Stage 110)
 - [x] Mixed integer/floating-point arithmetic (usual arithmetic conversions) (Stage 110)
@@ -1934,8 +1935,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Constant folding in general expression codegen (optimizer)
 - [ ] Dead code elimination
 - [ ] Unreachable code warning
-- [ ] Callee-saved register preservation (rbx, rbp, r12–r15)
+- [x] Callee-saved register preservation (rbx, rbp, r12–r15) (Stage 127)
   - [x] rbx preserved in every function prologue (`mov [rbp - 8], rbx`) and all four epilogue paths per SysV AMD64 ABI (Stage 122)
+  - [x] r12–r15 preserved in every function prologue and all four epilogue paths (Stage 127)
 - [ ] Red-zone usage or avoidance
 
 ### Diagnostics and Error Recovery

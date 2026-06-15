@@ -3,14 +3,22 @@ global main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 32
+    sub rsp, 64
     mov [rbp - 8], rbx
-    mov byte [rbp - 13], 104
-    mov byte [rbp - 12], 105
-    mov byte [rbp - 11], 0
-    mov byte [rbp - 10], 0
-    mov byte [rbp - 9], 0
+    mov [rbp - 16], r12
+    mov [rbp - 24], r13
+    mov [rbp - 32], r14
+    mov [rbp - 40], r15
+    mov byte [rbp - 45], 104
+    mov byte [rbp - 44], 105
+    mov byte [rbp - 43], 0
+    mov byte [rbp - 42], 0
+    mov byte [rbp - 41], 0
     mov eax, 0
+    mov r12, [rbp - 16]
+    mov r13, [rbp - 24]
+    mov r14, [rbp - 32]
+    mov r15, [rbp - 40]
     mov rbx, [rbp - 8]
     mov rsp, rbp
     pop rbp

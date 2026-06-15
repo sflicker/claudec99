@@ -199,9 +199,11 @@ static int func_ptr_types_equal(Type *a, Type *b) {
  * are rejected.
  * Stage 25-01: full_type carries the complete type for function-pointer
  * globals so that successive declarations are checked for compatibility. */
+/* Stage 126: has_init is 1 if this declaration includes an initializer
+ * (i.e., it is a complete definition), 0 if it is a tentative definition. */
 static void parser_register_global(Parser *parser, const char *name,
                                    TypeKind kind, StorageClass sc,
-                                   Type *full_type) {
+                                   Type *full_type, int has_init) {
     GlobalObjSig *existing = parser_find_global(parser, name);
     if (existing) {
         if (existing->kind != kind) {
@@ -214,7 +216,7 @@ static void parser_register_global(Parser *parser, const char *name,
                 ef->base->kind == TYPE_FUNCTION &&
                 nf->base->kind == TYPE_FUNCTION) {
                 if (!func_ptr_types_equal(ef, nf)) {
-                    PARSER_ERROR(parser, 
+                    PARSER_ERROR(parser,
                             "error: conflicting type for global '%s'\n", name);
                 }
             }
@@ -225,13 +227,23 @@ static void parser_register_global(Parser *parser, const char *name,
             PARSER_ERROR(parser, "error: conflicting linkage for '%s'\n", name);
         }
         if (ex_is_static) {
-            /* static + static: duplicate definition */
-            PARSER_ERROR(parser, "error: duplicate global declaration '%s'\n", name);
+            /* Stage 126: static + static — two definitions are an error;
+             * tentative + tentative or tentative + definition are legal. */
+            if (existing->is_defined && has_init) {
+                PARSER_ERROR(parser, "error: duplicate definition of '%s'\n", name);
+            }
+            if (has_init) existing->is_defined = 1;
+            return;
         }
-        /* Both non-static: extern+extern and extern+none are OK;
-         * none+none is a duplicate definition. */
+        /* Both non-static: extern+extern and extern+none are OK.
+         * Stage 126: none+none — allow if at most one has an initializer
+         * (tentative definition merging per C99 §6.9.2). */
         if (existing->storage_class != SC_EXTERN && sc != SC_EXTERN) {
-            PARSER_ERROR(parser, "error: duplicate global declaration '%s'\n", name);
+            if (existing->is_defined && has_init) {
+                PARSER_ERROR(parser, "error: duplicate definition of '%s'\n", name);
+            }
+            if (has_init) existing->is_defined = 1;
+            return;
         }
         /* If new declaration is a definition (SC_NONE), upgrade the entry. */
         if (sc == SC_NONE) {
@@ -244,6 +256,7 @@ static void parser_register_global(Parser *parser, const char *name,
     new_g.kind = kind;
     new_g.storage_class = sc;
     new_g.full_type = full_type;
+    new_g.is_defined = has_init;
     vec_push(&parser->globals, &new_g);
 }
 
@@ -280,8 +293,17 @@ static void parser_register_function(Parser *parser, const char *name,
             PARSER_ERROR(parser, 
                     "error: conflicting linkage for '%s'\n", name);
         }
-        if (existing->param_count != param_count) {
-            PARSER_ERROR(parser, 
+        /* Stage 129: -1 means "unknown arity" from a block-scope forward decl;
+         * allow a real declaration/definition to override it. */
+        if (existing->param_count == -1) {
+            existing->param_count = param_count;
+            existing->return_type = return_type;
+            if (param_types) {
+                for (int i = 0; i < param_count; i++)
+                    existing->param_types[i] = param_types[i];
+            }
+        } else if (param_count != -1 && existing->param_count != param_count) {
+            PARSER_ERROR(parser,
                     "error: function '%s' parameter count mismatch (%d vs %d)\n",
                     name, existing->param_count, param_count);
         }
@@ -1511,16 +1533,20 @@ static ASTNode *parse_primary(Parser *parser) {
                 parser_expect(parser, TOKEN_RPAREN);
                 /* Stage 57-03: variadic functions require at least the fixed
                  * parameter count; non-variadic functions require an exact match. */
-                if (sig->is_variadic) {
-                    if (call->child_count < sig->param_count) {
-                        PARSER_ERROR(parser, 
-                                "error: function '%s' expects at least %d arguments, got %d\n",
+                /* Stage 129: param_count == -1 means unknown arity (block-scope
+                 * forward declaration); skip the argument count check. */
+                if (sig->param_count != -1) {
+                    if (sig->is_variadic) {
+                        if (call->child_count < sig->param_count) {
+                            PARSER_ERROR(parser,
+                                    "error: function '%s' expects at least %d arguments, got %d\n",
+                                    token.value, sig->param_count, call->child_count);
+                        }
+                    } else if (sig->param_count != call->child_count) {
+                        PARSER_ERROR(parser,
+                                "error: function '%s' expects %d arguments, got %d\n",
                                 token.value, sig->param_count, call->child_count);
                     }
-                } else if (sig->param_count != call->child_count) {
-                    PARSER_ERROR(parser, 
-                            "error: function '%s' expects %d arguments, got %d\n",
-                            token.value, sig->param_count, call->child_count);
                 }
                 /* The call expression is typed with the callee's declared
                  * return type so downstream type rules see it. */
@@ -2851,6 +2877,69 @@ static long eval_const_expr(Parser *parser, const char *context) {
     return eval_const_conditional(parser, context);
 }
 
+/* Stage 128: compile-time floating-point constant expression evaluator.
+ * Supports: FP/int literals, unary +/-, binary +/-/* and /, parentheses.
+ * Returns a double; caller converts to float if needed. */
+static double eval_fp_const_expr(Parser *parser, const char *context);
+
+static double eval_fp_primary(Parser *parser, const char *context) {
+    if (parser->current.type == TOKEN_FLOAT_LITERAL ||
+        parser->current.type == TOKEN_DOUBLE_LITERAL) {
+        double v = strtod(parser->current.value, NULL);
+        parser->current = lexer_next_token(parser->lexer);
+        return v;
+    }
+    if (parser->current.type == TOKEN_INT_LITERAL) {
+        double v = (double)parser->current.long_value;
+        parser->current = lexer_next_token(parser->lexer);
+        return v;
+    }
+    if (parser->current.type == TOKEN_LPAREN) {
+        parser->current = lexer_next_token(parser->lexer);
+        double v = eval_fp_const_expr(parser, context);
+        parser_expect(parser, TOKEN_RPAREN);
+        return v;
+    }
+    PARSER_ERROR(parser,
+        "error: %s requires a floating-point constant expression\n", context);
+}
+
+static double eval_fp_unary(Parser *parser, const char *context) {
+    if (parser->current.type == TOKEN_MINUS) {
+        parser->current = lexer_next_token(parser->lexer);
+        return -eval_fp_unary(parser, context);
+    }
+    if (parser->current.type == TOKEN_PLUS) {
+        parser->current = lexer_next_token(parser->lexer);
+        return eval_fp_unary(parser, context);
+    }
+    return eval_fp_primary(parser, context);
+}
+
+static double eval_fp_mult(Parser *parser, const char *context) {
+    double v = eval_fp_unary(parser, context);
+    while (parser->current.type == TOKEN_STAR ||
+           parser->current.type == TOKEN_SLASH) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        double r = eval_fp_unary(parser, context);
+        v = (op == TOKEN_STAR) ? v * r : v / r;
+    }
+    return v;
+}
+
+static double eval_fp_const_expr(Parser *parser, const char *context) {
+    double v = eval_fp_mult(parser, context);
+    while (parser->current.type == TOKEN_PLUS ||
+           parser->current.type == TOKEN_MINUS) {
+        int op = parser->current.type;
+        parser->current = lexer_next_token(parser->lexer);
+        double r = eval_fp_mult(parser, context);
+        v = (op == TOKEN_PLUS) ? v + r : v - r;
+    }
+    return v;
+}
+
 /*
  * <switch_statement>   ::= "switch" "(" <expression> ")" <statement>
  * <labeled_statement>  ::= "case" <case_constant_expr> ":" <statement>
@@ -3024,10 +3113,34 @@ static ASTNode *parse_statement(Parser *parser) {
 
         ParsedDeclarator d = parse_declarator(parser);
 
+        /* Stage 129: block-scope function declaration (C99 §6.2.1p4).
+         * Consume the parameter list and semicolon; register the function
+         * if not already known; return a no-op node. */
+        if (d.is_function) {
+            /* Consume '(' and balance until matching ')'. */
+            parser_expect(parser, TOKEN_LPAREN);
+            int depth = 1;
+            while (depth > 0 && parser->current.type != TOKEN_EOF) {
+                if (parser->current.type == TOKEN_LPAREN) depth++;
+                else if (parser->current.type == TOKEN_RPAREN) {
+                    depth--;
+                    if (depth == 0) break;
+                }
+                parser->current = lexer_next_token(parser->lexer);
+            }
+            parser_expect(parser, TOKEN_RPAREN);
+            parser_expect(parser, TOKEN_SEMICOLON);
+            if (!parser_find_function(parser, d.name)) {
+                parser_register_function(parser, d.name, -1, 0, base_kind,
+                                         NULL, SC_NONE, 0);
+            }
+            return parser_node(parser, AST_TYPEDEF_DECL, "");
+        }
+
         /* Reject `void x;` — void cannot be an object type. */
         if (base_kind == TYPE_VOID && d.pointer_count == 0 &&
             !d.is_func_pointer && !d.is_array) {
-            PARSER_ERROR(parser, 
+            PARSER_ERROR(parser,
                     "error: cannot declare variable '%s' of type void\n", d.name);
         }
 
@@ -3609,7 +3722,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             PARSER_ERROR(parser, 
                     "error: '%s' redeclared as a different kind of symbol\n", d.name);
         }
-        parser_register_global(parser, d.name, TYPE_POINTER, sc, fp_type);
+        parser_register_global(parser, d.name, TYPE_POINTER, sc, fp_type,
+                               parser->current.type == TOKEN_ASSIGN);
         ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
         decl->storage_class = sc;
         decl->decl_type = TYPE_POINTER;
@@ -3688,7 +3802,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         Type *reg_full_type = (obj_kind == TYPE_POINTER ||
                                obj_kind == TYPE_STRUCT  ||
                                obj_kind == TYPE_UNION)  ? full_type : NULL;
-        parser_register_global(parser, d.name, obj_kind, sc, reg_full_type);
+        parser_register_global(parser, d.name, obj_kind, sc, reg_full_type,
+                               parser->current.type == TOKEN_ASSIGN);
 
         ASTNode *decl = parser_node(parser, AST_DECLARATION, d.name);
         decl->storage_class = sc;
@@ -3740,9 +3855,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                             "error: array initializer must be a brace-enclosed list or string literal\n");
                 }
             } else if (!has_size) {
-                PARSER_ERROR(parser, 
-                        "error: array size required for file-scope declaration '%s'\n",
-                        d.name);
+                if (sc != SC_EXTERN) {
+                    PARSER_ERROR(parser,
+                            "error: array size required for file-scope declaration '%s'\n",
+                            d.name);
+                }
+                /* Stage 129: extern incomplete array — treat as zero-length for codegen.
+                 * Emitted as 'extern name' in the assembly output. */
+                length = 0;
+                has_size = 1;
             }
 
             /* Stage 86: build multi-dim type; update array_dims[0] with inferred length. */
@@ -3797,25 +3918,19 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                 init = parse_initializer(parser);
             } else if (decl->decl_type == TYPE_FLOAT ||
                        decl->decl_type == TYPE_DOUBLE) {
-                /* Stage 109/125: float/double global — accept FP or integer literal. */
-                init = parse_assignment_expression(parser);
-                if (init->type != AST_FLOAT_LITERAL && init->type != AST_INT_LITERAL) {
-                    /* Stage 125: fold negated integer literal (e.g. double x = -7;). */
-                    if (init->type == AST_UNARY_OP && init->child_count == 1 &&
-                        init->children[0]->type == AST_INT_LITERAL &&
-                        init->value[0] == '-') {
-                        long v = -strtol(init->children[0]->value, NULL, 0);
-                        char neg_buf[32];
-                        snprintf(neg_buf, sizeof(neg_buf), "%ld", v);
-                        init = parser_node(parser, AST_INT_LITERAL,
-                                           lexer_store_bytes(parser->lexer, neg_buf,
-                                                             strlen(neg_buf)));
-                    } else {
-                        PARSER_ERROR(parser,
-                                "error: float/double global '%s' requires a constant initializer\n",
-                                d.name);
-                    }
+                /* Stage 128: evaluate as a compile-time FP constant expression. */
+                double fv = eval_fp_const_expr(parser, "float/double global initializer");
+                char fp_buf[64];
+                if (decl->decl_type == TYPE_FLOAT) {
+                    float f32 = (float)fv;
+                    snprintf(fp_buf, sizeof(fp_buf), "%.9g", (double)f32);
+                } else {
+                    snprintf(fp_buf, sizeof(fp_buf), "%.17g", fv);
                 }
+                if (!strchr(fp_buf, '.') && !strchr(fp_buf, 'e') && !strchr(fp_buf, 'E'))
+                    strncat(fp_buf, ".0", sizeof(fp_buf) - strlen(fp_buf) - 1);
+                init = parser_node(parser, AST_FLOAT_LITERAL,
+                                   lexer_store_bytes(parser->lexer, fp_buf, strlen(fp_buf)));
             } else if (decl->decl_type != TYPE_POINTER &&
                        decl->decl_type != TYPE_STRUCT &&
                        decl->decl_type != TYPE_UNION) {
@@ -3879,7 +3994,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
             for (int i = 0; i < d2.pointer_count; i++)
                 ft2 = type_pointer(ft2);
             Type *reg_ft2 = (k2 == TYPE_POINTER) ? ft2 : NULL;
-            parser_register_global(parser, d2.name, k2, sc, reg_ft2);
+            parser_register_global(parser, d2.name, k2, sc, reg_ft2,
+                                   parser->current.type == TOKEN_ASSIGN);
             ASTNode *next_decl = parser_node(parser, AST_DECLARATION, d2.name);
             next_decl->storage_class = sc;
             next_decl->is_const = ((ds.is_const && d2.pointer_count == 0) ||

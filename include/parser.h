@@ -61,6 +61,7 @@ typedef struct {
     TypeKind kind;
     StorageClass storage_class;
     struct Type *full_type;
+    int is_defined;  /* 1 if this entry has a complete definition (with initializer) */
 } GlobalObjSig;
 
 typedef struct {

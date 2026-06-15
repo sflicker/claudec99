@@ -116,6 +116,10 @@ typedef struct {
     ArgSlot items[MAX_CALL_LAYOUT_ITEMS];
 } CallLayout;
 
+/* Forward declarations needed by compute_call_layout (stage 130). */
+static LocalVar  *codegen_find_var(CodeGen *cg, const char *name);
+static GlobalVar *codegen_find_global(CodeGen *cg, const char *name);
+
 /*
  * Compute argument placement for a call to `fn_decl` (which may be NULL for an
  * undeclared/libc callee) with `nargs` actual arguments. Struct/union value
@@ -126,7 +130,8 @@ typedef struct {
  */
 static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs,
                                 ASTNode *call_node,
-                                const TypeKind *actual_types) {
+                                const TypeKind *actual_types,
+                                CodeGen *cg) {
     if (nargs > MAX_CALL_LAYOUT_ITEMS) {
         compile_error("error: call has %d arguments; max supported is %d\n",
                 nargs, MAX_CALL_LAYOUT_ITEMS);
@@ -145,19 +150,38 @@ static void compute_call_layout(CallLayout *L, ASTNode *fn_decl, int nargs,
 
         /* For variadic extras (p==NULL), use caller-supplied actual_types. */
         TypeKind actual_kind = TYPE_LONG; /* default GP for unknown extras */
+        Type *actual_full_type = NULL;
         if (!p && actual_types)
             actual_kind = actual_types[i];
         else if (!p && call_node && i < call_node->child_count)
             actual_kind = call_node->children[i]->decl_type;
+        if (!p && call_node && i < call_node->child_count)
+            actual_full_type = call_node->children[i]->full_type;
+        /* Stage 130: if the actual arg is a struct/union var, look up its full
+         * type in the symbol tables so struct_reg_eightbytes can get the size. */
+        if (!p && !actual_full_type && is_struct_or_union_kind(actual_kind)
+                && cg && call_node && i < call_node->child_count) {
+            ASTNode *arg = call_node->children[i];
+            if (arg->type == AST_VAR_REF) {
+                LocalVar *lv = codegen_find_var(cg, arg->value);
+                if (lv) actual_full_type = lv->full_type;
+                else {
+                    GlobalVar *gv = codegen_find_global(cg, arg->value);
+                    if (gv) actual_full_type = gv->full_type;
+                }
+            }
+        }
 
-        int is_struct = p && is_struct_or_union_kind(p->decl_type);
+        int is_struct = p ? is_struct_or_union_kind(p->decl_type)
+                          : is_struct_or_union_kind(actual_kind);
         int is_fp = p ? type_is_fp(p->decl_type) : type_is_fp(actual_kind);
         s->is_struct = is_struct;
         s->is_fp = is_fp;
 
         if (is_struct) {
-            int sz = p->full_type ? p->full_type->size : 0;
-            int ebs = struct_reg_eightbytes(p->full_type);
+            Type *st = p ? p->full_type : actual_full_type;
+            int sz = st ? st->size : 0;
+            int ebs = struct_reg_eightbytes(st);
             s->nbytes = sz;
             if (ebs > 0 && gp_next + ebs <= 6) {
                 s->gp_start = gp_next; s->gp_count = ebs; gp_next += ebs;
@@ -1571,6 +1595,13 @@ static Type *emit_struct_addr(CodeGen *cg, ASTNode *node) {
             compile_error( "error: compound literal is not a struct/union value\n");
         return node->full_type->base;
     }
+    case AST_BUILTIN_VA_ARG: {
+        /* Stage 130: va_arg(ap, struct T) leaves address of scratch slot in rax. */
+        codegen_expression(cg, node);
+        if (!node->full_type || !is_struct_or_union_kind(node->result_type))
+            compile_error("error: va_arg does not yield a struct/union value\n");
+        return node->full_type;
+    }
     default:
         compile_error( "error: expression is not a usable struct/union value\n");
     }
@@ -1641,6 +1672,16 @@ static int compute_struct_ret_bytes(CodeGen *cg, ASTNode *node) {
         ASTNode *callee = codegen_find_function_decl(cg, node->value);
         if (callee && is_struct_or_union_kind(callee->decl_type) && callee->full_type) {
             int sz = callee->full_type->size;
+            total += ((sz + 7) & ~7) + 8;
+        }
+    }
+    /* Stage 130: va_arg(ap, struct T) also needs a scratch slot. */
+    if (node->type == AST_BUILTIN_VA_ARG) {
+        TypeKind vk = node->full_type ? node->full_type->kind
+                                      : (TypeKind)node->decl_type;
+        if (is_struct_or_union_kind(vk) && node->full_type
+                && node->full_type->size > 0) {
+            int sz = node->full_type->size;
             total += ((sz + 7) & ~7) + 8;
         }
     }
@@ -2010,6 +2051,10 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
             } else if (type_is_fp(lv->kind)) {
                 /* Stage 110: float/double local — return the declared kind directly. */
                 t = lv->kind;
+            } else if (is_struct_or_union_kind(lv->kind)) {
+                /* Stage 130: preserve struct/union kind so compute_call_layout
+                 * can classify variadic struct arguments correctly. */
+                t = lv->kind;
             } else {
                 t = promote_kind(type_kind_from_size(lv->size));
             }
@@ -2019,6 +2064,8 @@ static TypeKind expr_result_type(CodeGen *cg, ASTNode *node) {
                 t = TYPE_POINTER;
             } else if (gv && type_is_fp(gv->kind)) {
                 /* Stage 110: float/double global — return the declared kind directly. */
+                t = gv->kind;
+            } else if (gv && is_struct_or_union_kind(gv->kind)) {
                 t = gv->kind;
             } else {
                 t = gv ? promote_kind(type_kind_from_size(gv->size)) : TYPE_INT;
@@ -3720,7 +3767,8 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             int i;
             for (i = 0; i < nargs; i++) {
                 TypeKind akt = expr_result_type(cg, node->children[i]);
-                if (type_is_fp(akt)) { involves_special = 1; break; }
+                if (type_is_fp(akt) || is_struct_or_union_kind(akt))
+                    { involves_special = 1; break; }
             }
         }
         if (involves_special) {
@@ -3732,7 +3780,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 for (_i = 0; _i < nargs; _i++)
                     actual_types[_i] = expr_result_type(cg, node->children[_i]);
             }
-            compute_call_layout(&L, callee, nargs, node, actual_types);
+            compute_call_layout(&L, callee, nargs, node, actual_types, cg);
 
             /* Count XMM registers used (for variadic al register). */
             int xmm_arg_count = 0;
@@ -5005,8 +5053,9 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             return;
         case TYPE_STRUCT:
         case TYPE_UNION:
-            compile_error("error: va_arg: aggregate types are not supported\n");
-            return;
+            if (!arg_type || arg_type->size <= 0)
+                compile_error("error: va_arg: struct/union type has unknown size\n");
+            break;
         case TYPE_ARRAY:
             compile_error("error: va_arg: array types are not supported\n");
             return;
@@ -5050,6 +5099,67 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
 
             fprintf(cg->output, ".L_va_arg_done_%d:\n", lbl);
             node->result_type = TYPE_DOUBLE;
+            node->full_type = arg_type;
+            return;
+        }
+
+        /* Stage 130: struct/union va_arg — SysV AMD64 ABI register classification. */
+        if (kind == TYPE_STRUCT || kind == TYPE_UNION) {
+            int sz     = arg_type->size;
+            int ebs    = struct_reg_eightbytes(arg_type);
+            int aligned_sz = (sz + 7) & ~7;
+            int temp_off = claim_struct_ret_temp(cg, sz);
+
+            if (ebs == 0) {
+                /* MEMORY class: always from overflow_arg_area. */
+                fprintf(cg->output, "    mov rdx, [rbp - %d]\n", ap_off - 8);
+                fprintf(cg->output, "    lea rcx, [rdx + %d]\n", aligned_sz);
+                fprintf(cg->output, "    mov [rbp - %d], rcx\n", ap_off - 8);
+                fprintf(cg->output, "    lea rdi, [rbp - %d]\n", temp_off);
+                fprintf(cg->output, "    mov rsi, rdx\n");
+                emit_struct_copy(cg, sz);
+            } else if (ebs == 1) {
+                /* Register class, 1 GP eightbyte (size 1–8). */
+                fprintf(cg->output, "    mov eax, dword [rbp - %d]\n", ap_off);
+                fprintf(cg->output, "    cmp eax, 48\n");
+                fprintf(cg->output, "    jae .L_va_arg_ovf_%d\n", lbl);
+                fprintf(cg->output, "    mov rcx, [rbp - %d]\n", ap_off - 16);
+                fprintf(cg->output, "    lea rdx, [rcx + rax]\n");
+                fprintf(cg->output, "    add dword [rbp - %d], 8\n", ap_off);
+                fprintf(cg->output, "    jmp .L_va_arg_load_%d\n", lbl);
+                fprintf(cg->output, ".L_va_arg_ovf_%d:\n", lbl);
+                fprintf(cg->output, "    mov rdx, [rbp - %d]\n", ap_off - 8);
+                fprintf(cg->output, "    lea rcx, [rdx + 8]\n");
+                fprintf(cg->output, "    mov [rbp - %d], rcx\n", ap_off - 8);
+                fprintf(cg->output, ".L_va_arg_load_%d:\n", lbl);
+                fprintf(cg->output, "    mov rax, [rdx]\n");
+                fprintf(cg->output, "    mov [rbp - %d], rax\n", temp_off);
+            } else {
+                /* Register class, 2 GP eightbytes (size 9–16).
+                 * Both slots must be free: gp_offset <= 32. */
+                fprintf(cg->output, "    mov eax, dword [rbp - %d]\n", ap_off);
+                fprintf(cg->output, "    cmp eax, 32\n");
+                fprintf(cg->output, "    ja .L_va_arg_ovf_%d\n", lbl);
+                fprintf(cg->output, "    mov rcx, [rbp - %d]\n", ap_off - 16);
+                fprintf(cg->output, "    add rcx, rax\n");
+                fprintf(cg->output, "    mov r11, [rcx]\n");
+                fprintf(cg->output, "    mov r10, [rcx + 8]\n");
+                fprintf(cg->output, "    mov [rbp - %d], r11\n", temp_off);
+                fprintf(cg->output, "    mov [rbp - %d], r10\n", temp_off - 8);
+                fprintf(cg->output, "    add dword [rbp - %d], 16\n", ap_off);
+                fprintf(cg->output, "    jmp .L_va_arg_done_%d\n", lbl);
+                fprintf(cg->output, ".L_va_arg_ovf_%d:\n", lbl);
+                fprintf(cg->output, "    mov rdx, [rbp - %d]\n", ap_off - 8);
+                fprintf(cg->output, "    mov r11, [rdx]\n");
+                fprintf(cg->output, "    mov r10, [rdx + 8]\n");
+                fprintf(cg->output, "    mov [rbp - %d], r11\n", temp_off);
+                fprintf(cg->output, "    mov [rbp - %d], r10\n", temp_off - 8);
+                fprintf(cg->output, "    add qword [rbp - %d], %d\n",
+                        ap_off - 8, aligned_sz);
+                fprintf(cg->output, ".L_va_arg_done_%d:\n", lbl);
+            }
+            fprintf(cg->output, "    lea rax, [rbp - %d]\n", temp_off);
+            node->result_type = kind;
             node->full_type = arg_type;
             return;
         }
@@ -5892,6 +6002,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         cg->current_func);
             }
             if (cg->has_frame) {
+                fprintf(cg->output, "    mov r12, [rbp - 16]\n");
+                fprintf(cg->output, "    mov r13, [rbp - 24]\n");
+                fprintf(cg->output, "    mov r14, [rbp - 32]\n");
+                fprintf(cg->output, "    mov r15, [rbp - 40]\n");
                 fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                 fprintf(cg->output, "    mov rsp, rbp\n");
                 fprintf(cg->output, "    pop rbp\n");
@@ -5933,6 +6047,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
                         fprintf(cg->output, "    mov rdx, [r11 + 8]\n");
                 }
                 if (cg->has_frame) {
+                    fprintf(cg->output, "    mov r12, [rbp - 16]\n");
+                    fprintf(cg->output, "    mov r13, [rbp - 24]\n");
+                    fprintf(cg->output, "    mov r14, [rbp - 32]\n");
+                    fprintf(cg->output, "    mov r15, [rbp - 40]\n");
                     fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                     fprintf(cg->output, "    mov rsp, rbp\n");
                     fprintf(cg->output, "    pop rbp\n");
@@ -5993,6 +6111,10 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
              * __libc_start_main's return-from-main value, which it then
              * passes to exit. */
             if (cg->has_frame) {
+                fprintf(cg->output, "    mov r12, [rbp - 16]\n");
+                fprintf(cg->output, "    mov r13, [rbp - 24]\n");
+                fprintf(cg->output, "    mov r14, [rbp - 32]\n");
+                fprintf(cg->output, "    mov r15, [rbp - 40]\n");
                 fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
                 fprintf(cg->output, "    mov rsp, rbp\n");
                 fprintf(cg->output, "    pop rbp\n");
@@ -6271,7 +6393,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
 
         /* Reset per-function symbol table */
         cg->locals.len = 0;
-        cg->stack_offset = 8;   /* Stage 122: [rbp - 8] reserved for rbx */
+        cg->stack_offset = 40;  /* Stage 127: [rbp-8]=rbx, [rbp-16..40]=r12-r15 */
         cg->scope_start = 0;
         cg->push_depth = 0;
         vec_clear(&cg->user_labels);
@@ -6319,7 +6441,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         /* Stage 98: include stack space for compound literals in expression trees. */
         int compound_lit_bytes = compute_compound_literal_bytes(body);
         int stack_size = param_bytes + compute_decl_bytes(body) + compound_lit_bytes +
-                         scratch_bytes + sret_bytes + 8; /* Stage 122: rbx save slot */
+                         scratch_bytes + sret_bytes + 40; /* Stage 127: rbx + r12-r15 save slots */
         if (node->is_variadic) {
             /* Stage 122: the rbx slot shifts the save-area base by 8; add 8 bytes
              * of alignment padding so the variadic register save area starts at an
@@ -6349,9 +6471,12 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
         if (stack_size > 0) {
             fprintf(cg->output, "    sub rsp, %d\n", stack_size);
         }
-        /* Stage 122: save rbx in the dedicated slot ([rbp - 8]) reserved
-         * in Task 1/2.  stack_size >= 8 always after Task 1. */
+        /* Stage 122/127: save callee-saved registers rbx and r12-r15. */
         fprintf(cg->output, "    mov [rbp - 8], rbx\n");
+        fprintf(cg->output, "    mov [rbp - 16], r12\n");
+        fprintf(cg->output, "    mov [rbp - 24], r13\n");
+        fprintf(cg->output, "    mov [rbp - 32], r14\n");
+        fprintf(cg->output, "    mov [rbp - 40], r15\n");
 
         /* Stage 75-04/112: variadic function register save area.
          * Reserve 176 bytes: 48 for 6 GP regs + 128 for 8 XMM regs (no padding needed).
@@ -6534,7 +6659,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
              * (plain stores, no register clobbering); stack-passed parameters
              * are bound second, since copying them clobbers rdi/rsi/rcx. */
             CallLayout L;
-            compute_call_layout(&L, node, num_params, NULL, NULL);
+            compute_call_layout(&L, node, num_params, NULL, NULL, cg);
             /* Pass A: register-passed parameters. */
             for (int i = 0; i < num_params; i++) {
                 ASTNode *p = node->children[i];
@@ -6662,6 +6787,10 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * returns cleanly.  For non-void functions the behaviour of
          * falling off the end is undefined; we don't emit a spurious ret. */
         if (node->decl_type == TYPE_VOID) {
+            fprintf(cg->output, "    mov r12, [rbp - 16]\n");
+            fprintf(cg->output, "    mov r13, [rbp - 24]\n");
+            fprintf(cg->output, "    mov r14, [rbp - 32]\n");
+            fprintf(cg->output, "    mov r15, [rbp - 40]\n");
             fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
             fprintf(cg->output, "    mov rsp, rbp\n");
             fprintf(cg->output, "    pop rbp\n");
@@ -6856,6 +6985,74 @@ static const char *bss_res_directive(TypeKind kind) {
  * (→ .data).  Uninitialized globals (→ .bss) have is_initialized == 0.
  */
 static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
+    /* Stage 126: tentative definitions — if a GlobalVar with this name already
+     * exists, skip (if no initializer) or update it in-place (if has initializer). */
+    GlobalVar *existing_gv = codegen_find_global(cg, decl->value);
+    if (existing_gv) {
+        if (decl->child_count == 0) {
+            /* No initializer: tentative definition or extern-only re-declaration.
+             * If new decl is SC_NONE, upgrade extern reference to a local tentative def. */
+            if (decl->storage_class == SC_NONE && existing_gv->is_extern)
+                existing_gv->is_extern = 0;
+            return;
+        }
+        /* Has initializer: promote the existing entry to a full definition.
+         * Also clear is_extern and update the type (e.g. extern int arr[]
+         * has length=0; the definition carries the real length). */
+        existing_gv->is_initialized = 0;
+        existing_gv->init_value = 0;
+        existing_gv->is_label_init = 0;
+        existing_gv->init_label = NULL;
+        existing_gv->init_node = NULL;
+        existing_gv->is_extern = (decl->storage_class == SC_EXTERN);
+        existing_gv->is_static_linkage = (decl->storage_class == SC_STATIC);
+        existing_gv->full_type = decl->full_type;
+        if (decl->decl_type == TYPE_ARRAY && decl->full_type)
+            existing_gv->size = decl->full_type->base
+                                ? type_kind_bytes(decl->full_type->base->kind) : 4;
+        else
+            existing_gv->size = type_kind_bytes(decl->decl_type);
+        GlobalVar *gv = existing_gv;
+        if (decl->child_count > 0) {
+            ASTNode *init = decl->children[0];
+            if (init->type == AST_FLOAT_LITERAL) {
+                gv->init_label = init->value;
+                gv->is_label_init = 0;
+                gv->is_initialized = 1;
+            } else if (init->type == AST_INT_LITERAL) {
+                long v = strtol(init->value, NULL, 0);
+                if (gv->kind == TYPE_FLOAT || gv->kind == TYPE_DOUBLE) {
+                    char fp_buf[64];
+                    if (gv->kind == TYPE_FLOAT) {
+                        float fv = (float)v;
+                        snprintf(fp_buf, sizeof(fp_buf), "%.9g", (double)fv);
+                    } else {
+                        double dv = (double)v;
+                        snprintf(fp_buf, sizeof(fp_buf), "%.17g", dv);
+                    }
+                    if (!strchr(fp_buf, '.') && !strchr(fp_buf, 'e') && !strchr(fp_buf, 'E')) {
+                        int flen = (int)strlen(fp_buf);
+                        fp_buf[flen] = '.'; fp_buf[flen+1] = '0'; fp_buf[flen+2] = '\0';
+                    }
+                    gv->init_label = codegen_intern(cg, fp_buf);
+                    gv->is_label_init = 0;
+                    gv->is_initialized = 1;
+                } else {
+                    gv->init_value = (gv->kind == TYPE_BOOL) ? (v != 0 ? 1 : 0) : v;
+                    gv->is_initialized = 1;
+                }
+            } else if (init->type == AST_CHAR_LITERAL) {
+                gv->init_value = (long)(unsigned char)init->value[0];
+                gv->is_initialized = 1;
+            } else {
+                gv->init_value = 0;
+                gv->init_node = init;
+                gv->is_initialized = 1;
+            }
+        }
+        return;
+    }
+
     GlobalVar new_gv;
     GlobalVar *gv = &new_gv;
     gv->name = decl->value;
