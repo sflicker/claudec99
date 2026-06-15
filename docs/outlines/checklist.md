@@ -1822,6 +1822,38 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] 4 new FP-global valid tests in `floating_point/` (`test_double_global_from_int__0.c`, `test_float_global_from_int__0.c`, `test_double_global_from_zero__0.c`, `test_double_global_negative_from_int__0.c`); 3 new variadic float promotion tests in `varargs/`/`functions/`
 - [x] All 1,919 tests pass (1233 valid + 262 invalid + 88 integration + 50 print-AST + 100 print-tokens + 21 print-asm + 165 unit); self-host C0→C1→C2 all pass 1919/1919 with no source changes
 
+## Stage 126 — Tentative Definitions (C99 §6.9.2)
+
+- [x] Parser tentative definition support: `is_defined` field in `GlobalObjSig`; `parser_register_global()` allows re-registration when existing entry has no initializer
+- [x] Codegen tentative fast-path: duplicate tentative returns silently; `extern T x; T x;` clears `is_extern`; new initializer updates existing entry in-place
+- [x] 6 new tests + 1 moved from invalid
+
+## Stage 127 — Callee-Saved Registers r12–r15 (SysV AMD64 ABI)
+
+- [x] Stack-size formula adjusted: prologue saves r12–r15 (40 bytes instead of 8); epilogue restores all four
+- [x] All 21 print-asm tests regenerated (offsets shifted by 32 bytes)
+- [x] 1 new test
+
+## Stage 128 — FP Constant Expressions at File Scope
+
+- [x] Recursive-descent FP constant evaluator: `eval_fp_primary`, `eval_fp_unary`, `eval_fp_mult`, `eval_fp_const_expr`
+- [x] Float/double global initializer path calls `eval_fp_const_expr` instead of `parse_assignment_expression`
+- [x] 4 new tests
+
+## Stage 129 — Block-Scope Function Declarations and Extern Incomplete Arrays
+
+- [x] Block-scope function declarations: detects function-type declarator in block, skips parameter list with depth counter, emits `AST_TYPEDEF_DECL`, registers with `param_count = -1` (unknown arity); call-site arity check skips validation
+- [x] Extern incomplete arrays: allows `has_size=1, length=0` for `SC_EXTERN` declarations; update path completes type from new definition
+- [x] 3 new tests (2 fn decl + 1 incomplete array)
+
+## Stage 130 — `va_arg` for Struct/Union by Value (SysV AMD64)
+
+- [x] Codegen struct va_arg handler: SysV AMD64 classification (MEMORY class >16 bytes, register class 1–2 eightbytes); reads from `overflow_arg_area` or `reg_save_area`, copies to scratch with `rep movsb`, advances pointer
+- [x] `compute_struct_ret_bytes` pre-allocates scratch slots for `AST_BUILTIN_VA_ARG` struct nodes
+- [x] `emit_struct_addr` handles `AST_BUILTIN_VA_ARG` case
+- [x] Variadic struct argument fix: `expr_result_type` returns `TYPE_STRUCT`/`TYPE_UNION` for structs; `compute_call_layout` gains `CodeGen` parameter and looks up struct's `full_type`; `involves_special` detects struct args
+- [x] 4 new tests (3 new + 1 moved from invalid)
+
 ---
 
 ## TODO
@@ -1893,7 +1925,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 ### Functions
 - [x] Variadic function definitions: va_list, va_start, va_end, and va_arg for GP-class types (int/long/long long/pointer) (Stage 75)
   - [x] va_arg for double (Stage 112); va_arg for float rejected per C99 §6.5.2.2p6
-  - [ ] va_arg for struct-by-value types
+  - [x] va_arg for struct-by-value types (Stage 130)
   - [x] va_copy codegen — three 8-byte moves copying the 24-byte va_list struct (Stage 107)
 - [ ] Old-style (K&R) function definitions
 - [x] Implicit return in void functions — fall-off-end emits `ret` (Stage 107 checklist close)
