@@ -3356,10 +3356,12 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         fprintf(cg->output, "    mov rax, %d\n", sz);
         node->result_type = TYPE_LONG;
+        node->is_unsigned = 1; /* sizeof yields unsigned size_t (C99 §6.5.3.4) */
         return;
     }
     if (node->type == AST_SIZEOF_EXPR) {
         ASTNode *child = node->children[0];
+        node->is_unsigned = 1; /* sizeof yields unsigned size_t (C99 §6.5.3.4) */
         if (child->type == AST_VAR_REF) {
             LocalVar *lv = codegen_find_var(cg, child->value);
             if (lv && lv->kind == TYPE_ARRAY && lv->full_type) {
