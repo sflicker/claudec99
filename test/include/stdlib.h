@@ -20,6 +20,7 @@ void free(void *);
 void exit(int status);
 long strtol(const char *nptr, char **endptr, int base);
 unsigned long strtoul(const char *nptr, char **endptr, int base);
+double strtod(const char *nptr, char **endptr);
 
 /* process control */
 void  abort(void);
