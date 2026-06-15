@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 125 (FP global init, variadic float promotion):
+Through stage 131 (sizeof unsigned size_t):
 
-> Stage 125 fixes two floating-point correctness bugs and closes stale checklist items. **FP globals from integer initializers**: `double x = 5;` and `float f = 3;` at file scope now emit IEEE 754 floating-point encoding (`dq 5.0`, `dd 3.0`) instead of raw integer bits (`dq 5`, `dd 3`). The parser now accepts integer literals (and folded negated integer literals) as initializers for `float`/`double` globals; `codegen_add_global` converts the integer to a `%.17g`/`%.9g` decimal string and stores it via `init_label` so NASM encodes the correct bit pattern. **Variadic float→double promotion** (C99 §6.5.2.2p7): `float` arguments passed to variadic functions (including `printf`, user-defined `...` functions) are now promoted to `double` at the call site. The `involves_special` call-emission path emits `cvtss2sd xmm0, xmm0` for `float` variadic extras in both the XMM-register (Phase 2) and stack-overflow (Phase 1) sub-paths; detection uses the existing `s->nbytes == 8` assignment that `compute_call_layout` applies to all variadic extras. **Checklist cleanup**: two items already implemented in Stage 110 ("Mixed integer/floating-point arithmetic" and "Unary + on floating-point") are now marked done. Seven new tests added. All 1919 tests pass (1233 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with no source changes during bootstrap.
+> Stage 131 fixes `sizeof` to produce an unsigned `size_t` result per C99 §6.5.3.4. The compiler previously treated `sizeof` as signed `long`, causing incorrect expression evaluation in three scenarios: `sizeof(int) > -1` evaluated true (wrong — under unsigned UAC, -1 converts to ULONG_MAX which is > sizeof(int), so the comparison should be FALSE and not add 1), `sizeof(char) - 2 > 0` evaluated false (wrong — under unsigned arithmetic, 1-2 wraps to ULONG_MAX-1 which is > 0, should be TRUE and add 2), and `(sizeof(int) < 0) == 0` was TRUE but coincidentally (no unsigned value can be < 0). The fix is two lines in `src/codegen.c`: set `node->is_unsigned = 1` on both `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` nodes when their value is materialized. The existing UAC infrastructure in `uac_is_unsigned()` and the comparison/arithmetic codegen then correctly selects unsigned instructions when a sizeof result is one of the operands. No tokenizer, parser, or AST changes were needed. One bootstrap issue was fixed: `strtod` was missing from `test/include/stdlib.h` (it was added to `src/parser.c` in stages 126-130 for FP constant expression evaluation). All 1935 tests pass (1252 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through stage 124 (octal integer literals, `__func__`, file-scope compound literals):
 
@@ -647,8 +647,8 @@ Through stage 91 (address-of member lvalues):
   operands are rejected. `~` follows the usual integer promotions
   (`char`/`short`/`int` → `int`; `long` → `long`).
 - **`sizeof`**: `sizeof(<type>)` and `sizeof(<expression>)` return
-  the byte size of the operand's type as a `long` constant. The
-  non-parenthesized form `sizeof expr` is also supported. Supported
+  the byte size of the operand's type as a `size_t` (unsigned integer) value per C99.
+  The non-parenthesized form `sizeof expr` is also supported. Supported
   scalar types: `char` (1), `short` (2), `int` (4), `long` (8), and
   any pointer type (8). Struct types return the total byte size based on
   natural-alignment field layout. For expression operands, integer promotions and
@@ -699,7 +699,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 125 all 1919 tests pass (1233 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 131 all 1935 tests pass (1252 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
