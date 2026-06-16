@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 133 self-hosting test
+
+None. Stage 133 adds `is_no_prototype` to `ASTNode` and `has_no_prototype` to
+`FuncSig`. The compiler's own source never uses the no-prototype declaration
+form `int f()` (all compiler-internal forward declarations use `(void)` or a
+full prototype), so the new `is_no_prototype` flag is always 0 during bootstrap.
+The two codegen changes (extending the `cvtss2sd` promotion check from
+`is_variadic` to `is_variadic || is_no_prototype`) are only reached when
+calling through a no-prototype declaration, which the compiler source never
+does. All 1939 tests passed at C0, C1, and C2 with no source changes needed
+during the bootstrap.
+
+## Result (stage 133)
+
+**Date:** 2026-06-16
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13300000.00995` | `GNU_13_3_0` | 1939/1939 |
+| C1 | `build/ccompiler-c1` | `00.02.13300000.00996` | `ClaudeC99_v00_02_13300000_00995` | 1939/1939 |
+| C2 | `build/ccompiler-c2` | `00.02.13300000.00997` | `ClaudeC99_v00_02_13300000_00996` | 1939/1939 |
+
+---
+
 **Date:** 2026-06-08
 **Stage:** stage-96 (compile multiple source files per invocation)
 **Compiler:** `build/ccompiler` (C0, gcc-built → C1 → C2 via bootstrap)
