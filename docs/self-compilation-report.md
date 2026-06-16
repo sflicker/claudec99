@@ -917,6 +917,28 @@ After the fix, all 1935 tests passed at C0, C1, and C2 with no further changes n
 | C1 | `build/ccompiler-c1` | `00.02.13100000.00983` | `ClaudeC99_v00_02_13100000_00982` | 1935/1935 |
 | C2 | `build/ccompiler-c2` | `00.02.13100000.00984` | `ClaudeC99_v00_02_13100000_00983` | 1935/1935 |
 
+## Issues found during stage 132 self-hosting test
+
+None. The change is confined to a single validation guard in the `is_pointer_cmp`
+block of `codegen.c`: `is_null_pointer_constant` is replaced by
+`is_integer_constant` for the equality-comparison path. The compiler's own
+source does not compare pointer operands against non-zero integer constants;
+all pointer equality comparisons in the compiler source use either two pointer
+operands or the null constant `0`. The new `is_integer_constant` helper is
+a three-line pure predicate with no side effects. No new AST node types,
+no allocation, no change to register assignment. All 1937 tests passed at
+C0, C1, and C2 with no source changes needed.
+
+## Result (stage 132)
+
+**Date:** 2026-06-16
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13200000.00990` | `gcc_Ubuntu_13_3_0` | 1937/1937 |
+| C1 | `build/ccompiler-c1` | `00.02.13200000.00991` | `ClaudeC99_v00_02_13200000_00990` | 1937/1937 |
+| C2 | `build/ccompiler-c2` | `00.02.13200000.00992` | `ClaudeC99_v00_02_13200000_00991` | 1937/1937 |
+
 ## Known limitation surfaced by self-compilation
 
 Self-hosting works against the current `src/` tree as written, which avoids
