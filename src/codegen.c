@@ -288,6 +288,11 @@ static int is_null_pointer_constant(ASTNode *node) {
            strcmp(node->value, "0") == 0;
 }
 
+/* Stage 132: any integer literal (zero or non-zero) is an integer constant. */
+static int is_integer_constant(ASTNode *node) {
+    return node && node->type == AST_INT_LITERAL;
+}
+
 /*
  * Stage 12-04: two pointer Types are compatible only when their full
  * chains agree on every level — same kind at each step, same integer
@@ -4686,14 +4691,16 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 compile_error(
                         "error: relational comparison requires two pointer operands\n");
             } else if (lhs_ptr && !rhs_ptr) {
-                if (!is_null_pointer_constant(rhs)) {
+                /* Stage 132: accept any integer constant (null or non-null)
+                 * for == and !=; non-constant integers remain an error. */
+                if (!is_integer_constant(rhs)) {
                     compile_error(
-                            "error: comparing pointer with non zero integer\n");
+                            "error: comparing pointer with non-constant integer\n");
                 }
             } else if (!lhs_ptr && rhs_ptr) {
-                if (!is_null_pointer_constant(lhs)) {
+                if (!is_integer_constant(lhs)) {
                     compile_error(
-                            "error: comparing pointer with non zero integer\n");
+                            "error: comparing pointer with non-constant integer\n");
                 }
             }
         }
