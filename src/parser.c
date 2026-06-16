@@ -278,10 +278,11 @@ static void parser_register_function(Parser *parser, const char *name,
                                      int param_count, int is_definition,
                                      TypeKind return_type,
                                      const TypeKind *param_types,
-                                     StorageClass sc, int is_variadic) {
+                                     StorageClass sc, int is_variadic,
+                                     int is_no_prototype) {
     /* Stage 22-02: reject function if a global object with the same name exists. */
     if (parser_find_global(parser, name)) {
-        PARSER_ERROR(parser, 
+        PARSER_ERROR(parser,
                 "error: '%s' redeclared as a different kind of symbol\n", name);
     }
     FuncSig *existing = parser_find_function(parser, name);
@@ -290,12 +291,21 @@ static void parser_register_function(Parser *parser, const char *name,
         int ex_is_static = (existing->storage_class == SC_STATIC);
         int new_is_static = (sc == SC_STATIC);
         if (ex_is_static != new_is_static) {
-            PARSER_ERROR(parser, 
+            PARSER_ERROR(parser,
                     "error: conflicting linkage for '%s'\n", name);
         }
+        /* Stage 133: no-prototype declaration is compatible with any later
+         * prototype definition — update the entry with the actual param count. */
+        if (existing->has_no_prototype && param_count >= 0) {
+            existing->param_count = param_count;
+            existing->return_type = return_type;
+            if (param_types) {
+                for (int i = 0; i < param_count; i++)
+                    existing->param_types[i] = param_types[i];
+            }
         /* Stage 129: -1 means "unknown arity" from a block-scope forward decl;
          * allow a real declaration/definition to override it. */
-        if (existing->param_count == -1) {
+        } else if (existing->param_count == -1) {
             existing->param_count = param_count;
             existing->return_type = return_type;
             if (param_types) {
@@ -308,19 +318,21 @@ static void parser_register_function(Parser *parser, const char *name,
                     name, existing->param_count, param_count);
         }
         if (existing->return_type != return_type) {
-            PARSER_ERROR(parser, 
+            PARSER_ERROR(parser,
                     "error: function '%s' return type mismatch\n", name);
         }
-        for (int i = 0; i < param_count; i++) {
-            if (existing->param_types[i] != param_types[i]) {
-                PARSER_ERROR(parser, 
-                        "error: function '%s' parameter type mismatch at position %d\n",
-                        name, i + 1);
+        if (!existing->has_no_prototype) {
+            for (int i = 0; i < param_count; i++) {
+                if (existing->param_types[i] != param_types[i]) {
+                    PARSER_ERROR(parser,
+                            "error: function '%s' parameter type mismatch at position %d\n",
+                            name, i + 1);
+                }
             }
         }
         if (is_definition) {
             if (existing->has_definition) {
-                PARSER_ERROR(parser, 
+                PARSER_ERROR(parser,
                         "error: duplicate function definition '%s'\n",
                         name);
             }
@@ -342,6 +354,7 @@ static void parser_register_function(Parser *parser, const char *name,
         sig.return_type = return_type;
         sig.storage_class = sc;
         sig.is_variadic = is_variadic;
+        sig.has_no_prototype = is_no_prototype;
         for (int i = 0; i < param_count; i++) {
             sig.param_types[i] = param_types[i];
         }
@@ -1534,8 +1547,10 @@ static ASTNode *parse_primary(Parser *parser) {
                 /* Stage 57-03: variadic functions require at least the fixed
                  * parameter count; non-variadic functions require an exact match. */
                 /* Stage 129: param_count == -1 means unknown arity (block-scope
-                 * forward declaration); skip the argument count check. */
-                if (sig->param_count != -1) {
+                 * forward declaration); skip the argument count check.
+                 * Stage 133: has_no_prototype means `int f()` — no parameter
+                 * type information; any argument count is accepted. */
+                if (sig->param_count != -1 && !sig->has_no_prototype) {
                     if (sig->is_variadic) {
                         if (call->child_count < sig->param_count) {
                             PARSER_ERROR(parser,
@@ -3132,7 +3147,7 @@ static ASTNode *parse_statement(Parser *parser) {
             parser_expect(parser, TOKEN_SEMICOLON);
             if (!parser_find_function(parser, d.name)) {
                 parser_register_function(parser, d.name, -1, 0, base_kind,
-                                         NULL, SC_NONE, 0);
+                                         NULL, SC_NONE, 0, 0);
             }
             return parser_node(parser, AST_TYPEDEF_DECL, "");
         }
@@ -4047,6 +4062,9 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     else if (return_kind == TYPE_STRUCT || return_kind == TYPE_UNION)
         func->full_type = base_type;
 
+    /* Stage 133: track whether the parameter list is empty `()` (no prototype)
+     * as opposed to `(void)` (zero-parameter prototype) or a real list. */
+    int is_no_prototype = 0;
     parser_expect(parser, TOKEN_LPAREN);
     /* `f(void)` — the sole `void` keyword means zero parameters. */
     if (parser->current.type == TOKEN_VOID) {
@@ -4063,11 +4081,15 @@ static ASTNode *parse_external_declaration(Parser *parser) {
         /* else: true `(void)` — zero parameters; leave func with no children */
     } else if (parser->current.type != TOKEN_RPAREN) {
         parse_parameter_list(parser, func);
+    } else {
+        /* Empty `()` — no prototype information per C99 §6.7.5.3p14. */
+        is_no_prototype = 1;
     }
     parser_expect(parser, TOKEN_RPAREN);
+    func->is_no_prototype = is_no_prototype;
 
     if (parser->current.type == TOKEN_ASSIGN) {
-        PARSER_ERROR(parser, 
+        PARSER_ERROR(parser,
                 "error: function declaration cannot have an initializer\n");
     }
 
@@ -4100,7 +4122,8 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
     /* Register before parsing the body so self-calls resolve. */
     parser_register_function(parser, d.name, param_count, is_definition,
-                             return_kind, param_types, sc, func->is_variadic);
+                             return_kind, param_types, sc, func->is_variadic,
+                             is_no_prototype);
 
     if (is_definition) {
         /* Stage 75-03: expose the variadic flag to nested expression parsers

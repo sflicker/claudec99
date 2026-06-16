@@ -49,6 +49,9 @@ typedef struct {
     StorageClass storage_class;
     /* Stage 57-03: set when the parameter list ends with `...`. */
     int is_variadic;
+    /* Stage 133: set when declared with empty `()` — no prototype info.
+     * A later definition with actual parameters is compatible. */
+    int has_no_prototype;
 } FuncSig;
 
 /* Stage 22-02: tracks each file-scope object declaration so the parser

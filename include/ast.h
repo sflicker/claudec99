@@ -96,6 +96,10 @@ typedef struct ASTNode {
     /* Stage 57-03: set on AST_FUNCTION_DECL when the parameter list ends
      * with `...`, marking the function as variadic. */
     int is_variadic;
+    /* Stage 133: set on AST_FUNCTION_DECL nodes for `int f()` — empty
+     * parameter list with no `void`, meaning no prototype information.
+     * Calls through such a declaration apply default argument promotions. */
+    int is_no_prototype;
     /* Stage 86: source position (1-based) of the token that began this
      * node, stamped at parse time so codegen/semantic errors can report
      * file:line:col. src_file points into the lexer's file pool (not

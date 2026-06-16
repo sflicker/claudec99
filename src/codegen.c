@@ -3826,10 +3826,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     /* FP stack arg (overflow beyond xmm7). */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
-                    /* Stage 125: C99 §6.5.2.2p7 — float→double promotion in variadic calls.
-                     * Variadic float extras have s->nbytes==8 (compute_call_layout default).
-                     * xmm0 holds 32-bit float bits; cvtss2sd produces a proper double. */
-                    if (callee && callee->is_variadic && actual_types[i] == TYPE_FLOAT) {
+                    /* Stage 125/133: C99 §6.5.2.2p7 — float→double promotion in
+                     * variadic and no-prototype calls. s->nbytes==8 because
+                     * compute_call_layout defaults to 8 for extras (p==NULL). */
+                    if (actual_types[i] == TYPE_FLOAT && callee &&
+                        (callee->is_variadic || callee->is_no_prototype)) {
                         fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
                         fprintf(cg->output, "    movsd [rsp + %d], xmm0\n", s->stack_off);
                     } else if (s->nbytes == 4) {
@@ -3897,9 +3898,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                     /* FP register arg: evaluate into xmm0, spill to stack. */
                     codegen_expression(cg, node->children[i]);
                     EMIT_ARG_CONVERT(node, callee, i);
-                    /* Stage 125: C99 §6.5.2.2p7 — float→double promotion in variadic calls.
-                     * Variadic float extras have s->nbytes==8; promote before spilling. */
-                    if (callee && callee->is_variadic && actual_types[i] == TYPE_FLOAT)
+                    /* Stage 125/133: C99 §6.5.2.2p7 — float→double promotion
+                     * in variadic and no-prototype calls. s->nbytes==8 already. */
+                    if (actual_types[i] == TYPE_FLOAT && callee &&
+                        (callee->is_variadic || callee->is_no_prototype))
                         fprintf(cg->output, "    cvtss2sd xmm0, xmm0\n");
                     fprintf(cg->output, "    sub rsp, 8\n");
                     cg->push_depth++;
