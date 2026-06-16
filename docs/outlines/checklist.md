@@ -1854,6 +1854,25 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Variadic struct argument fix: `expr_result_type` returns `TYPE_STRUCT`/`TYPE_UNION` for structs; `compute_call_layout` gains `CodeGen` parameter and looks up struct's `full_type`; `involves_special` detects struct args
 - [x] 4 new tests (3 new + 1 moved from invalid)
 
+## Stage 131 — sizeof Produces Unsigned size_t
+
+- [x] `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` nodes marked `is_unsigned = 1` in codegen; subsequent UAC applies unsigned rules to sizeof results
+- [x] 1 new test (`test_sizeof_size_t__6.c`: validates `sizeof > -1`, `sizeof - 2 > 0`, `sizeof < 0`); bootstrap fix: `strtod` declaration added to `test/include/stdlib.h`
+
+## Stage 132 — Pointer Equality With Non-Null Constants
+
+- [x] `is_null_pointer_constant()` check in pointer equality validation replaced with `is_integer_constant()` helper (accepts any `AST_INT_LITERAL`)
+- [x] Non-constant integer expressions in pointer equality still rejected; updated error message: "comparing pointer with non-constant integer"
+- [x] 3 new tests (1 moved from invalid to valid; extension behavior test; strict pointer-to-pointer control test); 1 invalid test removed
+
+## Stage 133 — Default Argument Promotions in Function Calls
+
+- [x] Parser: distinguishes empty `()` ("no prototype information", `ASTNode.is_no_prototype = 1`) from `(void)` (zero-parameter prototype)
+- [x] `FuncSig.has_no_prototype` field tracks no-prototype state; `parser_register_function` allows no-prototype forward declarations followed by later prototype definitions
+- [x] Codegen: float→double promotion extended from variadic-only to `is_variadic || is_no_prototype` in Phase 1 (stack FP args) and Phase 2 (register FP args)
+- [x] Integer narrow-type promotions (char/short → int) automatically handled by existing `movsx`/`movzx` load instructions
+- [x] 2 new tests
+
 ---
 
 ## TODO
@@ -1896,9 +1915,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Zero-initialization of static-duration objects (global structs/arrays)
 
 ### Expressions
-- [ ] sizeof with unsigned result type (size_t)
+- [x] sizeof with unsigned result type (size_t) (Stage 131)
 - [x] Pointer comparison operators (`<` `<=` `>` `>=` on pointers) — unsigned `setb`/`setbe`/`seta`/`setae` variants; rejects pointer-vs-integer relational (Stage 118)
-- [ ] Pointer equality with non-null constants
+- [x] Pointer equality with non-null constants (Stage 132)
 - [x] Integer constant expressions in case labels (Stage 77; Stage 99: extended to full bitwise/shift/multiplicative operators)
 - [x] Integer constant expressions in file-scope initializers (Stage 100)
 - [x] Integer constant expressions in block-scope static scalar initializers (Stage 103)
@@ -1912,8 +1931,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] Lvalue conversion rules for all expression contexts
 - [x] Unary + on floating-point (Stage 110)
 - [x] Mixed integer/floating-point arithmetic (usual arithmetic conversions) (Stage 110)
-- [ ] Integer and floating-point promotions in function arguments (default argument promotions)
+- [x] Integer and floating-point promotions in function arguments (default argument promotions) (Stage 133)
   - [x] Variadic float arguments promoted to double per C99 §6.5.2.2p7 (`cvtss2sd` in both stack-overflow and XMM-register paths) (Stage 125)
+  - [x] No-prototype calls: float→double and char/short→int promotions via `is_no_prototype` flag (Stage 133)
 
 ### Statements
 - [x] For-loop initializer declarations (Stage 76)
