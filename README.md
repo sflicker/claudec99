@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 132 (pointer equality with non-null constants):
+
+> Stage 132 relaxes pointer equality (`==` and `!=`) comparisons to accept non-zero integer constant operands, matching the GCC/Clang extension behavior. Previously the compiler rejected comparisons like `p == 1` with the error "comparing pointer with non zero integer"; now such comparisons are accepted when the integer operand is a literal constant (e.g., `p == 0x1234`, `p != 5`). Non-constant integer expressions (e.g., `p == n` where `n` is a variable) remain rejected with the updated error message "comparing pointer with non-constant integer". The implementation is a two-line change in `src/codegen.c`: a new `is_integer_constant()` helper (checks for any `AST_INT_LITERAL`) replaces the previous `is_null_pointer_constant()` guard in the pointer/integer equality validation block. The existing sign-extension and 64-bit unsigned comparison codegen was already correct. Null pointer constant comparisons (`p == 0`, `p != 0`) and pointer-to-pointer comparisons continue to work as before. Pointer relational operators (`<`, `<=`, `>`, `>=`) against integers remain rejected per C99. All 1937 tests pass (1255 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1937 tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 131 (sizeof unsigned size_t):
 
 > Stage 131 fixes `sizeof` to produce an unsigned `size_t` result per C99 §6.5.3.4. The compiler previously treated `sizeof` as signed `long`, causing incorrect expression evaluation in three scenarios: `sizeof(int) > -1` evaluated true (wrong — under unsigned UAC, -1 converts to ULONG_MAX which is > sizeof(int), so the comparison should be FALSE and not add 1), `sizeof(char) - 2 > 0` evaluated false (wrong — under unsigned arithmetic, 1-2 wraps to ULONG_MAX-1 which is > 0, should be TRUE and add 2), and `(sizeof(int) < 0) == 0` was TRUE but coincidentally (no unsigned value can be < 0). The fix is two lines in `src/codegen.c`: set `node->is_unsigned = 1` on both `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` nodes when their value is materialized. The existing UAC infrastructure in `uac_is_unsigned()` and the comparison/arithmetic codegen then correctly selects unsigned instructions when a sizeof result is one of the operands. No tokenizer, parser, or AST changes were needed. One bootstrap issue was fixed: `strtod` was missing from `test/include/stdlib.h` (it was added to `src/parser.c` in stages 126-130 for FP constant expression evaluation). All 1935 tests pass (1252 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -511,6 +515,9 @@ Through stage 91 (address-of member lvalues):
   member access via `.` (e.g. `&s.x`) and `->` (e.g. `&p->x`).
   Pointer relational comparisons (`<`, `<=`, `>`, `>=`) are supported
   in addition to equality comparisons (`==`, `!=`).
+  Equality comparisons accept non-zero integer constant operands as a
+  GCC/Clang extension (e.g., `p == 1`); null pointer constant (`p == 0`)
+  and pointer-to-pointer equality continue to work per C99.
 - **void type**: `void` return type for functions; void functions may use bare `return;`
   or fall off the end without an explicit return. `void *` generic object pointer with
   implicit conversion to/from any non-function pointer type. `f(void)` parameter list
@@ -699,7 +706,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 131 all 1935 tests pass (1252 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 132 all 1937 tests pass (1255 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
