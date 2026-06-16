@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 132 (pointer equality with non-null constants):
+Through stage 133 (default argument promotions in no-prototype calls):
 
-> Stage 132 relaxes pointer equality (`==` and `!=`) comparisons to accept non-zero integer constant operands, matching the GCC/Clang extension behavior. Previously the compiler rejected comparisons like `p == 1` with the error "comparing pointer with non zero integer"; now such comparisons are accepted when the integer operand is a literal constant (e.g., `p == 0x1234`, `p != 5`). Non-constant integer expressions (e.g., `p == n` where `n` is a variable) remain rejected with the updated error message "comparing pointer with non-constant integer". The implementation is a two-line change in `src/codegen.c`: a new `is_integer_constant()` helper (checks for any `AST_INT_LITERAL`) replaces the previous `is_null_pointer_constant()` guard in the pointer/integer equality validation block. The existing sign-extension and 64-bit unsigned comparison codegen was already correct. Null pointer constant comparisons (`p == 0`, `p != 0`) and pointer-to-pointer comparisons continue to work as before. Pointer relational operators (`<`, `<=`, `>`, `>=`) against integers remain rejected per C99. All 1937 tests pass (1255 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1937 tests passing at every stage, no source changes needed during bootstrap.
+> Stage 133 implements C99 §6.5.2.2p6 default argument promotions for calls to functions declared without a prototype (`int f()`). The key issue was that `int f();` (empty parameter list) was incorrectly treated as a zero-parameter prototype instead of "no parameter type information"; only `int f(void);` is a zero-parameter prototype. Calls through no-prototype declarations now apply default argument promotions to all arguments: narrow integer types (char/short) promote to int, and float promotes to double. The implementation adds `is_no_prototype` to AST nodes and `has_no_prototype` to function signatures for state tracking, updates the parser to distinguish empty `()` from `(void)`, and extends the call codegen to skip parameter-count validation and apply float→double promotion for no-prototype calls. Integer promotions work automatically via existing `movsx`/`movzx` sign/zero-extend load instructions. All 1939 tests pass (1257 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1939 tests passing at every stage, no source changes needed during bootstrap.
 
 Through stage 131 (sizeof unsigned size_t):
 
@@ -499,7 +499,8 @@ Through stage 91 (address-of member lvalues):
   _Bool type with value-normalization semantics (any nonzero value assigned to _Bool becomes 1; zero stays 0); integer promotion applies in expressions.
 - **Functions**: multiple functions per translation unit, forward
   declarations with compatibility checking (return type and parameter type
-  matching between declarations and definitions), SysV AMD64 calls with any number of integer, pointer, _Bool, enum, and struct-pointer arguments (args 1–6 in registers per ABI, args 7+ passed on the stack right-to-left with automatic 16-byte alignment), typed parameter and return-type conversions at the call boundary,
+  matching between declarations and definitions), distinction between `int f();` (no prototype information)
+  and `int f(void);` (zero-parameter prototype) per C99 §6.7.5.3p14, SysV AMD64 calls with any number of integer, pointer, _Bool, enum, and struct-pointer arguments (args 1–6 in registers per ABI, args 7+ passed on the stack right-to-left with automatic 16-byte alignment), typed parameter and return-type conversions at the call boundary,
   struct/union arguments and return values passed **by value** per the SysV AMD64 ABI (register-class objects ≤ 16 bytes use 1–2 INTEGER GP registers for arguments and rax:rdx for returns; memory-class objects > 16 bytes are passed on the stack and returned through a hidden pointer / sret in rdi; the callee receives a private copy and the caller's original is unchanged),
   calls into libc via `extern` emission for declared-but-not-defined functions
   with support for void* parameters/returns (e.g., `malloc`, `free`), const char*
@@ -507,6 +508,7 @@ Through stage 91 (address-of member lvalues):
   `static` functions have internal linkage (no `global` NASM directive emitted).
   Command-line argument support: `int main(int argc, char **argv)` signature with
   argc and argv[i] access for string arguments passed at program invocation.
+  Default argument promotions for no-prototype calls: functions declared without a prototype apply C99 default argument promotions to all arguments (narrow integer types char/short/unsigned short promote to int; float promotes to double).
   Variadic function declarations and definitions (e.g., `int f(int x, ...)`) with caller compatibility checking (actual args >= fixed params); callee-side access to extra arguments via `va_list`, `va_start`, `va_end`, `<stdarg.h>`: variadic function prologues save all 6 GP argument registers (rdi–r9) and all 8 XMM argument registers (xmm0–xmm7) to a 176-byte register-save area (48 GP + 128 XMM, 16-byte aligned); `__builtin_va_start` initializes all four `va_list` fields (gp_offset, fp_offset, overflow_arg_area, reg_save_area) per the SysV AMD64 ABI; `__builtin_va_end` is a no-op; `va_arg` extraction for GP types (int, unsigned int, long, unsigned long, long long, unsigned long long, pointer) and `double` (via fp_offset into the XMM save area); `va_copy` copies the 24-byte `va_list` struct via three 8-byte moves; `va_arg(ap, float)` is rejected (float is promoted to double in variadic calls per C99 §6.5.2.2p6). Code generation emits `mov al, <xmm_count>` before variadic calls to set the SSE register count per the SysV AMD64 ABI. Callee-saved `rbx` is preserved in every function prologue and epilogue per the SysV AMD64 ABI.
 - **Pointers**: pointer types, `&` and `*` as rvalue and lvalue,
   assignment through pointer, pointer parameters and return types,
@@ -706,7 +708,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 132 all 1937 tests pass (1255 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 133 all 1939 tests pass (1257 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
