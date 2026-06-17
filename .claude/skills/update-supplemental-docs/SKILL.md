@@ -1,6 +1,9 @@
 ---
 name: update-supplemental-docs
 description: Refreshes the project's supplemental status documents after one or more stages land — the feature checklist, the full parse-tree, and the project-features / project-status snapshots. Reads the latest existing document of each kind as a template, then writes updated copies reflecting the current HEAD.
+The documentation updated in this skill is considered secondary and should not
+generally be updated after every stage. 
+disable-model-invocation: true
 ---
 
 ## Goal
@@ -9,10 +12,9 @@ Bring the four supplemental documents up to date with the current state of the
 project (HEAD), driven by the stage milestones / specs that have landed since
 the last refresh. The four documents are:
 
-1. **Feature checklist** — `docs/outlines/checklist.md` (updated in place)
-2. **Full grammar parse tree** — `docs/other/stage-<NN>-parse-tree.md` (new file)
-3. **Project status snapshot** — `status/project-status-through-stage-<NN>.md` (new file)
-4. **Project features snapshot** — `status/project-features-through-stage-<NN>.md` (new file)
+1. **Full grammar parse tree** — `docs/other/stage-<NN>-parse-tree.md` (new file)
+2. **Project status snapshot** — `status/project-status-through-stage-<NN>.md` (new file)
+3. **Project features snapshot** — `status/project-features-through-stage-<NN>.md` (new file)
 
 `<NN>` is the latest completed stage label (e.g. `91`, or a substage like
 `82-05` if that is the most recent). The checklist is the one document that is
@@ -81,22 +83,7 @@ prefer it when a raw count disagrees (integration counts can include a non-test
 `docs/` subdir). Use today's date and the HEAD short hash in the new files'
 datelines.
 
-## Step 4 — Update the checklist (in place)
-
-`docs/outlines/checklist.md` has per-stage `## Stage NN - Title` sections of
-`- [x]` / `- [ ]` items, followed by a `---` separator and a `## TODO` section
-grouped by area (Types, Declarations and Scope, Expressions, Statements,
-Functions, Standard Library Headers, …).
-
-- Insert a new `## Stage NN - Title` section for each new stage, **before** the
-  `---` / `## TODO` marker, matching the existing tabbed-bullet style (tabs for
-  nesting, sub-bullets for mechanism detail).
-- For every TODO item a new stage now satisfies, flip `- [ ]` to `- [x]` and
-  append `(Stage NN)`. If a feature is only partially done, keep it unchecked
-  but add a checked sub-note (see the `volatile` and `va_arg` entries for the
-  pattern).
-
-## Step 5 — Write the new parse-tree document
+## Step 4 — Write the new parse-tree document
 
 Copy the most recent `docs/other/stage-*-parse-tree.md` as the template and
 write `docs/other/stage-<NN>-parse-tree.md`. Preserve its four-section structure
@@ -112,7 +99,7 @@ write `docs/other/stage-<NN>-parse-tree.md`. Preserve its four-section structure
   move anything a new stage fixed out of the gaps list. Cross-check the gaps
   against `docs/self-compilation-report.md`.
 
-## Step 6 — Write the new status and features snapshots
+## Step 5 — Write the new status and features snapshots
 
 Copy the most recent `status/project-status-through-stage-*.md` and
 `status/project-features-through-stage-*.md` as templates.
@@ -132,7 +119,7 @@ anything now implemented.
 
 Keep the two snapshots consistent with each other and with the checklist.
 
-## Step 7 — Verify and report
+## Step 6 — Verify and report
 
 - Confirm the three new files were created and the checklist edited.
 - Sanity-check the test totals add up to the milestone total.
@@ -143,7 +130,6 @@ Print a one-line-per-document summary, e.g.:
 
 ```
 update-supplemental-docs: refreshed through stage <NN>
-  docs/outlines/checklist.md            (+<k> stage sections, <m> TODOs checked)
   docs/other/stage-<NN>-parse-tree.md   (new)
   status/project-status-through-stage-<NN>.md   (new)
   status/project-features-through-stage-<NN>.md (new)
@@ -151,7 +137,7 @@ update-supplemental-docs: refreshed through stage <NN>
 
 ## Notes
 
-- The checklist is edited in place; the other three are always new dated files.
+- the three are always new dated files.
 - Stage milestones are the source of truth for "what shipped"; specs add detail.
 - If the user names a specific stage range, honour it; otherwise default to
   "everything since the latest existing snapshot up to HEAD".

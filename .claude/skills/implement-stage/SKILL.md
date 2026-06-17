@@ -121,12 +121,27 @@ When delegating to `haiku-stage-artifact-writer`, pass:
   - files changed
   - artifact types to generate
 
-Grammar file in docs:
+## Grammar file in docs:
 * docs/grammar.md should be kept up to date with the current grammar of the
    the compiler. If changes are made in the specification to the grammar
    they should be reflected in docs/grammar.md. Delegate this task to `haiku-stage-artifact-writer`
 
-README.md
+## Checklist
+ **Feature checklist** — `docs/outlines/checklist.md` (updated in place)
+  `docs/outlines/checklist.md` has per-stage `## Stage NN - Title` sections of
+  `- [x]` / `- [ ]` items, followed by a `---` separator and a `## TODO` section
+  grouped by area (Types, Declarations and Scope, Expressions, Statements,
+  Functions, Standard Library Headers, …).
+
+- Insert a new `## Stage NN - Title` section for each new stage, **before** the
+  `---` / `## TODO` marker, matching the existing tabbed-bullet style (tabs for
+  nesting, sub-bullets for mechanism detail).
+- For every TODO item a new stage now satisfies, flip `- [ ]` to `- [x]` and
+  append `(Stage NN)`. If a feature is only partially done, keep it unchecked
+  but add a checked sub-note (see the `volatile` and `va_arg` entries for the
+  pattern).
+
+## README.md
 * Update `README.md` only where the completed stage changes the user-visible compiler capability, project status, or test totals.
 * Assume coding agents will always read the `README.me` as the first step towards understanding the current stage of the project.
 * Delegate this task to `haiku-stage-artifact-writer`
