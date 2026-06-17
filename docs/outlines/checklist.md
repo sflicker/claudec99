@@ -1886,6 +1886,18 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- sizeof excludes flexible array storage
 	- Array decay to pointer handles indexed access via existing codegen path
 
+## Stage 136 - sizeof of Pointer-Arithmetic Expressions
+
+- [x] sizeof(ptr + int) returns 8 (pointer size, not element size)
+	- sizeof_type_of_expr AST_BINARY_OP: pointer/array guard before promote_kind path
+	- If either operand is TYPE_POINTER or TYPE_ARRAY, return TYPE_POINTER (size 8 on LP64)
+- [x] sizeof(arr + int) returns 8 (array decays to pointer in binary expression)
+	- Same guard covers TYPE_ARRAY operands; both local and global arrays covered
+- [x] sizeof(ptr - int) and sizeof(ptr - ptr) return 8
+	- ptr - int → pointer; ptr - ptr → ptrdiff_t; both size 8 on LP64, return TYPE_POINTER
+- [x] sizeof(string_literal + int) returns 8
+	- Added AST_STRING_LITERAL case to sizeof_type_of_expr returning TYPE_POINTER
+
 ## Stage 135 - Type Compatibility and Composite Type Checks
 
 - [x] CC99-008: Array parameter adjustment — int a[N], int a[], and int *a are compatible
@@ -1958,7 +1970,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Compound assignment and ++/-- on general lvalues (Stages 79, 80)
 - [x] General integer constant expressions (arithmetic, bitwise, shift, unary, sizeof(type), relational, equality, logical, ternary) — Stages 77, 99–104
 - [x] Floating-point constant expressions at file scope (arithmetic of FP/int literals) (Stage 128)
-- [ ] Lvalue conversion rules for all expression contexts
+- [x] Lvalue conversion rules for all expression contexts (Stage 136: sizeof of pointer-arithmetic binary expressions now returns pointer size)
 - [x] Unary + on floating-point (Stage 110)
 - [x] Mixed integer/floating-point arithmetic (usual arithmetic conversions) (Stage 110)
 - [x] Integer and floating-point promotions in function arguments (default argument promotions) (Stage 133)
