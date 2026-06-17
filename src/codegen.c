@@ -1883,6 +1883,10 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
             /* Stage 110: FP UAC before integer promotion rules. */
             if (type_is_fp(lt) || type_is_fp(rt))
                 return fp_common_arith_kind(lt, rt);
+            /* Stage 136: pointer arithmetic → pointer/ptrdiff_t (both size 8). */
+            if (lt == TYPE_POINTER || lt == TYPE_ARRAY ||
+                rt == TYPE_POINTER || rt == TYPE_ARRAY)
+                return TYPE_POINTER;
             return common_arith_kind(promote_kind(lt), promote_kind(rt));
         }
         if (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0) {
@@ -1901,6 +1905,8 @@ static TypeKind sizeof_type_of_expr(CodeGen *cg, ASTNode *node) {
         }
         return TYPE_INT; /* ! */
     }
+    case AST_STRING_LITERAL:
+        return TYPE_POINTER;
     case AST_ADDR_OF:
         return TYPE_POINTER;
     case AST_CAST:
