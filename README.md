@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 134 (bit-field and flexible array members in structs):
+Through stage 135 (type compatibility and composite type checks):
 
-> Stage 134 fixes two C99 struct-member bugs. **Bit-field members** (CC99-006): Parser now detects `:` after a declarator (named bit-field) or before it (anonymous bit-field), parses the width via constant-expression evaluation, and packs consecutive bit-fields into storage units using GCC-compatible layout (same base type + fits in remaining bits → same unit; otherwise new unit at natural alignment; zero-width closes current unit). Codegen reads bit-fields via right-shift and mask after loading the storage unit, and writes via read-modify-write (clear field bits, shift new value, OR, store). **Flexible array members** (CC99-007): Parser allows unsized arrays as the last member (must have at least one prior named member), creates a length-0 array field without advancing sizeof, and validates "last member" constraint. Codegen: no changes needed — existing array-decay logic handles FAM access correctly. All 1946 tests pass (1262 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1946 tests passing at every stage, no source changes needed during bootstrap.
+> Stage 135 fixes two C99 type compatibility bugs. **CC99-008 (array parameter adjustment)**: `int a[3]`, `int a[]`, and `int *a` as function parameters are now compatible per C99 §6.7.5.3p7 — `parse_parameter_declaration` now applies the array-to-pointer adjustment for named array declarators (`d.is_array`). Function-type parameters (`int cb(void)`) are also adjusted to pointer-to-function per §6.7.5.3p8. A pre-existing bug where `(void)` in a function-pointer parameter list was counted as one void parameter instead of zero is also fixed. **CC99-009 (pointer-to-array types)**: `int (*row)[4]` and `int (*row)[]` are now valid parameter declarations. `ParsedDeclarator` gains three new fields (`is_ptr_to_array`, `ptr_to_array_length`, `ptr_to_array_has_size`); `parse_declarator` parses the `[N]` bound instead of rejecting it; `parse_parameter_declaration` builds `pointer(array(base, N))`. Composite type rule: `int (*row)[]` and `int (*row)[4]` both produce `TYPE_POINTER` and are compatible. Indexed access `(*row)[i]` works via the existing codegen path. The former invalid test for `int (*p)[10]` is moved to valid since it is valid C99. All 1951 tests pass (1267 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
 
 Through stage 131 (sizeof unsigned size_t):
 
@@ -712,7 +712,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 134 all 1946 tests pass (1262 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 135 all 1951 tests pass (1267 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

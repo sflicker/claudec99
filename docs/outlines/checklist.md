@@ -1873,6 +1873,23 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Integer narrow-type promotions (char/short → int) automatically handled by existing `movsx`/`movzx` load instructions
 - [x] 2 new tests
 
+## Stage 135 - Type Compatibility and Composite Type Checks
+
+- [x] CC99-008: Array parameter adjustment — int a[N], int a[], and int *a are compatible
+	- parse_parameter_declaration: new d.is_array branch → TYPE_POINTER with type_pointer(base_type)
+	- Register_function comparison: both store TYPE_POINTER; TypeKind equality passes correctly
+- [x] CC99-008: Function parameter adjustment — int f(int cb(void)) adjusted to pointer-to-function
+	- parse_parameter_declaration: new d.is_function branch; consumes (params), produces TYPE_POINTER
+	- Fixes pre-existing bug: (void) in function pointer type now correctly yields 0 parameters
+- [x] CC99-009: Pointer-to-array parameters — int (*row)[] and int (*row)[N] now accepted
+	- ParsedDeclarator: new fields is_ptr_to_array, ptr_to_array_length, ptr_to_array_has_size
+	- parse_declarator: (*name)[N] suffix parsed; returns pointer-to-array declarator instead of error
+	- parse_parameter_declaration: builds pointer(array(base,N)) for ptr-to-array parameters
+	- (*row)[i] indexed access via existing codegen path (stage 28-04 emit_array_index_addr)
+	- Composite compatibility: int (*row)[] + int (*row)[4] both → TYPE_POINTER; compatible
+
+---
+
 ## Stage 134 - Bit-Field and Flexible Array Members in Structs
 
 - [x] CC99-006: Bit-field struct members (`unsigned int x : N` form) — parser, layout, and codegen
@@ -1910,7 +1927,9 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] restrict qualifier on pointers (Stage 106; parse-and-ignore, no codegen effect)
 - [x] Pointer-level const enforcement: writes through const pointers, const-discard conversions (Stage 66)
 - [x] const in struct/union members and type-name contexts (Stage 82-01/02/03/05)
-- [ ] Type compatibility and composite type rules
+- [x] Type compatibility — array/function parameter adjustment, pointer-to-array (Stage 135)
+	- Incomplete array bound completed by later declaration not yet checked at full-type level
+	- Incompatible pointer-to-array bounds (both known, different) not yet detected
 
 ### Declarations and Scope
 - [x] static storage class (block scope — local static variables: scalar/pointer Stage 71; arrays/structs/unions Stage 101; designated-init arrays, struct/union element types, 2D arrays Stage 102; full constant-expression initializers Stage 103)
