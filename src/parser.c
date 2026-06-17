@@ -69,6 +69,13 @@ typedef struct {
     int   fp_param_count;
     /* Stage 66: set when "const" appears after the last "*" (T * const p). */
     int  pointer_is_const;
+    /* Stage 135: set when the parenthesized form (*name) is followed by [N]
+     * or [] — a pointer-to-array declarator (e.g. int (*row)[4]).
+     * ptr_to_array_length is the bound N; ptr_to_array_has_size is 1 when N
+     * is explicit and 0 for the incomplete [] form. */
+    int  is_ptr_to_array;
+    int  ptr_to_array_length;
+    int  ptr_to_array_has_size;
 } ParsedDeclarator;
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -1382,7 +1389,20 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         parser_expect(parser, TOKEN_RPAREN);
         /* Check suffix after the closing ")" */
         if (parser->current.type == TOKEN_LBRACKET) {
-            PARSER_ERROR(parser, "error: pointer to array types are not supported\n");
+            /* Stage 135: C99 §6.7.5.2 pointer-to-array: int (*row)[4] or (*row)[]. */
+            parser->current = lexer_next_token(parser->lexer); /* consume '[' */
+            if (parser->current.type != TOKEN_RBRACKET) {
+                long length = eval_const_expr(parser, "pointer-to-array bound");
+                if (length <= 0)
+                    PARSER_ERROR(parser,
+                            "error: pointer-to-array bound must be positive\n");
+                d.ptr_to_array_length = (int)length;
+                d.ptr_to_array_has_size = 1;
+            }
+            parser_expect(parser, TOKEN_RBRACKET);
+            d.is_ptr_to_array = 1;
+            d.pointer_count = outer_stars + inner_stars;
+            return d;
         }
         if (parser->current.type == TOKEN_LPAREN) {
             if (inner_stars > 0) {
@@ -1393,10 +1413,24 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                 d.fp_inner_stars  = inner_stars;
                 parser_expect(parser, TOKEN_LPAREN);
                 int count = 0;
-                if (parser->current.type != TOKEN_RPAREN) {
+                /* Stage 135: handle (void) as a zero-parameter list, matching
+                 * the same rule used in function declarations. */
+                int fp_is_void = 0;
+                if (parser->current.type == TOKEN_VOID) {
+                    int saved_pos = parser->lexer->pos;
+                    Token saved_tok = parser->current;
+                    parser->current = lexer_next_token(parser->lexer);
+                    if (parser->current.type == TOKEN_RPAREN) {
+                        fp_is_void = 1; /* true (void) — zero parameters */
+                    } else {
+                        parser->lexer->pos = saved_pos;
+                        parser->current = saved_tok;
+                    }
+                }
+                if (!fp_is_void && parser->current.type != TOKEN_RPAREN) {
                     while (1) {
                         if (count >= FUNC_TYPE_MAX_PARAMS) {
-                            PARSER_ERROR(parser, 
+                            PARSER_ERROR(parser,
                                     "error: too many parameters in function pointer"
                                     " type (max %d)\n", FUNC_TYPE_MAX_PARAMS);
                         }
@@ -3640,6 +3674,37 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
         param->full_type = build_fp_type(base_type, &d);
         return param;
     }
+    /* Stage 135: C99 6.7.5.3p8 — a parameter declared with function type is
+     * adjusted to pointer-to-function.  The "identifier(params)" form sets
+     * d.is_function; the "(" is not consumed by parse_declarator, so consume
+     * the parameter list here and discard it (we only need TYPE_POINTER). */
+    if (d.is_function) {
+        int depth = 1;
+        parser_expect(parser, TOKEN_LPAREN);
+        while (depth > 0 && parser->current.type != TOKEN_EOF) {
+            if (parser->current.type == TOKEN_LPAREN) depth++;
+            else if (parser->current.type == TOKEN_RPAREN) depth--;
+            if (depth > 0)
+                parser->current = lexer_next_token(parser->lexer);
+        }
+        parser_expect(parser, TOKEN_RPAREN);
+        param->decl_type = TYPE_POINTER;
+        param->full_type = type_pointer(type_function(base_type, 0, NULL));
+        return param;
+    }
+    /* Stage 135: C99 §6.7.5.2 — int (*row)[N] is a pointer-to-array parameter.
+     * Build array type from the bound (0 for incomplete []) then wrap in pointer. */
+    if (d.is_ptr_to_array) {
+        Type *arr_type = type_array(base_type, d.ptr_to_array_length);
+        Type *ptr_type = arr_type;
+        int levels = d.pointer_count > 0 ? d.pointer_count : 1;
+        int i;
+        for (i = 0; i < levels; i++)
+            ptr_type = type_pointer(ptr_type);
+        param->decl_type = TYPE_POINTER;
+        param->full_type = ptr_type;
+        return param;
+    }
     Type *full_type = base_type;
     for (int i = 0; i < d.pointer_count; i++) {
         full_type = type_pointer(full_type);
@@ -3647,8 +3712,14 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     if (d.pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
+    } else if (d.is_array) {
+        /* Stage 135: C99 6.7.5.3p7 — named array parameter (e.g. int a[3] or
+         * int a[]) is adjusted to pointer-to-element so that int a[3], int a[],
+         * and int *a all produce the same adjusted type TYPE_POINTER. */
+        param->decl_type = TYPE_POINTER;
+        param->full_type = type_pointer(base_type);
     } else if (base_kind == TYPE_ARRAY) {
-        /* C99 6.7.5.3p7: array parameter type is adjusted to pointer-to-element. */
+        /* C99 6.7.5.3p7: unnamed array param is adjusted to pointer-to-element. */
         param->decl_type = TYPE_POINTER;
         param->full_type = type_pointer(base_type->base);
     } else {
