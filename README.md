@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 136 (sizeof of pointer-arithmetic expressions):
+
+> Stage 136 fixes a bug in `sizeof_type_of_expr` where `sizeof` applied to pointer-arithmetic expressions (ptr+int, arr+int, ptr-ptr, string_lit+int) returns the element size instead of the pointer/ptrdiff_t size (8 on LP64). Two targeted fixes in `src/codegen.c`: (1) added a pointer/array guard in the `AST_BINARY_OP` case for `+`/`-` operators that returns `TYPE_POINTER` when either operand is `TYPE_POINTER` or `TYPE_ARRAY`, placed after the FP check but before the integer promotion path; (2) added an `AST_STRING_LITERAL` case returning `TYPE_POINTER` so string literals in binary expressions are treated as pointers and decay correctly. Version bumped to 13600000. All 1961 tests pass (1277 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 135 (type compatibility and composite type checks):
 
 > Stage 135 fixes two C99 type compatibility bugs. **CC99-008 (array parameter adjustment)**: `int a[3]`, `int a[]`, and `int *a` as function parameters are now compatible per C99 §6.7.5.3p7 — `parse_parameter_declaration` now applies the array-to-pointer adjustment for named array declarators (`d.is_array`). Function-type parameters (`int cb(void)`) are also adjusted to pointer-to-function per §6.7.5.3p8. A pre-existing bug where `(void)` in a function-pointer parameter list was counted as one void parameter instead of zero is also fixed. **CC99-009 (pointer-to-array types)**: `int (*row)[4]` and `int (*row)[]` are now valid parameter declarations. `ParsedDeclarator` gains three new fields (`is_ptr_to_array`, `ptr_to_array_length`, `ptr_to_array_has_size`); `parse_declarator` parses the `[N]` bound instead of rejecting it; `parse_parameter_declaration` builds `pointer(array(base, N))`. Composite type rule: `int (*row)[]` and `int (*row)[4]` both produce `TYPE_POINTER` and are compatible. Indexed access `(*row)[i]` works via the existing codegen path. The former invalid test for `int (*p)[10]` is moved to valid since it is valid C99. All 1951 tests pass (1267 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
@@ -666,9 +670,10 @@ Through stage 91 (address-of member lvalues):
   any pointer type (8). Struct types return the total byte size based on
   natural-alignment field layout. For expression operands, integer promotions and
   usual arithmetic conversions apply to determine the result type
-  (`sizeof(char_var + 1)` == 4 because char promotes to int). The
-  expression operand is never evaluated — side effects such as `x++`,
-  `x = 5`, or function calls inside `sizeof` are suppressed.
+  (`sizeof(char_var + 1)` == 4 because char promotes to int). Pointer-arithmetic
+  binary expressions (`ptr + int`, `arr + int`, `ptr - ptr`, `string_lit + int`) correctly
+  return 8 on LP64 (pointer/ptrdiff_t size). The expression operand is never evaluated —
+  side effects such as `x++`, `x = 5`, or function calls inside `sizeof` are suppressed.
   `sizeof(A)` where `A` is a declared array returns the total byte size
   (`element_size × element_count`) as a compile-time constant — no runtime
   code is emitted for the array operand and the array is not decayed to a
@@ -712,7 +717,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 135 all 1951 tests pass (1267 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 136 all 1961 tests pass (1277 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
