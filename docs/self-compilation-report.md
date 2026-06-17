@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 136 self-hosting test
+
+None. Stage 136 fixes two cases in `sizeof_type_of_expr` in `src/codegen.c`:
+adding a pointer/array guard in the `AST_BINARY_OP` branch, and adding an
+`AST_STRING_LITERAL` case. The compiler's own source does not apply `sizeof`
+to pointer-arithmetic binary expressions or string-literal sub-expressions, so
+both new code paths are dormant during bootstrap. All 1961 tests passed at
+C0, C1, and C2 with no source changes needed during the bootstrap.
+
+## Result (stage 136)
+
+**Date:** 2026-06-17
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13600000.01016` | `GNU_13_3_0` | 1961/1961 |
+| C1 | `build/ccompiler-c1` | `00.02.13600000.01017` | `ClaudeC99_v00_02_13600000_01016` | 1961/1961 |
+| C2 | `build/ccompiler-c2` | `00.02.13600000.01018` | `ClaudeC99_v00_02_13600000_01017` | 1961/1961 |
+
+---
+
 ## Issues found during stage 135 self-hosting test
 
 None. Stage 135 adds three new fields to the `ParsedDeclarator` local struct
