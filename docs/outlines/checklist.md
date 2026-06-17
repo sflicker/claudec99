@@ -1873,6 +1873,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Integer narrow-type promotions (char/short → int) automatically handled by existing `movsx`/`movzx` load instructions
 - [x] 2 new tests
 
+## Stage 134 - Bit-Field and Flexible Array Members in Structs
+
+- [x] CC99-006: Bit-field struct members (`unsigned int x : N` form) — parser, layout, and codegen
+	- Named bit-fields: `:width` after declarator, packs into storage unit by type alignment
+	- Anonymous bit-fields: `:width` with no declarator (padding)
+	- Zero-width bit-fields: force new storage unit
+	- Codegen rvalue: load storage unit → shift right by bit_offset → mask with (1<<bit_width)-1
+	- Codegen lvalue write: read-modify-write (clear bits, OR in new value, store)
+- [x] CC99-007: Flexible array members (`type name[]` as last named struct member)
+	- Parser validates: must be last, struct must have at least one prior named member
+	- sizeof excludes flexible array storage
+	- Array decay to pointer handles indexed access via existing codegen path
+
 ---
 
 ## TODO
@@ -1890,8 +1903,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] ptrdiff_t, size_t, intptr_t awareness
 - [x] Union types (Stage 72; anonymous unions Stage 73-01)
 - [x] Multidimensional arrays (Stage 86; up to 8 dimensions)
-- [ ] Bit-field members in structs
-- [ ] Flexible array members in structs
+- [x] Bit-field members in structs (Stage 134)
+- [x] Flexible array members in structs (Stage 134)
 - [x] Compound literals: `(Type){ ... }` (Stage 98; file-scope pointer-type compound literals now supported Stage 124; non-pointer file-scope compound literals and designated union non-first-member not yet supported)
 - [x] volatile qualifier (Stage 82-04; parsed and tracked, no codegen effect yet)
 - [x] restrict qualifier on pointers (Stage 106; parse-and-ignore, no codegen effect)
