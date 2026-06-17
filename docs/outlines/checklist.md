@@ -1968,7 +1968,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 ### Statements
 - [x] For-loop initializer declarations (Stage 76)
 - [x] switch with long / long long / unsigned long long discriminant — 64-bit `cmp rax` path (Stage 121); `char`/`short` already promoted to `int` (32-bit path unchanged)
-- [ ] Case labels with unsigned and long constant values
+- [x] Case labels with unsigned and long constant values
 - [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions; Stage 104: extended to relational, equality, logical, and ternary)
 - [ ] goto across declarations (only legal in C under restrictions)
 
