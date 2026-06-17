@@ -46,6 +46,12 @@ typedef struct {
     struct Type *full_type; /* non-NULL for pointer/array/struct fields */
     int  is_const;          /* Stage 82-01: set for const-qualified scalar members */
     int  is_volatile;       /* Stage 82-04: set for volatile-qualified scalar members */
+    /* Stage 134: bit-field support */
+    int  is_bitfield;       /* set for bit-field members */
+    int  bit_width;         /* width in bits (1..storage_unit_bits) */
+    int  bit_offset;        /* bit offset within the storage unit at .offset */
+    /* Stage 134: flexible array member (C99 §6.7.2.1p16) */
+    int  is_flexible_array; /* set for the trailing unsized-array member */
 } StructField;
 
 typedef struct Type {

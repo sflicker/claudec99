@@ -378,6 +378,7 @@ static Token parser_expect(Parser *parser, TokenType type) {
 /* Forward declarations needed by parse_struct_specifier. */
 static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind);
 static ParsedDeclarator parse_declarator(Parser *parser);
+static long eval_const_expr(Parser *parser, const char *context);
 
 /* Stage 30: struct tag table helpers. */
 static StructTag *parser_find_struct_tag(Parser *parser, const char *tag) {
@@ -455,7 +456,22 @@ static Type *parse_struct_specifier(Parser *parser) {
         Vec tmp_fields_vec;
         vec_init(&tmp_fields_vec, sizeof(StructField));
 
+        /* Stage 134: bit-field packing state.
+         * bf_unit_offset: byte offset of the current storage unit (-1 = none).
+         * bf_unit_size:   size of current storage unit in bytes.
+         * bf_bits_used:   bits already consumed in the current unit. */
+        int bf_unit_offset = -1;
+        int bf_unit_size   = 0;
+        int bf_bits_used   = 0;
+        /* Stage 134: flexible array member flag (must be last named member). */
+        int has_flexible_array = 0;
+
         while (parser->current.type != TOKEN_RBRACE) {
+            /* Stage 134: a flexible array member must be the last member. */
+            if (has_flexible_array) {
+                PARSER_ERROR(parser,
+                        "error: flexible array member must be the last named member\n");
+            }
             /* Stage 82-01: consume optional leading const qualifier.
              * Stage 82-04: also consume optional volatile qualifier. */
             int field_is_const = 0;
@@ -470,12 +486,103 @@ static Type *parse_struct_specifier(Parser *parser) {
             /* Parse field type specifier. */
             Type *field_base = parse_type_specifier(parser, NULL);
 
-            /* Parse one or more declarators: each names a field. */
+            /* Parse one or more declarators: each names a field.
+             * Stage 134: anonymous bit-fields have no declarator — detect ':' early. */
+            int first_in_list = 1;
             do {
-                if (parser->current.type == TOKEN_COMMA)
+                if (!first_in_list)
+                    parser->current = lexer_next_token(parser->lexer); /* consume ',' */
+                first_in_list = 0;
+
+                /* Stage 134: anonymous bit-field: no name, just ': N'. */
+                if (parser->current.type == TOKEN_COLON) {
                     parser->current = lexer_next_token(parser->lexer);
+                    long bw = eval_const_expr(parser, "bit-field width");
+                    if (bw < 0) {
+                        PARSER_ERROR(parser, "error: negative bit-field width\n");
+                    }
+                    int bit_width = (int)bw;
+                    int unit_size = type_size(field_base);
+                    if (unit_size < 1) unit_size = 4; /* default to int-sized unit */
+                    int unit_align = type_alignment(field_base);
+                    if (unit_align < 1) unit_align = unit_size;
+                    if (bit_width == 0) {
+                        /* Zero-width: close the current storage unit. */
+                        bf_unit_offset = -1;
+                        bf_bits_used   = 0;
+                        bf_unit_size   = 0;
+                    } else {
+                        /* Allocate a new unit if needed. */
+                        if (bf_unit_offset < 0 || bf_unit_size != unit_size ||
+                            bf_bits_used + bit_width > unit_size * 8) {
+                            if (unit_align > max_align) max_align = unit_align;
+                            current_offset = (current_offset + unit_align - 1)
+                                             & ~(unit_align - 1);
+                            bf_unit_offset  = current_offset;
+                            bf_unit_size    = unit_size;
+                            bf_bits_used    = 0;
+                            current_offset += unit_size;
+                        }
+                        bf_bits_used += bit_width;
+                        /* Anonymous bit-fields are not added to the field table. */
+                    }
+                    continue; /* next declarator in list or end of do-while */
+                }
 
                 ParsedDeclarator d = parse_declarator(parser);
+
+                /* Stage 134: named bit-field: declarator followed by ':'. */
+                if (parser->current.type == TOKEN_COLON) {
+                    parser->current = lexer_next_token(parser->lexer);
+                    long bw = eval_const_expr(parser, "bit-field width");
+                    if (bw <= 0) {
+                        PARSER_ERROR(parser,
+                                "error: named bit-field '%s' must have positive width\n",
+                                d.name ? d.name : "(unnamed)");
+                    }
+                    int bit_width = (int)bw;
+                    int unit_size = type_size(field_base);
+                    if (unit_size < 1) unit_size = 4;
+                    int unit_align = type_alignment(field_base);
+                    if (unit_align < 1) unit_align = unit_size;
+                    if (bit_width > unit_size * 8) {
+                        PARSER_ERROR(parser,
+                                "error: bit-field width %d exceeds storage unit size\n",
+                                bit_width);
+                    }
+                    /* Open a new storage unit if the field doesn't fit. */
+                    if (bf_unit_offset < 0 || bf_unit_size != unit_size ||
+                        bf_bits_used + bit_width > unit_size * 8) {
+                        if (unit_align > max_align) max_align = unit_align;
+                        current_offset = (current_offset + unit_align - 1)
+                                         & ~(unit_align - 1);
+                        bf_unit_offset  = current_offset;
+                        bf_unit_size    = unit_size;
+                        bf_bits_used    = 0;
+                        current_offset += unit_size;
+                    }
+                    {
+                        StructField sf;
+                        memset(&sf, 0, sizeof(sf));
+                        sf.name        = d.name;
+                        sf.offset      = bf_unit_offset;
+                        sf.kind        = field_base->kind;
+                        sf.is_const    = field_is_const ? 1 : 0;
+                        sf.is_volatile = field_is_volatile ? 1 : 0;
+                        sf.is_bitfield = 1;
+                        sf.bit_width   = bit_width;
+                        sf.bit_offset  = bf_bits_used;
+                        vec_push(&tmp_fields_vec, &sf);
+                    }
+                    bf_bits_used += bit_width;
+                    continue;
+                }
+
+                /* Regular (non-bit-field) field: close any open bit-field unit. */
+                bf_unit_offset = -1;
+                bf_unit_size   = 0;
+                bf_bits_used   = 0;
+
                 /* Stage 82-01: const base for pointer-to-const (e.g. const T *f).
                  * Stage 82-04: volatile base for pointer-to-volatile. */
                 Type *effective_base = field_base;
@@ -488,12 +595,39 @@ static Type *parse_struct_specifier(Parser *parser) {
                 for (int i = 0; i < d.pointer_count; i++)
                     field_type = type_pointer(field_type);
                 /* Stage 78: handle array member fields (e.g. int values[3]).
-                 * Stage 86: multi-dimensional array members. */
+                 * Stage 86: multi-dimensional array members.
+                 * Stage 134: flexible array member — last unsized array in struct. */
                 if (d.is_array) {
                     if (!d.has_size) {
-                        PARSER_ERROR(parser,
-                                "error: struct array member '%s' requires explicit size\n",
-                                d.name);
+                        /* Stage 134: C99 flexible array member (§6.7.2.1p16).
+                         * Allowed only as the last member of a struct that has
+                         * at least one other named member. */
+                        if (tmp_fields_vec.len == 0) {
+                            PARSER_ERROR(parser,
+                                    "error: flexible array member '%s' may not be the"
+                                    " only member of a struct\n", d.name);
+                        }
+                        /* Store as TYPE_ARRAY with length 0 (flexible). */
+                        field_type = type_array(field_type, 0);
+                        int falign = type_alignment(field_base);
+                        if (falign < 1) falign = 1;
+                        if (falign > max_align) max_align = falign;
+                        current_offset = (current_offset + falign - 1) & ~(falign - 1);
+                        {
+                            StructField sf;
+                            memset(&sf, 0, sizeof(sf));
+                            sf.name             = d.name;
+                            sf.offset           = current_offset;
+                            sf.kind             = TYPE_ARRAY;
+                            sf.full_type        = field_type;
+                            sf.is_const         = field_is_const ? 1 : 0;
+                            sf.is_volatile      = field_is_volatile ? 1 : 0;
+                            sf.is_flexible_array = 1;
+                            vec_push(&tmp_fields_vec, &sf);
+                        }
+                        /* Flexible array contributes 0 bytes to sizeof. */
+                        has_flexible_array = 1;
+                        continue;
                     }
                     field_type = build_array_type_from_dims(field_type,
                                                             d.array_dims, d.array_dim_count);

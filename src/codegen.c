@@ -2726,6 +2726,33 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 compile_error(
                         "error: assignment to member of const object\n");
             }
+            /* Stage 134: bit-field write — read-modify-write into storage unit. */
+            if (f->is_bitfield) {
+                unsigned long mask = (f->bit_width >= 32) ? 0xFFFFFFFFUL
+                                     : ((1UL << (unsigned)f->bit_width) - 1UL);
+                unsigned long clear_mask = (~(mask << (unsigned)f->bit_offset)) & 0xFFFFFFFFUL;
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                codegen_expression(cg, node->children[1]);
+                if (f->bit_width < 32)
+                    fprintf(cg->output, "    and eax, %lu\n", mask);
+                if (f->bit_offset > 0)
+                    fprintf(cg->output, "    shl eax, %d\n", f->bit_offset);
+                fprintf(cg->output, "    mov ecx, eax\n");
+                fprintf(cg->output, "    pop rbx\n");
+                cg->push_depth--;
+                fprintf(cg->output, "    mov eax, [rbx]\n");
+                fprintf(cg->output, "    and eax, %lu\n", clear_mask);
+                fprintf(cg->output, "    or eax, ecx\n");
+                fprintf(cg->output, "    mov [rbx], eax\n");
+                /* Result of assignment: shift back and mask to get field value. */
+                if (f->bit_offset > 0)
+                    fprintf(cg->output, "    shr eax, %d\n", f->bit_offset);
+                if (f->bit_width < 32)
+                    fprintf(cg->output, "    and eax, %lu\n", mask);
+                node->result_type = TYPE_INT;
+                return;
+            }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
                 switch (f->kind) {
@@ -2812,6 +2839,32 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                         }
                     }
                 }
+            }
+            /* Stage 134: bit-field write via arrow — read-modify-write. */
+            if (f->is_bitfield) {
+                unsigned long mask = (f->bit_width >= 32) ? 0xFFFFFFFFUL
+                                     : ((1UL << (unsigned)f->bit_width) - 1UL);
+                unsigned long clear_mask = (~(mask << (unsigned)f->bit_offset)) & 0xFFFFFFFFUL;
+                fprintf(cg->output, "    push rax\n");
+                cg->push_depth++;
+                codegen_expression(cg, node->children[1]);
+                if (f->bit_width < 32)
+                    fprintf(cg->output, "    and eax, %lu\n", mask);
+                if (f->bit_offset > 0)
+                    fprintf(cg->output, "    shl eax, %d\n", f->bit_offset);
+                fprintf(cg->output, "    mov ecx, eax\n");
+                fprintf(cg->output, "    pop rbx\n");
+                cg->push_depth--;
+                fprintf(cg->output, "    mov eax, [rbx]\n");
+                fprintf(cg->output, "    and eax, %lu\n", clear_mask);
+                fprintf(cg->output, "    or eax, ecx\n");
+                fprintf(cg->output, "    mov [rbx], eax\n");
+                if (f->bit_offset > 0)
+                    fprintf(cg->output, "    shr eax, %d\n", f->bit_offset);
+                if (f->bit_width < 32)
+                    fprintf(cg->output, "    and eax, %lu\n", mask);
+                node->result_type = TYPE_INT;
+                return;
             }
             int sz = f->full_type ? type_size(f->full_type) : 0;
             if (sz == 0) {
@@ -3246,6 +3299,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_MEMBER_ACCESS) {
         StructField *f = emit_member_addr(cg, node);
+        /* Stage 134: bit-field rvalue — load storage unit, shift right, mask. */
+        if (f->is_bitfield) {
+            unsigned long mask = (f->bit_width >= 32) ? 0xFFFFFFFFUL
+                                 : ((1UL << (unsigned)f->bit_width) - 1UL);
+            fprintf(cg->output, "    mov eax, [rax]\n");
+            if (f->bit_offset > 0)
+                fprintf(cg->output, "    shr eax, %d\n", f->bit_offset);
+            if (f->bit_width < 32)
+                fprintf(cg->output, "    and eax, %lu\n", mask);
+            node->result_type = TYPE_INT;
+            return;
+        }
         /* Stage 85: an array-typed member decays to a pointer to its first
          * element in a value context. emit_member_addr already left the
          * field's address in rax — that address is the decayed pointer, so
@@ -3293,6 +3358,18 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
     }
     if (node->type == AST_ARROW_ACCESS) {
         StructField *f = emit_arrow_addr(cg, node);
+        /* Stage 134: bit-field rvalue — load storage unit, shift right, mask. */
+        if (f->is_bitfield) {
+            unsigned long mask = (f->bit_width >= 32) ? 0xFFFFFFFFUL
+                                 : ((1UL << (unsigned)f->bit_width) - 1UL);
+            fprintf(cg->output, "    mov eax, [rax]\n");
+            if (f->bit_offset > 0)
+                fprintf(cg->output, "    shr eax, %d\n", f->bit_offset);
+            if (f->bit_width < 32)
+                fprintf(cg->output, "    and eax, %lu\n", mask);
+            node->result_type = TYPE_INT;
+            return;
+        }
         /* Stage 85: array-typed member decays to a pointer to its first
          * element. emit_arrow_addr left the field's address in rax. */
         if (f->kind == TYPE_ARRAY && f->full_type && f->full_type->base) {
