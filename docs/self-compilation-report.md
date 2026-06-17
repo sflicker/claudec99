@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 134 self-hosting test
+
+None. Stage 134 adds `is_bitfield`, `bit_width`, `bit_offset`, and
+`is_flexible_array` fields to `StructField` in `type.h`, and restructures the
+struct body parser to handle bit-field packing and flexible array members. The
+compiler's own source uses no bit-field or flexible array members, so all new
+code paths are dormant during bootstrap. All 1946 tests passed at C0, C1, and
+C2 with no source changes needed during the bootstrap.
+
+## Result (stage 134)
+
+**Date:** 2026-06-16
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13400000.01001` | `GNU_13_3_0` | 1946/1946 |
+| C1 | `build/ccompiler-c1` | `00.02.13400000.01002` | `ClaudeC99_v00_02_13400000_01001` | 1946/1946 |
+| C2 | `build/ccompiler-c2` | `00.02.13400000.01003` | `ClaudeC99_v00_02_13400000_01002` | 1946/1946 |
+
+---
+
 ## Issues found during stage 133 self-hosting test
 
 None. Stage 133 adds `is_no_prototype` to `ASTNode` and `has_no_prototype` to
