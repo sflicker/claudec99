@@ -1873,6 +1873,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Integer narrow-type promotions (char/short → int) automatically handled by existing `movsx`/`movzx` load instructions
 - [x] 2 new tests
 
+## Stage 134 - Bit-Field and Flexible Array Members in Structs
+
+- [x] CC99-006: Bit-field struct members (`unsigned int x : N` form) — parser, layout, and codegen
+	- Named bit-fields: `:width` after declarator, packs into storage unit by type alignment
+	- Anonymous bit-fields: `:width` with no declarator (padding)
+	- Zero-width bit-fields: force new storage unit
+	- Codegen rvalue: load storage unit → shift right by bit_offset → mask with (1<<bit_width)-1
+	- Codegen lvalue write: read-modify-write (clear bits, OR in new value, store)
+- [x] CC99-007: Flexible array members (`type name[]` as last named struct member)
+	- Parser validates: must be last, struct must have at least one prior named member
+	- sizeof excludes flexible array storage
+	- Array decay to pointer handles indexed access via existing codegen path
+
 ## Stage 135 - Type Compatibility and Composite Type Checks
 
 - [x] CC99-008: Array parameter adjustment — int a[N], int a[], and int *a are compatible
@@ -1887,21 +1900,6 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- parse_parameter_declaration: builds pointer(array(base,N)) for ptr-to-array parameters
 	- (*row)[i] indexed access via existing codegen path (stage 28-04 emit_array_index_addr)
 	- Composite compatibility: int (*row)[] + int (*row)[4] both → TYPE_POINTER; compatible
-
----
-
-## Stage 134 - Bit-Field and Flexible Array Members in Structs
-
-- [x] CC99-006: Bit-field struct members (`unsigned int x : N` form) — parser, layout, and codegen
-	- Named bit-fields: `:width` after declarator, packs into storage unit by type alignment
-	- Anonymous bit-fields: `:width` with no declarator (padding)
-	- Zero-width bit-fields: force new storage unit
-	- Codegen rvalue: load storage unit → shift right by bit_offset → mask with (1<<bit_width)-1
-	- Codegen lvalue write: read-modify-write (clear bits, OR in new value, store)
-- [x] CC99-007: Flexible array members (`type name[]` as last named struct member)
-	- Parser validates: must be last, struct must have at least one prior named member
-	- sizeof excludes flexible array storage
-	- Array decay to pointer handles indexed access via existing codegen path
 
 ---
 
