@@ -223,9 +223,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 133 (default argument promotions in no-prototype calls):
+Through stage 134 (bit-field and flexible array members in structs):
 
-> Stage 133 implements C99 §6.5.2.2p6 default argument promotions for calls to functions declared without a prototype (`int f()`). The key issue was that `int f();` (empty parameter list) was incorrectly treated as a zero-parameter prototype instead of "no parameter type information"; only `int f(void);` is a zero-parameter prototype. Calls through no-prototype declarations now apply default argument promotions to all arguments: narrow integer types (char/short) promote to int, and float promotes to double. The implementation adds `is_no_prototype` to AST nodes and `has_no_prototype` to function signatures for state tracking, updates the parser to distinguish empty `()` from `(void)`, and extends the call codegen to skip parameter-count validation and apply float→double promotion for no-prototype calls. Integer promotions work automatically via existing `movsx`/`movzx` sign/zero-extend load instructions. All 1939 tests pass (1257 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1939 tests passing at every stage, no source changes needed during bootstrap.
+> Stage 134 fixes two C99 struct-member bugs. **Bit-field members** (CC99-006): Parser now detects `:` after a declarator (named bit-field) or before it (anonymous bit-field), parses the width via constant-expression evaluation, and packs consecutive bit-fields into storage units using GCC-compatible layout (same base type + fits in remaining bits → same unit; otherwise new unit at natural alignment; zero-width closes current unit). Codegen reads bit-fields via right-shift and mask after loading the storage unit, and writes via read-modify-write (clear field bits, shift new value, OR, store). **Flexible array members** (CC99-007): Parser allows unsized arrays as the last member (must have at least one prior named member), creates a length-0 array field without advancing sizeof, and validates "last member" constraint. Codegen: no changes needed — existing array-decay logic handles FAM access correctly. All 1946 tests pass (1262 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all 1946 tests passing at every stage, no source changes needed during bootstrap.
 
 Through stage 131 (sizeof unsigned size_t):
 
@@ -587,6 +587,10 @@ Through stage 91 (address-of member lvalues):
   Struct/union fields of type `char *` initialized from string literals in file-scope contexts.
   Field-level type checking for aggregate initializers: string literal for non-pointer field
   and non-null integer for pointer field are rejected.
+  Bit-field members: integer fields with `:width` declarators (both named and anonymous forms),
+  GCC-compatible storage-unit packing, and read-modify-write assignment semantics.
+  Flexible array members: unsized arrays as the last member of a struct (with at least one
+  prior named member), excluded from sizeof, supporting indexed access through pointers.
   Named `union` types with max-size layout (size = max member, all offsets 0), local and global
   union variables, first-member initialization, whole-union assignment, union fields inside structs,
   and struct fields inside unions.
@@ -679,7 +683,7 @@ Through stage 91 (address-of member lvalues):
 
 ## Not yet supported
 
-Anonymous struct/union members (C11 feature), bit-fields; block-scope `extern`;
+Anonymous struct/union members (C11 feature); block-scope `extern`;
 compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
@@ -708,7 +712,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 133 all 1939 tests pass (1257 valid, 258 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 134 all 1946 tests pass (1262 valid, 260 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

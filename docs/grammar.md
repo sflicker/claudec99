@@ -127,7 +127,10 @@
 
 <struct_declaration> ::= <specifier_qualifier_list> <struct_declarator_list> ";"
 
-<struct_declarator_list> ::= <declarator> { "," <declarator> }
+<struct_declarator_list> ::= <struct_declarator> { "," <struct_declarator> }
+
+<struct_declarator> ::= <declarator> [ ":" <constant_expression> ]
+                      | ":" <constant_expression>
 
 <return_statement> ::= "return" [ <expression> ] ";"
 
