@@ -153,3 +153,6 @@ version.c
 * Update the BuildBy 
     * Uses the compiler used for the build and record it's `--version` as <BUILDBY>
     * when compiling version.c use a `-D VERSION_BUILDBY= <BUILDBY> from the previous step.
+
+## DO NOT do update-supplemental-docs 
+Do not perform the update-supplemental-docs skill  
