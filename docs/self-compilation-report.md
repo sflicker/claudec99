@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 135 self-hosting test
+
+None. Stage 135 adds three new fields to the `ParsedDeclarator` local struct
+in `src/parser.c` (`is_ptr_to_array`, `ptr_to_array_length`,
+`ptr_to_array_has_size`), extends the `parse_declarator` and
+`parse_parameter_declaration` functions, and adds a `(void)` check in the
+function-pointer parameter parsing path. The compiler's own source uses no
+pointer-to-array parameters and no function parameters with the `name(args)`
+function-type form, so all new code paths are dormant during bootstrap.
+All 1951 tests passed at C0, C1, and C2 with no source changes needed
+during the bootstrap.
+
+## Result (stage 135)
+
+**Date:** 2026-06-17
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13500000.01009` | `GNU_13_3_0` | 1951/1951 |
+| C1 | `build/ccompiler-c1` | `00.02.13500000.01010` | `ClaudeC99_v00_02_13500000_01009` | 1951/1951 |
+| C2 | `build/ccompiler-c2` | `00.02.13500000.01011` | `ClaudeC99_v00_02_13500000_01010` | 1951/1951 |
+
+---
+
 ## Issues found during stage 134 self-hosting test
 
 None. Stage 134 adds `is_bitfield`, `bit_width`, `bit_offset`, and
