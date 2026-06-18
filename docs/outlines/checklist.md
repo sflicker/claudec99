@@ -1886,6 +1886,20 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- sizeof excludes flexible array storage
 	- Array decay to pointer handles indexed access via existing codegen path
 
+## Stage 137 - Function Return Function Pointers
+
+- [x] CC99-010: `int (*get_adder())(int)` declarator form accepted by parser
+	- ParsedDeclarator extended: `is_func_returning_fp`, `own_param_types[]`, `own_param_count`, `own_is_no_prototype`
+	- parse_declarator: replaces rejection with full `(*name())(params)` parsing
+	- `inner_stars == 0` guard preserved — `int (f())(int)` still rejected as illegal direct function-return
+- [x] `parse_external_declaration` builds nested pointer-to-function type and registers function
+	- `func->decl_type = TYPE_POINTER`, `func->full_type` set to fp type
+	- Owns parameter list parsed and added as AST_PARAM children
+- [x] Assignment of returned pointer to `int (*p)(int)` variable
+- [x] Direct call `get_adder()(11)` — parses as `AST_INDIRECT_CALL(AST_FUNCTION_CALL, arg)` via postfix path
+- [x] Typedef spelling equivalent: `typedef int (*Adder)(int); Adder get_fn(void)`
+	- Bug fix: `func->full_type` assignment condition changed from `d.pointer_count > 0` to `return_kind == TYPE_POINTER`
+
 ## Stage 136 - sizeof of Pointer-Arithmetic Expressions
 
 - [x] sizeof(ptr + int) returns 8 (pointer size, not element size)
@@ -1991,7 +2005,7 @@ Additional improvements for designated-init and multidimensional static arrays (
   - [x] va_copy codegen — three 8-byte moves copying the 24-byte va_list struct (Stage 107)
 - [ ] Old-style (K&R) function definitions
 - [x] Implicit return in void functions — fall-off-end emits `ret` (Stage 107 checklist close)
-- [ ] Functions returning function pointers: int (*f())(int)
+- [x] Functions returning function pointers: int (*f())(int) (Stage 137)
 - [x] Inline functions (inline keyword) — parse-and-ignore, no codegen effect (Stage 107)
 
 ### Standard Library Headers (stub or pass-through)

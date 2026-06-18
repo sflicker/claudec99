@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 137 (functions returning function pointers):
+
+> Stage 137 fixes the parser to accept functions returning function pointers — the `int (*get_adder())(int)` declarator form (CC99-010), previously rejected with "functions returning function pointers are not supported". **Parser**: `ParsedDeclarator` extended with `is_func_returning_fp`, `own_param_types[FUNC_TYPE_MAX_PARAMS]`, `own_param_count`, `own_is_no_prototype` fields to track the inner function's signature. `parse_declarator` replaces the rejection with full parsing of `(*name())(params)` form (guard on `inner_stars == 0` remains for the invalid direct-function-return case). **Semantic**: `parse_external_declaration` builds the nested pointer-to-function type, creates `AST_FUNCTION_DECL` with `decl_type = TYPE_POINTER`, and registers/optionally parses the function body. **Bug fix**: typedef'd pointer return types recognized via `func->full_type` assignment condition. **Tests**: removed 1 test (now valid), added 4 valid tests and 1 invalid test. Version bumped to 13700000. All 1965 tests pass (1282 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 136 (sizeof of pointer-arithmetic expressions):
 
 > Stage 136 fixes a bug in `sizeof_type_of_expr` where `sizeof` applied to pointer-arithmetic expressions (ptr+int, arr+int, ptr-ptr, string_lit+int) returns the element size instead of the pointer/ptrdiff_t size (8 on LP64). Two targeted fixes in `src/codegen.c`: (1) added a pointer/array guard in the `AST_BINARY_OP` case for `+`/`-` operators that returns `TYPE_POINTER` when either operand is `TYPE_POINTER` or `TYPE_ARRAY`, placed after the FP check but before the integer promotion path; (2) added an `AST_STRING_LITERAL` case returning `TYPE_POINTER` so string literals in binary expressions are treated as pointers and decay correctly. Version bumped to 13600000. All 1961 tests pass (1277 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
@@ -547,7 +551,7 @@ Through stage 91 (address-of member lvalues):
   Indirect calls through function pointer variables—both `fp(args)` and `(*fp)(args)`
   (explicit dereference) forms—with full argument-count and argument-type validation.
   Function pointer parameters work correctly, and function pointers can be passed as arguments
-  to other functions.
+  to other functions. **Functions returning function pointers** (`int (*f())(int)`) are now supported (stage 137).
 - **Arrays**: array declarations, indexing, array-to-pointer decay
   (including array-typed struct/union members, which decay to a pointer to
   their first element in a value context — e.g. when passed to a pointer parameter),
@@ -689,7 +693,7 @@ Through stage 91 (address-of member lvalues):
 ## Not yet supported
 
 Anonymous struct/union members (C11 feature); block-scope `extern`;
-compound literals at file scope; pointer-to-function-pointer and function-returning-function-pointer;
+compound literals at file scope; pointer-to-function-pointer;
 object-file (`.o`) emission and separate linking (multi-file source compilation is now supported in a single invocation).
 
 The authoritative grammar for the supported language is in
