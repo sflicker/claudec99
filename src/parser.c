@@ -76,6 +76,14 @@ typedef struct {
     int  is_ptr_to_array;
     int  ptr_to_array_length;
     int  ptr_to_array_has_size;
+    /* Stage 137: set when the declarator is (*name())(params) — a function
+     * returning a pointer-to-function.  own_param_* hold the outer function's
+     * own parameter types (parsed inline); fp_param_* (existing) hold the
+     * returned function pointer's parameter list. */
+    int  is_func_returning_fp;
+    Type *own_param_types[FUNC_TYPE_MAX_PARAMS];
+    int   own_param_count;
+    int   own_is_no_prototype;
 } ParsedDeclarator;
 
 void parser_init(Parser *parser, Lexer *lexer) {
@@ -1366,11 +1374,97 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
         }
         Token name = parser_expect(parser, TOKEN_IDENTIFIER);
         d.name = name.value;
-        /* A function suffix on the inner identifier means "function returning
-         * function pointer" (e.g. int (*fp())(int)) — not yet supported. */
+        /* Stage 137: (*name())(params) — function returning pointer-to-function.
+         * inner_stars > 0 makes the return type a pointer (valid in C99);
+         * inner_stars == 0 would be a function returning a function type
+         * directly, which is forbidden by C99. */
         if (parser->current.type == TOKEN_LPAREN) {
-            PARSER_ERROR(parser, 
-                    "error: functions returning function pointers are not supported\n");
+            if (inner_stars == 0) {
+                PARSER_ERROR(parser,
+                    "error: functions cannot return function types directly\n");
+            }
+            /* Parse the outer function's own parameter list, e.g. () of
+             * get_adder() in  int (*get_adder())(int). */
+            parser_expect(parser, TOKEN_LPAREN);
+            int own_count = 0;
+            int own_no_proto = 0;
+            int own_is_void = 0;
+            if (parser->current.type == TOKEN_VOID) {
+                int sp = parser->lexer->pos;
+                Token st = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_RPAREN)
+                    own_is_void = 1;
+                else { parser->lexer->pos = sp; parser->current = st; }
+            }
+            if (!own_is_void && parser->current.type != TOKEN_RPAREN) {
+                while (own_count < FUNC_TYPE_MAX_PARAMS) {
+                    while (parser->current.type == TOKEN_CONST   ||
+                           parser->current.type == TOKEN_VOLATILE ||
+                           parser->current.type == TOKEN_RESTRICT)
+                        parser->current = lexer_next_token(parser->lexer);
+                    Type *pt = parse_type_specifier(parser, NULL);
+                    int stars = 0;
+                    while (parser->current.type == TOKEN_STAR) {
+                        stars++;
+                        parser->current = lexer_next_token(parser->lexer);
+                    }
+                    if (parser->current.type == TOKEN_IDENTIFIER)
+                        parser->current = lexer_next_token(parser->lexer);
+                    int j;
+                    for (j = 0; j < stars; j++) pt = type_pointer(pt);
+                    d.own_param_types[own_count++] = pt;
+                    if (parser->current.type != TOKEN_COMMA) break;
+                    parser->current = lexer_next_token(parser->lexer);
+                }
+            } else if (!own_is_void) {
+                own_no_proto = 1; /* empty () — no prototype */
+            }
+            parser_expect(parser, TOKEN_RPAREN); /* close own params */
+            d.own_param_count = own_count;
+            d.own_is_no_prototype = own_no_proto;
+            /* Close the outer ')' of the parenthesized declarator. */
+            parser_expect(parser, TOKEN_RPAREN);
+            /* Parse the returned function pointer's parameter list, e.g. (int)
+             * in  int (*get_adder())(int). */
+            parser_expect(parser, TOKEN_LPAREN);
+            int fp_count = 0;
+            int fp_is_void = 0;
+            if (parser->current.type == TOKEN_VOID) {
+                int sp2 = parser->lexer->pos;
+                Token st2 = parser->current;
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_RPAREN)
+                    fp_is_void = 1;
+                else { parser->lexer->pos = sp2; parser->current = st2; }
+            }
+            if (!fp_is_void && parser->current.type != TOKEN_RPAREN) {
+                while (fp_count < FUNC_TYPE_MAX_PARAMS) {
+                    while (parser->current.type == TOKEN_CONST   ||
+                           parser->current.type == TOKEN_VOLATILE ||
+                           parser->current.type == TOKEN_RESTRICT)
+                        parser->current = lexer_next_token(parser->lexer);
+                    Type *pt = parse_type_specifier(parser, NULL);
+                    int stars = 0;
+                    while (parser->current.type == TOKEN_STAR) {
+                        stars++;
+                        parser->current = lexer_next_token(parser->lexer);
+                    }
+                    if (parser->current.type == TOKEN_IDENTIFIER)
+                        parser->current = lexer_next_token(parser->lexer);
+                    int j;
+                    for (j = 0; j < stars; j++) pt = type_pointer(pt);
+                    d.fp_param_types[fp_count++] = pt;
+                    if (parser->current.type != TOKEN_COMMA) break;
+                    parser->current = lexer_next_token(parser->lexer);
+                }
+            }
+            parser_expect(parser, TOKEN_RPAREN); /* close fp params */
+            d.fp_param_count = fp_count;
+            d.is_func_returning_fp = 1;
+            d.fp_inner_stars = inner_stars;
+            d.fp_outer_stars = outer_stars;
+            return d;
         }
         /* Optional array suffix inside parens: (*a[10]) */
         if (parser->current.type == TOKEN_LBRACKET) {
@@ -3886,6 +3980,71 @@ static ASTNode *parse_external_declaration(Parser *parser) {
 
     ParsedDeclarator d = parse_declarator(parser);
 
+    /* Stage 137: function returning pointer-to-function — int (*name())(params).
+     * Both the own param list and the fp param list were consumed inline by
+     * parse_declarator; build the return type and function node here. */
+    if (d.is_func_returning_fp) {
+        /* Build return type: fp_outer_stars + base → function(fp_params) →
+         * wrap fp_inner_stars times in type_pointer. */
+        Type *fp_ret = base_type;
+        int i;
+        for (i = 0; i < d.fp_outer_stars; i++)
+            fp_ret = type_pointer(fp_ret);
+        Type *fp_func_type = type_function(fp_ret, d.fp_param_count,
+                                           (Type **)d.fp_param_types);
+        Type *fp_full_type = fp_func_type;
+        for (i = 0; i < d.fp_inner_stars; i++)
+            fp_full_type = type_pointer(fp_full_type);
+
+        ASTNode *func = parser_node(parser, AST_FUNCTION_DECL, d.name);
+        func->decl_type  = TYPE_POINTER;
+        func->full_type  = fp_full_type;
+        func->storage_class = sc;
+        func->is_no_prototype = d.own_is_no_prototype;
+
+        /* Create unnamed AST_PARAM children from own parameter types.
+         * Definitions with non-empty own params require named params — reject
+         * if any are anonymous (the spec's tests use empty own params). */
+        for (i = 0; i < d.own_param_count; i++) {
+            ASTNode *p = parser_node(parser, AST_PARAM, "");
+            p->decl_type = d.own_param_types[i]->kind;
+            if (d.own_param_types[i]->kind == TYPE_POINTER)
+                p->full_type = d.own_param_types[i];
+            ast_add_child(func, p);
+        }
+
+        int param_count = d.own_param_count;
+        TypeKind own_ptypes[FUNC_MAX_PARAMS];
+        for (i = 0; i < param_count; i++)
+            own_ptypes[i] = d.own_param_types[i]->kind;
+        int is_definition = (parser->current.type == TOKEN_LBRACE);
+
+        if (is_definition && param_count > 0) {
+            for (i = 0; i < param_count; i++) {
+                if (func->children[i]->value[0] == '\0') {
+                    PARSER_ERROR(parser,
+                        "error: unnamed parameter in definition of '%s'\n",
+                        d.name);
+                }
+            }
+        }
+        parser_register_function(parser, d.name, param_count, is_definition,
+                                 TYPE_POINTER, own_ptypes, sc, 0,
+                                 d.own_is_no_prototype);
+        if (is_definition) {
+            int sv = parser->current_func_is_variadic;
+            const char *sfn = parser->current_func_name;
+            parser->current_func_is_variadic = 0;
+            parser->current_func_name = d.name;
+            ast_add_child(func, parse_block(parser));
+            parser->current_func_is_variadic = sv;
+            parser->current_func_name = sfn;
+        } else {
+            parser_expect(parser, TOKEN_SEMICOLON);
+        }
+        return func;
+    }
+
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
         if (d.is_function) {
@@ -4259,7 +4418,10 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     ASTNode *func = parser_node(parser, AST_FUNCTION_DECL, d.name);
     func->decl_type = return_kind;
     func->storage_class = sc;
-    if (d.pointer_count > 0)
+    /* Stage 137: use return_kind instead of d.pointer_count so that typedef'd
+     * pointer return types (base_kind == TYPE_POINTER, d.pointer_count == 0)
+     * also set func->full_type. */
+    if (return_kind == TYPE_POINTER)
         func->full_type = full_type;
     /* Stage 91-01: a struct/union returned by value needs its full type so
      * codegen knows the object's size (and whether it is register- or
