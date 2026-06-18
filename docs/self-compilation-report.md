@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 138 self-hosting test
+
+None. Stage 138 adds `TOKEN_AUTO` and `TOKEN_REGISTER` keywords to the lexer,
+`SC_AUTO` and `SC_REGISTER` to the `StorageClass` enum, and `is_register` to
+`LocalVar`. The parser accepts `auto` and `register` at block scope (lowered to
+automatic storage; `register` marks the variable so address-of is rejected) and
+rejects both at file scope. The compiler's own source uses no `auto` or
+`register` declarations, so all new code paths are dormant during bootstrap.
+All 1970 tests passed at C0, C1, and C2 with no source changes needed during
+the bootstrap.
+
+## Result (stage 138)
+
+**Date:** 2026-06-18
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13800000.01031` | `GNU_13_3_0` | 1970/1970 |
+| C1 | `build/ccompiler-c1` | `00.02.13800000.01032` | `ClaudeC99_v00_02_13800000_01031` | 1970/1970 |
+| C2 | `build/ccompiler-c2` | `00.02.13800000.01033` | `ClaudeC99_v00_02_13800000_01032` | 1970/1970 |
+
+---
+
 ## Issues found during stage 137 self-hosting test
 
 None. Stage 137 adds `is_func_returning_fp`, `own_param_types`,
