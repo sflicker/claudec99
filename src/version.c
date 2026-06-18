@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 #define VERSION_MAJOR  "00"
-#define VERSION_MINOR  "02"
+#define VERSION_MINOR  "03"
 #define VERSION_STAGE  "13800000"
 
 #ifndef VERSION_BUILD
