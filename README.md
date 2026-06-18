@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 138 (auto and register storage-class specifiers):
+
+> Stage 138 adds `auto` and `register` storage-class specifiers (CC99-011 and CC99-012). **Tokenizer**: `TOKEN_AUTO` and `TOKEN_REGISTER` added. **AST**: `SC_AUTO=8` and `SC_REGISTER=16` added to `StorageClass` enum. **Parser**: `auto` at block scope treated as default automatic storage; `register` at block scope allocates identically but marks the variable `SC_REGISTER`; both are rejected at file scope; `register` is also accepted as a leading qualifier in function parameter declarations. **Codegen**: `is_register` field added to `LocalVar`; `AST_ADDR_OF` rejects `&register_var` with a compile error. **Tests**: 5 new tests (2 valid returning 27, 3 invalid). Version bumped to 13800000. All 1970 tests pass (1284 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 137 (functions returning function pointers):
 
 > Stage 137 fixes the parser to accept functions returning function pointers — the `int (*get_adder())(int)` declarator form (CC99-010), previously rejected with "functions returning function pointers are not supported". **Parser**: `ParsedDeclarator` extended with `is_func_returning_fp`, `own_param_types[FUNC_TYPE_MAX_PARAMS]`, `own_param_count`, `own_is_no_prototype` fields to track the inner function's signature. `parse_declarator` replaces the rejection with full parsing of `(*name())(params)` form (guard on `inner_stars == 0` remains for the invalid direct-function-return case). **Semantic**: `parse_external_declaration` builds the nested pointer-to-function type, creates `AST_FUNCTION_DECL` with `decl_type = TYPE_POINTER`, and registers/optionally parses the function body. **Bug fix**: typedef'd pointer return types recognized via `func->full_type` assignment condition. **Tests**: removed 1 test (now valid), added 4 valid tests and 1 invalid test. Version bumped to 13700000. All 1965 tests pass (1282 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
@@ -490,6 +494,8 @@ Through stage 91 (address-of member lvalues):
   enum constants are available as compile-time integer values throughout the translation unit.
   Forward-declared enum tags (`typedef enum Status Status;` before the body) are supported.
   Block-scope `static` variables (scalar, pointer, array, and struct/union types) persist values across function calls and are stored in .bss or .data with constant-only initializers.
+  `auto` storage-class specifier is accepted at block scope (equivalent to default automatic storage).
+  `register` storage-class specifier is accepted at block scope and as a function parameter qualifier (allocates like automatic; address-of on a register variable is a compile error).
 - **Integer types**: `char`, `short`, `int`, `long` and their `unsigned` variants
   (`unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, plain `unsigned`).
   `signed` keyword support (`signed char`, `signed short`, `signed int`, `signed long`,
@@ -721,7 +727,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 136 all 1961 tests pass (1277 valid, 259 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 138 all 1970 tests pass (1284 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

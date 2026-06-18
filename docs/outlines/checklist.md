@@ -1927,6 +1927,21 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Typedef spelling equivalent: `typedef int (*Adder)(int); Adder get_fn(void)`
 	- Bug fix: `func->full_type` assignment condition changed from `d.pointer_count > 0` to `return_kind == TYPE_POINTER`
 
+## Stage 138 - auto and register Storage-Class Specifiers
+
+- [x] CC99-011: `auto` storage-class specifier accepted at block scope
+	- TOKEN_AUTO added to lexer; SC_AUTO=8 added to StorageClass enum
+	- parse_statement consumes `auto`, delegates to parse_statement with no storage-class change (SC_NONE behavior)
+	- File-scope `auto` rejected: "error: auto is not valid at file scope"
+- [x] CC99-012: `register` storage-class specifier accepted at block scope and function parameters
+	- TOKEN_REGISTER added to lexer; SC_REGISTER=16 added to StorageClass enum
+	- parse_statement consumes `register`, stamps SC_REGISTER on resulting AST_DECLARATION nodes
+	- parse_parameter_declaration accepts TOKEN_REGISTER as a leading qualifier (consumed and ignored)
+	- File-scope `register` rejected: "error: register is not valid at file scope"
+- [x] `register` address-of restriction: `&register_var` emits "error: cannot take address of register variable 'NAME'"
+	- `is_register` field added to LocalVar; set from SC_REGISTER in all four declaration paths
+	- AST_ADDR_OF codegen checks `lv->is_register` before emitting lea
+
 ---
 
 ## TODO
@@ -1957,8 +1972,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ### Declarations and Scope
 - [x] static storage class (block scope — local static variables: scalar/pointer Stage 71; arrays/structs/unions Stage 101; designated-init arrays, struct/union element types, 2D arrays Stage 102; full constant-expression initializers Stage 103)
-- [ ] register storage class (hint only)
-- [ ] auto storage class (explicit)
+- [x] register storage class (hint only) (Stage 138)
+- [x] auto storage class (explicit) (Stage 138)
 - [x] Tentative definitions for file-scope variables (Stage 126)
 - [x] For-loop initializer declarations: for (int i = 0; ...) (Stage 76)
 - [ ] Multiple pointer levels in multi-declarator lists

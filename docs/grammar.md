@@ -23,7 +23,11 @@
 
 <type_qualifier> ::= "const" | "volatile" | "restrict"
 
-<storage_class_specifier>   ::= "extern" | "static" | "typedef"
+<storage_class_specifier>   ::= "extern" | "static" | "typedef" | "auto" | "register"
+                            # "auto" and "register" are valid only at block scope.
+                            # "register" is also valid as a function parameter qualifier.
+                            # "extern" and "static" are valid at file scope and block scope
+                            # ("extern" at block scope not yet supported).
 
 <parameter_list> ::= "void"
                    | <parameter_declarator> { "," <parameter_declarator> } [ "," "..." ]
@@ -412,6 +416,9 @@
 #   - In a function definition, the declarator must be a function declarator.
 #   - Function declarations may not have initializers.
 #   - The `extern` storage-class specifier is supported only at file scope.
+#   - The `auto` specifier is supported only at block scope (equivalent to default automatic storage).
+#   - The `register` specifier is supported at block scope and as a function parameter qualifier.
+#     Address-of (`&`) on a `register` variable is a compile error.
 #   - The `static` specifier is supported at file scope and block scope
 #     (scalar and pointer types only; block-scope static arrays and structs
 #     are not yet supported).
