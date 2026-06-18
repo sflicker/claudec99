@@ -1976,7 +1976,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] auto storage class (explicit) (Stage 138)
 - [x] Tentative definitions for file-scope variables (Stage 126)
 - [x] For-loop initializer declarations: for (int i = 0; ...) (Stage 76)
-- [ ] Multiple pointer levels in multi-declarator lists
+- [x] Multiple pointer levels in multi-declarator lists
 - [x] Function declarations at block scope (Stage 129)
 - [x] Incomplete array types in extern declarations (Stage 129)
 
