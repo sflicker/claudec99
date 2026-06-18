@@ -1886,32 +1886,6 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- sizeof excludes flexible array storage
 	- Array decay to pointer handles indexed access via existing codegen path
 
-## Stage 137 - Function Return Function Pointers
-
-- [x] CC99-010: `int (*get_adder())(int)` declarator form accepted by parser
-	- ParsedDeclarator extended: `is_func_returning_fp`, `own_param_types[]`, `own_param_count`, `own_is_no_prototype`
-	- parse_declarator: replaces rejection with full `(*name())(params)` parsing
-	- `inner_stars == 0` guard preserved — `int (f())(int)` still rejected as illegal direct function-return
-- [x] `parse_external_declaration` builds nested pointer-to-function type and registers function
-	- `func->decl_type = TYPE_POINTER`, `func->full_type` set to fp type
-	- Owns parameter list parsed and added as AST_PARAM children
-- [x] Assignment of returned pointer to `int (*p)(int)` variable
-- [x] Direct call `get_adder()(11)` — parses as `AST_INDIRECT_CALL(AST_FUNCTION_CALL, arg)` via postfix path
-- [x] Typedef spelling equivalent: `typedef int (*Adder)(int); Adder get_fn(void)`
-	- Bug fix: `func->full_type` assignment condition changed from `d.pointer_count > 0` to `return_kind == TYPE_POINTER`
-
-## Stage 136 - sizeof of Pointer-Arithmetic Expressions
-
-- [x] sizeof(ptr + int) returns 8 (pointer size, not element size)
-	- sizeof_type_of_expr AST_BINARY_OP: pointer/array guard before promote_kind path
-	- If either operand is TYPE_POINTER or TYPE_ARRAY, return TYPE_POINTER (size 8 on LP64)
-- [x] sizeof(arr + int) returns 8 (array decays to pointer in binary expression)
-	- Same guard covers TYPE_ARRAY operands; both local and global arrays covered
-- [x] sizeof(ptr - int) and sizeof(ptr - ptr) return 8
-	- ptr - int → pointer; ptr - ptr → ptrdiff_t; both size 8 on LP64, return TYPE_POINTER
-- [x] sizeof(string_literal + int) returns 8
-	- Added AST_STRING_LITERAL case to sizeof_type_of_expr returning TYPE_POINTER
-
 ## Stage 135 - Type Compatibility and Composite Type Checks
 
 - [x] CC99-008: Array parameter adjustment — int a[N], int a[], and int *a are compatible
@@ -1926,6 +1900,32 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- parse_parameter_declaration: builds pointer(array(base,N)) for ptr-to-array parameters
 	- (*row)[i] indexed access via existing codegen path (stage 28-04 emit_array_index_addr)
 	- Composite compatibility: int (*row)[] + int (*row)[4] both → TYPE_POINTER; compatible
+
+## Stage 136 - sizeof of Pointer-Arithmetic Expressions
+
+- [x] sizeof(ptr + int) returns 8 (pointer size, not element size)
+	- sizeof_type_of_expr AST_BINARY_OP: pointer/array guard before promote_kind path
+	- If either operand is TYPE_POINTER or TYPE_ARRAY, return TYPE_POINTER (size 8 on LP64)
+- [x] sizeof(arr + int) returns 8 (array decays to pointer in binary expression)
+	- Same guard covers TYPE_ARRAY operands; both local and global arrays covered
+- [x] sizeof(ptr - int) and sizeof(ptr - ptr) return 8
+	- ptr - int → pointer; ptr - ptr → ptrdiff_t; both size 8 on LP64, return TYPE_POINTER
+- [x] sizeof(string_literal + int) returns 8
+	- Added AST_STRING_LITERAL case to sizeof_type_of_expr returning TYPE_POINTER
+
+## Stage 137 - Function Return Function Pointers
+
+- [x] CC99-010: `int (*get_adder())(int)` declarator form accepted by parser
+	- ParsedDeclarator extended: `is_func_returning_fp`, `own_param_types[]`, `own_param_count`, `own_is_no_prototype`
+	- parse_declarator: replaces rejection with full `(*name())(params)` parsing
+	- `inner_stars == 0` guard preserved — `int (f())(int)` still rejected as illegal direct function-return
+- [x] `parse_external_declaration` builds nested pointer-to-function type and registers function
+	- `func->decl_type = TYPE_POINTER`, `func->full_type` set to fp type
+	- Owns parameter list parsed and added as AST_PARAM children
+- [x] Assignment of returned pointer to `int (*p)(int)` variable
+- [x] Direct call `get_adder()(11)` — parses as `AST_INDIRECT_CALL(AST_FUNCTION_CALL, arg)` via postfix path
+- [x] Typedef spelling equivalent: `typedef int (*Adder)(int); Adder get_fn(void)`
+	- Bug fix: `func->full_type` assignment condition changed from `d.pointer_count > 0` to `return_kind == TYPE_POINTER`
 
 ---
 
