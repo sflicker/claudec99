@@ -1968,7 +1968,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 ### Initializers
 - [x] Designated initializers for arrays: [idx] = value (Stage 97)
 - [x] Designated initializers for structs: .member = value (Stage 97)
-- [ ] Zero-initialization of static-duration objects (global structs/arrays)
+- [x] Zero-initialization of static-duration objects (global structs/arrays) (Stage 22: uninitialized globals to .bss; Stage 44: partial struct init zero-fills missing members; Stage 43/97: partial array init zero-fills missing elements; Stage 101/102: block-scope static aggregates)
 
 ### Expressions
 - [x] sizeof with unsigned result type (size_t) (Stage 131)
