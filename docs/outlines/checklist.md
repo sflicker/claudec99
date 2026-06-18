@@ -2011,14 +2011,11 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] switch with long / long long / unsigned long long discriminant — 64-bit `cmp rax` path (Stage 121); `char`/`short` already promoted to `int` (32-bit path unchanged)
 - [x] Case labels with unsigned and long constant values
 - [x] Case labels with full integer constant expressions (Stage 77; Stage 99: extended to shift, bitwise, multiplicative, parenthesized expressions; Stage 104: extended to relational, equality, logical, and ternary)
-- [ ] goto across declarations (only legal in C under restrictions)
-
 ### Functions
 - [x] Variadic function definitions: va_list, va_start, va_end, and va_arg for GP-class types (int/long/long long/pointer) (Stage 75)
   - [x] va_arg for double (Stage 112); va_arg for float rejected per C99 §6.5.2.2p6
   - [x] va_arg for struct-by-value types (Stage 130)
   - [x] va_copy codegen — three 8-byte moves copying the 24-byte va_list struct (Stage 107)
-- [ ] Old-style (K&R) function definitions
 - [x] Implicit return in void functions — fall-off-end emits `ret` (Stage 107 checklist close)
 - [x] Functions returning function pointers: int (*f())(int) (Stage 137)
 - [x] Inline functions (inline keyword) — parse-and-ignore, no codegen effect (Stage 107)
@@ -2081,3 +2078,8 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [ ] -O optimization level flags
 - [x] Makefile / build system for the compiler itself (`build.sh`: normal / bootstrap / fallback / self-host modes) (Stage 93, 94)
 - [ ] Comprehensive conformance test suite against C99 standard
+
+## Not Planned
+
+- goto across declarations (only legal in C under restrictions)
+- Old-style (K&R) function definitions
