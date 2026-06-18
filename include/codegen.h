@@ -27,6 +27,8 @@ typedef struct {
     int is_static;
     /* Stage 95-11: pointer into util_strdup'd storage for the generated label. */
     const char *static_label;
+    /* Stage 138: set when declared register; address-of is forbidden. */
+    int is_register;
 } LocalVar;
 
 /* Stage 71: one entry per block-scope static variable declared during

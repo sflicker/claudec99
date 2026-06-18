@@ -4,10 +4,12 @@
 #include "type.h"
 
 typedef enum {
-    SC_NONE    = 0,
-    SC_EXTERN  = 1,
-    SC_STATIC  = 2,
-    SC_TYPEDEF = 4
+    SC_NONE     = 0,
+    SC_EXTERN   = 1,
+    SC_STATIC   = 2,
+    SC_TYPEDEF  = 4,
+    SC_AUTO     = 8,
+    SC_REGISTER = 16
 } StorageClass;
 
 typedef enum {

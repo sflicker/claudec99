@@ -738,6 +738,7 @@ static int codegen_add_var(CodeGen *cg, const char *name, int size, int align,
      * consult this flag). Static locals are registered via a separate path. */
     new_lv.is_static = 0;
     new_lv.static_label = NULL;
+    new_lv.is_register = 0;
     vec_push(&cg->locals, &new_lv);
     return cg->stack_offset;
 }
@@ -3212,6 +3213,11 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         }
         LocalVar *lv = codegen_find_var(cg, operand->value);
         if (lv) {
+            if (lv->is_register) {
+                compile_error(
+                    "error: cannot take address of register variable '%s'\n",
+                    lv->name);
+            }
             if (lv->is_static)
                 fprintf(cg->output, "    lea rax, [rel %s]\n", lv->static_label);
             else
@@ -5847,6 +5853,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             {
                 LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
                 last_lv->is_const = node->is_const;
+                last_lv->is_register = (node->storage_class == SC_REGISTER);
             }
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
@@ -5923,6 +5930,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             {
                 LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
                 last_lv->is_const = node->is_const;
+                last_lv->is_register = (node->storage_class == SC_REGISTER);
             }
             if (node->child_count > 0 &&
                 node->children[0]->type == AST_INITIALIZER_LIST) {
@@ -6010,6 +6018,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             {
                 LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
                 last_lv->is_const = node->is_const;
+                last_lv->is_register = (node->storage_class == SC_REGISTER);
             }
             if (node->child_count > 0) {
                 codegen_expression(cg, node->children[0]);
@@ -6026,6 +6035,7 @@ static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
             LocalVar *last_lv = (LocalVar *)vec_get(&cg->locals, cg->locals.len - 1);
             last_lv->is_const = node->is_const;
             last_lv->is_unsigned = node->is_unsigned;
+            last_lv->is_register = (node->storage_class == SC_REGISTER);
         }
         if (node->child_count > 0) {
             codegen_expression(cg, node->children[0]);

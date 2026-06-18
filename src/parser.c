@@ -3264,6 +3264,26 @@ static ASTNode *parse_statement(Parser *parser) {
         PARSER_ERROR(parser,
                 "error: storage class specifier not allowed in block scope\n");
     }
+    /* Stage 138: auto at block scope is equivalent to default automatic storage. */
+    if (parser->current.type == TOKEN_AUTO) {
+        parser->current = lexer_next_token(parser->lexer);
+        return parse_statement(parser);
+    }
+    /* Stage 138: register at block scope — allocate like automatic; forbid address-of. */
+    if (parser->current.type == TOKEN_REGISTER) {
+        parser->current = lexer_next_token(parser->lexer);
+        ASTNode *inner = parse_statement(parser);
+        if (inner->type == AST_DECLARATION) {
+            inner->storage_class = SC_REGISTER;
+        } else if (inner->type == AST_DECL_LIST) {
+            int i;
+            for (i = 0; i < inner->child_count; i++) {
+                if (inner->children[i]->type == AST_DECLARATION)
+                    inner->children[i]->storage_class = SC_REGISTER;
+            }
+        }
+        return inner;
+    }
     /* Stage 71: static is allowed at block scope — consume the keyword,
      * parse the declaration, and mark all resulting AST_DECLARATION nodes
      * with SC_STATIC so codegen emits them to static storage. */
@@ -3708,10 +3728,12 @@ static ASTNode *parse_statement(Parser *parser) {
 static ASTNode *parse_parameter_declaration(Parser *parser) {
     /* Stage 39: consume optional leading const qualifier on parameter types.
      * Stage 82-04: also consume optional volatile qualifier.
-     * Stage 106: also consume optional restrict qualifier. */
-    if (parser->current.type == TOKEN_CONST   ||
-        parser->current.type == TOKEN_VOLATILE ||
-        parser->current.type == TOKEN_RESTRICT)
+     * Stage 106: also consume optional restrict qualifier.
+     * Stage 138: also consume optional register storage-class specifier. */
+    if (parser->current.type == TOKEN_CONST     ||
+        parser->current.type == TOKEN_VOLATILE   ||
+        parser->current.type == TOKEN_RESTRICT   ||
+        parser->current.type == TOKEN_REGISTER)
         parser->current = lexer_next_token(parser->lexer);
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
@@ -3898,11 +3920,17 @@ static DeclSpecResult parse_declaration_specifiers(Parser *parser) {
         } else if (parser->current.type == TOKEN_INLINE) {
             /* C99 §6.7.4 function-specifier: parse and ignore (no codegen effect) */
             parser->current = lexer_next_token(parser->lexer);
+        } else if (parser->current.type == TOKEN_AUTO) {
+            PARSER_ERROR(parser,
+                    "error: auto is not valid at file scope\n");
+        } else if (parser->current.type == TOKEN_REGISTER) {
+            PARSER_ERROR(parser,
+                    "error: register is not valid at file scope\n");
         } else if (parser->current.type == TOKEN_EXTERN ||
             parser->current.type == TOKEN_STATIC ||
             parser->current.type == TOKEN_TYPEDEF) {
             if (has_sc) {
-                PARSER_ERROR(parser, 
+                PARSER_ERROR(parser,
                         "error: multiple storage class specifiers are not allowed\n");
             }
             has_sc = 1;

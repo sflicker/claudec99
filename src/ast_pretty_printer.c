@@ -40,6 +40,8 @@ static void ast_print_indent(int depth) {
 static void ast_print_decl_qualifiers(ASTNode *node) {
     if (node->storage_class == SC_EXTERN) printf("extern ");
     else if (node->storage_class == SC_STATIC) printf("static ");
+    else if (node->storage_class == SC_AUTO) printf("auto ");
+    else if (node->storage_class == SC_REGISTER) printf("register ");
     if (node->is_const) printf("const ");
     if (node->is_unsigned) printf("unsigned ");
 }
