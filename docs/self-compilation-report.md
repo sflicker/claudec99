@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 137 self-hosting test
+
+None. Stage 137 adds `is_func_returning_fp`, `own_param_types`,
+`own_param_count`, and `own_is_no_prototype` fields to the `ParsedDeclarator`
+local struct in `src/parser.c`, extends `parse_declarator` to handle the
+`(*name())(params)` form, and adds an `is_func_returning_fp` branch in
+`parse_external_declaration`. It also fixes `func->full_type` assignment to
+cover typedef'd pointer return types. The compiler's own source uses no
+function-returning-function-pointer declarations, so all new code paths are
+dormant during bootstrap. All 1965 tests passed at C0, C1, and C2 with no
+source changes needed during the bootstrap.
+
+## Result (stage 137)
+
+**Date:** 2026-06-18
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.02.13700000.01023` | `GNU_13_3_0` | 1965/1965 |
+| C1 | `build/ccompiler-c1` | `00.02.13700000.01024` | `ClaudeC99_v00_02_13700000_01023` | 1965/1965 |
+| C2 | `build/ccompiler-c2` | `00.02.13700000.01025` | `ClaudeC99_v00_02_13700000_01024` | 1965/1965 |
+
+---
+
 ## Issues found during stage 136 self-hosting test
 
 None. Stage 136 fixes two cases in `sizeof_type_of_expr` in `src/codegen.c`:
