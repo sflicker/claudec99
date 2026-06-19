@@ -2235,6 +2235,7 @@ static ASTNode *parse_cast(Parser *parser) {
             ASTNode *operand = parse_cast(parser);
             ASTNode *cast = parser_node(parser, AST_CAST, NULL);
             cast->decl_type = cast_type->kind;
+            cast->is_unsigned = !cast_type->is_signed;
             if (cast_type->kind == TYPE_POINTER) {
                 cast->full_type = cast_type;
             }
