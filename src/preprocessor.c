@@ -753,7 +753,26 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                     gbuf_append(&out, s + id_start, id_len);
                 }
             } else {
-                gbuf_append(&out, s + id_start, id_len);
+                /* not in macro table — emit as-is, but protect defined(X)/defined X */
+                if (id_len == 7 && strncmp(s + id_start, "defined", 7) == 0) {
+                    gbuf_append(&out, "defined", 7);
+                    size_t p = in;
+                    while (s[p] == ' ' || s[p] == '\t') p++;
+                    if (s[p] == '(') {
+                        p++;
+                        while (s[p] && s[p] != ')' && s[p] != '\n') p++;
+                        if (s[p] == ')') p++;
+                        gbuf_append(&out, s + in, p - in);
+                        in = p;
+                    } else if (isalpha((unsigned char)s[p]) || s[p] == '_') {
+                        size_t ne = p;
+                        while (s[ne] && (isalnum((unsigned char)s[ne]) || s[ne] == '_')) ne++;
+                        gbuf_append(&out, s + in, ne - in);
+                        in = ne;
+                    }
+                } else {
+                    gbuf_append(&out, s + id_start, id_len);
+                }
             }
             continue;
         }
@@ -769,6 +788,8 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
 
 static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
                             char *out_data, char *spliced_buf);
+static long eval_cond_ternary(const char *s, size_t *in, MacroTable *macros,
+                               char *out_data, char *spliced_buf);
 static long eval_cond_unary(const char *s, size_t *in, MacroTable *macros,
                              char *out_data, char *spliced_buf);
 static long eval_cond_multiplicative(const char *s, size_t *in, MacroTable *macros,
@@ -824,8 +845,20 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
 
     if (isdigit((unsigned char)s[*in])) {
         long value = 0;
-        while (isdigit((unsigned char)s[*in]))
-            value = value * 10 + (s[(*in)++] - '0');
+        if (s[*in] == '0' && (s[*in + 1] == 'x' || s[*in + 1] == 'X')) {
+            *in += 2;
+            while (isxdigit((unsigned char)s[*in]))
+                value = value * 16 + (isdigit((unsigned char)s[*in])
+                        ? s[(*in)++] - '0'
+                        : tolower((unsigned char)s[(*in)++]) - 'a' + 10);
+        } else {
+            while (isdigit((unsigned char)s[*in]))
+                value = value * 10 + (s[(*in)++] - '0');
+        }
+        /* consume integer-suffix: u/U, l/L, ll/LL, ul/UL, ull/ULL, etc. */
+        while (s[*in] == 'u' || s[*in] == 'U' ||
+               s[*in] == 'l' || s[*in] == 'L')
+            (*in)++;
         return value;
     }
 
@@ -836,10 +869,7 @@ static long eval_cond_primary(const char *s, size_t *in, MacroTable *macros,
         size_t name_len = *in - name_start;
         MacroDef *m = macro_find(macros, s + name_start, name_len);
         if (!m) return 0L;  /* undefined identifier evaluates to 0 */
-        if (m->param_count != -1) {
-            fprintf(stderr, "error: unsupported #if expression\n");
-            free(out_data); free(spliced_buf); exit(1);
-        }
+        if (m->param_count != -1) return 0L;
         const char *repl = m->replacement;
         while (*repl == ' ' || *repl == '\t') repl++;
         int neg = 0;
@@ -1146,10 +1176,31 @@ static long eval_cond_logical_or(const char *s, size_t *in, MacroTable *macros,
     return value;
 }
 
+/* Ternary operator: logical_or { "?" ternary ":" ternary }, right-associative.
+ * Lower precedence than ||. */
+static long eval_cond_ternary(const char *s, size_t *in, MacroTable *macros,
+                               char *out_data, char *spliced_buf) {
+    long cond = eval_cond_logical_or(s, in, macros, out_data, spliced_buf);
+    while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+    if (s[*in] != '?') return cond;
+    (*in)++;
+    while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+    long then_val = eval_cond_ternary(s, in, macros, out_data, spliced_buf);
+    while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+    if (s[*in] != ':') {
+        fprintf(stderr, "error: expected ':' in ternary preprocessor expression\n");
+        free(out_data); free(spliced_buf); exit(1);
+    }
+    (*in)++;
+    while (s[*in] == ' ' || s[*in] == '\t') (*in)++;
+    long else_val = eval_cond_ternary(s, in, macros, out_data, spliced_buf);
+    return cond ? then_val : else_val;
+}
+
 /* Top-level preprocessor condition expression evaluator. */
 static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
                             char *out_data, char *spliced_buf) {
-    return eval_cond_logical_or(s, in, macros, out_data, spliced_buf);
+    return eval_cond_ternary(s, in, macros, out_data, spliced_buf);
 }
 
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */
@@ -1288,12 +1339,23 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (emitting) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    long ifval = eval_cond_expr(s, &in, macros, out.data, spliced);
-                    while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (s[in] != '\n' && s[in] != '\0') {
+                    size_t cond_start = in;
+                    while (s[in] && s[in] != '\n') in++;
+                    size_t cond_len = in - cond_start;
+                    char *cond_text = malloc(cond_len + 1);
+                    memcpy(cond_text, s + cond_start, cond_len);
+                    cond_text[cond_len] = '\0';
+                    char *expanded = expand_macros_text(cond_text, macros);
+                    free(cond_text);
+                    size_t exp_in = 0;
+                    while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
+                    long ifval = eval_cond_expr(expanded, &exp_in, macros, out.data, spliced);
+                    while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
+                    if (expanded[exp_in] != '\0') {
                         fprintf(stderr, "error: extra tokens after #if expression\n");
-                        free(out.data); free(spliced); exit(1);
+                        free(expanded); free(out.data); free(spliced); exit(1);
                     }
+                    free(expanded);
                     cond_val = (ifval != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;
@@ -1392,12 +1454,23 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 int cond_val = 0;
                 if (top->parent_emitting && !top->branch_taken) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
-                    long elifval = eval_cond_expr(s, &in, macros, out.data, spliced);
-                    while (s[in] == ' ' || s[in] == '\t') in++;
-                    if (s[in] != '\n' && s[in] != '\0') {
+                    size_t cond_start = in;
+                    while (s[in] && s[in] != '\n') in++;
+                    size_t cond_len = in - cond_start;
+                    char *cond_text = malloc(cond_len + 1);
+                    memcpy(cond_text, s + cond_start, cond_len);
+                    cond_text[cond_len] = '\0';
+                    char *expanded = expand_macros_text(cond_text, macros);
+                    free(cond_text);
+                    size_t exp_in = 0;
+                    while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
+                    long elifval = eval_cond_expr(expanded, &exp_in, macros, out.data, spliced);
+                    while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
+                    if (expanded[exp_in] != '\0') {
                         fprintf(stderr, "error: extra tokens after #elif expression\n");
-                        free(out.data); free(spliced); exit(1);
+                        free(expanded); free(out.data); free(spliced); exit(1);
                     }
+                    free(expanded);
                     cond_val = (elifval != 0);
                 }
                 while (s[in] && s[in] != '\n') in++;

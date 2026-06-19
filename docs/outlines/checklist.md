@@ -1944,6 +1944,21 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ---
 
+## Stage 139 - Preprocessor `#if` Expression Gaps Blocking System Headers
+
+- [x] PP-01: Integer literal suffixes (`L`, `U`, `LL`, `UL`, `ULL`, etc.) consumed in `eval_cond_primary`
+	- `while (s[*in] == 'u' || ... || s[*in] == 'L') (*in)++;` after digit loop
+	- Hex literal support added: `0x`/`0X` prefix detected, `isxdigit` loop for digits
+- [x] PP-02: Function-like macros in `#if`/`#elif` expressions supported via pre-expansion
+	- `#if` and `#elif` handlers collect raw condition text, pass through `expand_macros_text` before evaluation
+	- `defined(X)` / `defined X` protected from macro expansion in `expand_macros_text` (new special case)
+	- Function-like macro guard in `eval_cond_primary` changed from `exit(1)` to `return 0L`
+- [x] PP-03: Ternary operator `?:` in `#if` expressions (C99 §6.10.1)
+	- `eval_cond_ternary` added between `eval_cond_logical_or` and `eval_cond_expr`
+	- `eval_cond_expr` updated to call `eval_cond_ternary`; forward declaration added
+
+---
+
 ## TODO
 
 ### Preprocessor
