@@ -2013,30 +2013,6 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1982 portable tests pass; 99/99 system-include tests pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 
-## Stage 144 - Constant Unary Folding
-
-- [x] `src/optimize.c`: replace `~`-only unary block with unified unary fold rule in `optimize_expr`
-	- `-val`: arithmetic negation; inherits operand `decl_type` and `is_unsigned`
-	- `+val`: unary plus (no-op value); inherits operand type
-	- `!val`: logical NOT → `TYPE_INT` 0 or 1
-	- `~val`: bitwise complement (unified from stage-143 `~`-only block); inherits operand type
-- [x] 4 new integration tests (unary_minus, unary_plus, unary_not, unary_combined)
-- [x] Test results: 1992 portable tests pass; all unary fold tests produce correct output at `-O1`
-- [x] Self-host C0→C1→C2 verified with all 1992 portable tests passing at every stage
-
-## Stage 143 - Constant Integer Binary Folding
-
-- [x] `src/optimize.c`: binary fold rule in `optimize_expr` — `AST_BINARY_OP` with both children `AST_INT_LITERAL`
-	- Arithmetic: `+`, `-`, `*`, `/` (div-by-zero guard), `%` (div-by-zero guard)
-	- Bitwise: `&`, `|`, `^`, `<<`, `>>`
-	- Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → `TYPE_INT` result 0 or 1
-	- Logical short-circuit: `0 && X` → 0; `nonzero || X` → 1; fold fully when both constant
-- [x] `src/optimize.c`: unary `~` fold — `AST_UNARY_OP` with `AST_INT_LITERAL` operand
-- [x] New includes: `<stdio.h>`, `<stdlib.h>`, `<string.h>`, `"util.h"` in `src/optimize.c`
-- [x] 6 new integration tests (arithmetic, bitwise, relational, logical, divzero-skipped, nested)
-- [x] Test results: 1988 portable tests pass; all fold tests produce correct output at `-O1`
-- [x] Self-host C0→C1→C2 verified with all 1988 portable tests passing at every stage
-
 ## Stage 142 - Optimizer Infrastructure
 
 - [x] New `include/optimize.h` — declares `optimize_translation_unit(ASTNode *root, int opt_level)`
@@ -2054,6 +2030,30 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1982 portable tests pass at `-O0` and `-O1`; output identical for no-op pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 	- Bootstrap fix: `src/optimize.c` missing from `build.sh` `SRC_FILES` — added during self-host
+
+## Stage 143 - Constant Integer Binary Folding
+
+- [x] `src/optimize.c`: binary fold rule in `optimize_expr` — `AST_BINARY_OP` with both children `AST_INT_LITERAL`
+	- Arithmetic: `+`, `-`, `*`, `/` (div-by-zero guard), `%` (div-by-zero guard)
+	- Bitwise: `&`, `|`, `^`, `<<`, `>>`
+	- Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → `TYPE_INT` result 0 or 1
+	- Logical short-circuit: `0 && X` → 0; `nonzero || X` → 1; fold fully when both constant
+- [x] `src/optimize.c`: unary `~` fold — `AST_UNARY_OP` with `AST_INT_LITERAL` operand
+- [x] New includes: `<stdio.h>`, `<stdlib.h>`, `<string.h>`, `"util.h"` in `src/optimize.c`
+- [x] 6 new integration tests (arithmetic, bitwise, relational, logical, divzero-skipped, nested)
+- [x] Test results: 1988 portable tests pass; all fold tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 1988 portable tests passing at every stage
+
+## Stage 144 - Constant Unary Folding
+
+- [x] `src/optimize.c`: replace `~`-only unary block with unified unary fold rule in `optimize_expr`
+	- `-val`: arithmetic negation; inherits operand `decl_type` and `is_unsigned`
+	- `+val`: unary plus (no-op value); inherits operand type
+	- `!val`: logical NOT → `TYPE_INT` 0 or 1
+	- `~val`: bitwise complement (unified from stage-143 `~`-only block); inherits operand type
+- [x] 4 new integration tests (unary_minus, unary_plus, unary_not, unary_combined)
+- [x] Test results: 1992 portable tests pass; all unary fold tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 1992 portable tests passing at every stage
 
 ---
 
