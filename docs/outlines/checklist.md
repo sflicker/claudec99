@@ -2013,6 +2013,17 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1982 portable tests pass; 99/99 system-include tests pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 
+## Stage 144 - Constant Unary Folding
+
+- [x] `src/optimize.c`: replace `~`-only unary block with unified unary fold rule in `optimize_expr`
+	- `-val`: arithmetic negation; inherits operand `decl_type` and `is_unsigned`
+	- `+val`: unary plus (no-op value); inherits operand type
+	- `!val`: logical NOT → `TYPE_INT` 0 or 1
+	- `~val`: bitwise complement (unified from stage-143 `~`-only block); inherits operand type
+- [x] 4 new integration tests (unary_minus, unary_plus, unary_not, unary_combined)
+- [x] Test results: 1992 portable tests pass; all unary fold tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 1992 portable tests passing at every stage
+
 ## Stage 143 - Constant Integer Binary Folding
 
 - [x] `src/optimize.c`: binary fold rule in `optimize_expr` — `AST_BINARY_OP` with both children `AST_INT_LITERAL`
@@ -2172,7 +2183,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] Bitwise: `&`, `|`, `^`, `~` (unary), `<<`, `>>` (Stage 143)
   - [x] Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → produces 0 or 1 (Stage 143)
   - [x] Logical: `&&`, `||` with short-circuit (second operand only folded when first is constant) (Stage 143)
-- [ ] Constant unary folding — `AST_UNARY_OP` with constant operand: fold `-`, `+`, `!`, `~`
+- [x] Constant unary folding — `AST_UNARY_OP` with constant operand: fold `-`, `+`, `!`, `~` (Stage 144)
 - [ ] Algebraic identities (even when one side is non-constant)
   - [ ] Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x`
   - [ ] Multiplicative identities: `x * 1` → `x`, `1 * x` → `x`, `x / 1` → `x`

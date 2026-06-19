@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 144 self-hosting test
+
+None. The change is confined to `src/optimize.c`: the `~`-only unary block is
+replaced with a unified block handling `-`, `+`, `!`, and `~`. All new code
+uses `strtol`, `snprintf`, `strcmp`, `ast_new`, `ast_free`, and `util_strdup`
+— all available in C0. No new AST node types, no parser changes, no codegen
+changes. All 1992 tests passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 144)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01440000.01083` | 1992/1992 |
+| C1 | `build/ccompiler-c1` | `00.03.01440000.01084` | 1992/1992 |
+| C2 | `build/ccompiler-c2` | `00.03.01440000.01085` | 1992/1992 |
+
+---
+
 ## Issues found during stage 143 self-hosting test
 
 None. The change is confined to `src/optimize.c`: new folding rules inserted

@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 144 (constant unary folding):
+
+> Stage 144 completes constant unary folding in the stage-142 optimizer infrastructure: `AST_UNARY_OP` nodes whose single child is an `AST_INT_LITERAL` are now folded for all four unary operators under `-O1`. The stage-143 `~`-only block in `optimize_expr()` is replaced with a unified rule: `-val` (arithmetic negation), `+val` (unary plus, identity), `!val` (logical NOT, produces `TYPE_INT` 0 or 1), and `~val` (bitwise complement). Operators applied to non-constant operands are unaffected. No grammar changes. Four new integration tests (unary_minus, unary_plus, unary_not, unary_combined). All 1992 portable tests pass (165 unit, 1286 valid, 261 invalid, 109 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 143 (constant integer binary folding):
 
 > Stage 143 implements the first real optimization rule in the stage-142 infrastructure: **constant integer binary folding**. When both children of an `AST_BINARY_OP` are `AST_INT_LITERAL`, the optimizer computes the result at compile time and replaces the entire node with a single `AST_INT_LITERAL`. Arithmetic (`+`, `-`, `*`, `/`, `%`), bitwise (`&`, `|`, `^`, `<<`, `>>`), relational (`<`, `<=`, `>`, `>=`, `==`, `!=`), and logical short-circuit (`&&`, `||`) operators are folded; unary bitwise-NOT (`~`) on constants is also folded. Division and modulo by zero are skipped (node left unfolded for codegen to handle). Result types follow C99: relational/logical produce `TYPE_INT` with value 0 or 1; arithmetic/bitwise results inherit type from left operand. All folding is gated behind `-O1`; `-O0` path unaffected. No grammar changes. Six new integration tests. All 1988 portable tests pass (165 unit, 1286 valid, 261 invalid, 105 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
