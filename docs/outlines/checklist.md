@@ -1957,6 +1957,34 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- `eval_cond_ternary` added between `eval_cond_logical_or` and `eval_cond_expr`
 	- `eval_cond_expr` updated to call `eval_cond_ternary`; forward declaration added
 
+## Stage 139 Supplemental - System Header Compatibility (sysinclude 52→98/98)
+
+- [x] Preprocessor: block comment stripping from macro replacement text
+	- `strip_block_comments()` helper strips `/* … */` before storing replacement in `MacroTable`
+	- Fixes `/* Ignore */`-style GCC-attribute macros emitting raw comment text into output
+- [x] Preprocessor: GCC extension keyword predefinitions
+	- `__restrict__ → restrict`, `__volatile__ → volatile`, `__const__ → const`, `__inline__ → ""`
+	- `__inline` and `__attribute__` deliberately NOT predefined (cdefs.h defines them correctly)
+- [x] Parser: function-type typedef support (`typedef ret name(params);`)
+	- Parameter list consumed (paren-balanced skip); name registered as `TYPE_LONG` placeholder
+	- Allows `name *fp` in struct bodies (pointer-to-function-type becomes pointer, 8 bytes)
+- [x] Parser: `long double` type specifier accepted (treated as `double` for codegen)
+- [x] Parser: unnamed array parameters in function prototypes (`char[N]` adjusted to `char *`)
+	- New early-return in `parse_parameter_declaration` for `TOKEN_LBRACKET` without identifier
+- [x] Parser: cast expressions in compile-time constant expressions (`(int)sizeof(T)`)
+	- `eval_const_primary`: detects `(` followed by type keyword/typedef, calls `parse_type_name` + `parser_expect(RPAREN)` then `eval_const_unary`
+	- Forward declaration of `eval_const_unary` added for mutual recursion
+- [x] Preprocessor: `inject_preamble` flag on `preprocess_with_defines_and_includes`
+	- `--print-tokens` mode passes `inject_preamble=0` so 150 expected token files are unaffected
+	- `--print-ast` and normal compilation pass `inject_preamble=1`
+- [x] Preprocessor: `__builtin_va_list` struct/typedef preamble (previous session)
+	- Defines `struct __claudec00_va_list_tag` + `typedef … __builtin_va_list[1]` before user source
+	- `test/include/stdarg.h` stub simplified to `typedef __builtin_va_list va_list;`
+- [x] Parser: `long unsigned [long] [int]` and all orderings of `long`/`unsigned`/`signed` (previous session)
+	- Extended `TOKEN_LONG` case in `parse_type_specifier`; deleted `test_unsigned_long_invalid` test
+- [x] Preprocessor: object-like macro rescan A→B→C (previous session)
+	- `disabled` flag in `MacroDef` prevents recursive expansion; rescan in both expansion sites
+
 ---
 
 ## TODO
