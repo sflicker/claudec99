@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 139 self-hosting test
+
+None. Stage 139 fixes three preprocessor expression evaluator gaps (integer
+literal suffixes, function-like macros in `#if`, and ternary operator `?:` in
+`#if`). All changes are confined to `src/preprocessor.c` and `src/version.c`.
+The compiler's own source does not use any system headers or the newly supported
+expression forms in `#if` conditions, so all new code paths are dormant during
+bootstrap. All 1979 tests passed at C0, C1, and C2 with no source changes
+needed during the bootstrap.
+
+## Result (stage 139)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.13900000.01041` | 1979/1979 |
+| C1 | `build/ccompiler-c1` | `00.03.13900000.01042` | 1979/1979 |
+| C2 | `build/ccompiler-c2` | `00.03.13900000.01043` | 1979/1979 |
+
+---
+
 ## Issues found during stage 138 self-hosting test
 
 None. Stage 138 adds `TOKEN_AUTO` and `TOKEN_REGISTER` keywords to the lexer,
