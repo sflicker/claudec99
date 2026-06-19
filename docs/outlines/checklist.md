@@ -2006,7 +2006,11 @@ Additional improvements for designated-init and multidimensional static arrays (
 	- `test/run_all_tests.sh` detects Linux x86_64 via `uname` and runs `test/integration/run_tests_sysinclude.sh`
 	- Results reported in separate "System include:" section distinct from portable aggregate
 	- System-include failures do not affect overall exit code (platform-specific limitations)
-- [x] Test results: 1982 portable tests pass; 98/99 system-include tests pass (1 pre-existing `bits/wchar.h` L'\0' limitation)
+- [x] `#include_next` (GCC extension): searches -I dirs starting after the current file's dir
+	- Enables GCC wrapper headers (e.g. `gcc/include/stdint.h`) to forward to real system headers
+- [x] GCC built-in wide-character ABI predefined macros: `__WCHAR_MAX__`, `__WCHAR_MIN__`, `__SIZEOF_WCHAR_T__`, `__WCHAR_TYPE__`
+	- Injected unconditionally with x86_64 Linux values; allows `bits/wchar.h` to skip its `L'\0'` fallback
+- [x] Test results: 1982 portable tests pass; 99/99 system-include tests pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 
 ---

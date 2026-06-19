@@ -21,9 +21,9 @@ C2 with no source changes needed during the bootstrap.
 | C1 | `build/ccompiler-c1` | `00.03.14100000.01060` | 1982/1982 |
 | C2 | `build/ccompiler-c2` | `00.03.14100000.01061` | 1982/1982 |
 
-System include suite (Linux x86_64, informational): 98/99 pass — 1 pre-existing
-failure (`test_std_pointer_size_typedefs` via `bits/wchar.h` L'\0' wide char
-literal in `#elif`, an unsupported preprocessor form).
+System include suite (Linux x86_64, informational): 99/99 pass — the former
+`test_std_pointer_size_typedefs` failure was resolved post-stage-141 by adding
+`__WCHAR_MAX__`/`__WCHAR_MIN__` predefined macros and `#include_next` support.
 
 ---
 

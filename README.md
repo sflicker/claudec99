@@ -224,9 +224,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 141 (system includes: `--sysinclude` flag and integrated test reporting):
+Through stage 141 (system includes: `--sysinclude` flag, `#include_next`, and WCHAR predefined macros):
 
-> Stage 141 adds a `--sysinclude` flag to the `bin/cc99` wrapper (Linux x86_64 only) that switches from the project's `test/include` stub headers to real system include paths (`/usr/lib/gcc/x86_64-linux-gnu/13/include`, `/usr/local/include`, `/usr/include/x86_64-linux-gnu`, `/usr/include`). The flag is guarded by a platform check — it errors on non-Linux or non-x86_64 systems. `test/run_all_tests.sh` now automatically runs `test/integration/run_tests_sysinclude.sh` on Linux x86_64 and reports its results in a separate "System include:" section, distinct from the portable suite aggregate (renamed from "Aggregate:" to "Portable:"). System include failures do not affect the overall exit code — one pre-existing failure exists (`test_std_pointer_size_typedefs` via `bits/wchar.h` `L'\0'` wide char literal in `#elif`, an unsupported preprocessor form). Version bumped to 14100000. All 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). System include suite: 98/99 pass. Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+> Stage 141 adds a `--sysinclude` flag to the `bin/cc99` wrapper (Linux x86_64 only) that switches from the project's `test/include` stub headers to real system include paths. `test/run_all_tests.sh` now automatically runs `test/integration/run_tests_sysinclude.sh` on Linux x86_64 and reports results in a separate "System include:" section. Two preprocessor gaps blocking real system headers were also fixed: `#include_next` (GCC extension used by `gcc/include/stdint.h` to forward to `/usr/include/stdint.h`) is now supported, and the GCC built-in wide-character ABI macros `__WCHAR_MAX__`, `__WCHAR_MIN__`, `__SIZEOF_WCHAR_T__`, and `__WCHAR_TYPE__` are now injected unconditionally (matching GCC's x86_64 Linux values), allowing `bits/wchar.h` to skip its `L'\0'` fallback expressions. All 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). System include suite: 99/99 pass. Self-host C0→C1→C2 verified.
 
 Through stage 139 (preprocessor `#if` expression gaps: integer suffixes, function-like macros, ternary):
 
@@ -423,7 +423,10 @@ Through stage 91 (address-of member lvalues):
     space replacement; line splicing (backslash-newline continuations).
   - _File inclusion_: `#include "file.h"` local inclusion, searched relative
     to the including file's directory; nested includes supported; recursive
-    includes detected via a depth limit.
+    includes detected via a depth limit. `#include_next <file.h>` (GCC
+    extension) searches for the named file starting from the `-I` directory
+    *after* the one that contains the current file, enabling GCC wrapper
+    headers (e.g. `gcc/include/stdint.h`) to forward to the real system header.
   - _Stub system headers_: controlled stubs for `stdio.h` (with opaque `typedef struct FILE FILE` pointer type, `#define EOF (-1)`, standard stream pointers `stdin`, `stdout`, `stderr`, and declarations for `fopen`, `fclose`, `fgetc`, `fgets`, `fprintf`, `snprintf`, `vfprintf`, `vprintf`, `vsnprintf`, `putchar`, `fseek`, `ftell`, and `fread`; and file-position/read macros `SEEK_SET`, `SEEK_CUR`, `SEEK_END`), `stddef.h`,
     `stdlib.h` (with `malloc`, `realloc`, `calloc`, `free`, `exit`, `strtol`, `strtoul`), `string.h` (with `strcmp`, `strlen`, `memcpy`, `memset`, `memcmp`, `strchr`, `strncpy`, `strncat`, `strncmp`, `strcpy`, `strrchr`), `limits.h` (with `UINT_MAX` and `ULONG_MAX`),
     `stdint.h`, `stdbool.h`, `ctype.h` (character classification and conversion),
@@ -477,8 +480,11 @@ Through stage 91 (address-of member lvalues):
     rejected). Static target/ABI macros reflecting the x86_64 Linux LP64 ABI —
     `__x86_64__`, `__linux__`, `__unix__`, `__LP64__`, `_LP64`,
     `__CHAR_BIT__`, and the `__SIZEOF_*__` family (`CHAR`, `SHORT`, `INT`,
-    `LONG`, `POINTER`, `SIZE_T`) — are injected unconditionally and defined in
-    the preprocessor code rather than a header.
+    `LONG`, `POINTER`, `SIZE_T`, `LONG_LONG`, `WCHAR_T`) — are injected
+    unconditionally and defined in the preprocessor code rather than a header.
+    Wide-character ABI macros `__WCHAR_MAX__` (`0x7fffffff`),
+    `__WCHAR_MIN__` (`(-__WCHAR_MAX__ - 1)`), and `__WCHAR_TYPE__` (`int`)
+    are also injected, matching GCC's built-in definitions for x86_64 Linux.
   - _Command-line options_: `-DNAME` (defines `NAME` as `1`) and
     `-DNAME=VALUE`, injected before preprocessing. Include search paths via
     `-I<dir>` or `-I <dir>` (repeatable): quoted includes search the including
@@ -735,7 +741,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 141 all 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 98/99.
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 141 all 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 99/99.
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
