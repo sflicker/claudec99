@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   VariableDeclaration: extern int g
   VariableDeclaration: static int h
     IntLiteral: 5

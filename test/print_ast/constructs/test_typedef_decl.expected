@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   TypedefDecl: Integer
   TypedefDecl: IntPtr
   FunctionDecl: int main

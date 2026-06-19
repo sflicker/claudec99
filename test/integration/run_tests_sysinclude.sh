@@ -7,9 +7,9 @@
 # real system headers.
 #
 # Expected results after stage 139:
-#   ~97 tests pass (all except those with unrelated failures documented in
-#   the stage-139 notes: angle-include, recursive-include, intentional errors,
-#   const-discard, and one signature-mismatch test).
+#   ~90+ tests pass; the ~7 remaining failures are unrelated to the preprocessor
+#   expression evaluator (angle-include, recursive-include, intentional errors,
+#   const-discard interaction with real FILE* typedef, one signature mismatch).
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -37,136 +37,126 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     if [ ! -f "$test_dir/${name}.c" ]; then
         if [ -f "$test_dir/run_test.sh" ]; then
             total=$((total + 1))
-            if bash "$test_dir/run_test.sh" > /dev/null 2>&1; then
+            if bash "$test_dir/run_test.sh" >/dev/null 2>&1; then
                 pass=$((pass + 1))
             else
-                fail=$((fail + 1))
                 echo "FAIL  $name"
+                fail=$((fail + 1))
             fi
         fi
         continue
     fi
-
     total=$((total + 1))
 
-    SOURCE_DIR="$test_dir"
-    BASENAME="$name"
+    test_work="$WORK_DIR/$name"
+    mkdir -p "$test_work"
+    cp -a "$test_dir/." "$test_work/"
 
-    EXPECTED_FILE="$SOURCE_DIR/${BASENAME}.expected"
-    LIBS_FILE="$SOURCE_DIR/${BASENAME}.libs"
-    CFLAGS_FILE="$SOURCE_DIR/${BASENAME}.cflags"
-    ARGS_FILE="$SOURCE_DIR/${BASENAME}.args"
-    INPUT_FILE="$SOURCE_DIR/${BASENAME}.input"
-    STATUS_FILE="$SOURCE_DIR/${BASENAME}.status"
-    ERROR_FILE="$SOURCE_DIR/${BASENAME}.error"
+    libs_file="$test_dir/${name}.libs"
+    args_file="$test_dir/${name}.args"
+    cflags_file="$test_dir/${name}.cflags"
+    input_file="$test_dir/${name}.input"
+    status_file="$test_dir/${name}.status"
+    expected_file="$test_dir/${name}.expected"
+    error_file="$test_dir/${name}.error"
 
-    EXTRA_CFLAGS=()
-    if [ -f "$CFLAGS_FILE" ]; then
-        while IFS= read -r flag; do
-            EXTRA_CFLAGS+=("$flag")
-        done < "$CFLAGS_FILE"
+    if [ -f "$libs_file" ]; then
+        extra_libs=($(cat "$libs_file"))
+    else
+        extra_libs=()
+    fi
+    if [ -f "$args_file" ]; then
+        extra_args=($(cat "$args_file"))
+    else
+        extra_args=()
+    fi
+    if [ -f "$cflags_file" ]; then
+        compiler_flags=($(cat "$cflags_file"))
+    else
+        compiler_flags=()
+    fi
+    if [ -f "$status_file" ]; then
+        expected_status="$(cat "$status_file")"
+    else
+        expected_status=0
     fi
 
-    EXTRA_LIBS=()
-    if [ -f "$LIBS_FILE" ]; then
-        while IFS= read -r lib; do
-            EXTRA_LIBS+=("$lib")
-        done < "$LIBS_FILE"
-    fi
-
-    EXPECTED_STATUS=0
-    if [ -f "$STATUS_FILE" ]; then
-        EXPECTED_STATUS=$(cat "$STATUS_FILE")
-    fi
-
-    C_FILES=("$test_dir"*.c)
-
-    COMPILE_OUT=""
-    COMPILE_RC=0
-    ASM_FILES=()
-    OBJ_FILES=()
-
-    for src in "${C_FILES[@]}"; do
-        base=$(basename "$src" .c)
-        asm="$WORK_DIR/${name}_${base}.asm"
-        obj="$WORK_DIR/${name}_${base}.o"
-        COMPILE_OUT=$("$COMPILER" "${EXTRA_CFLAGS[@]}" "${DEFAULT_IFLAGS[@]}" "$src" -o "$asm" 2>&1)
-        COMPILE_RC=$?
-        if [ $COMPILE_RC -ne 0 ]; then break; fi
-        ASM_FILES+=("$asm")
-        OBJ_FILES+=("$obj")
-    done
-
-    if [ -f "$ERROR_FILE" ]; then
-        if [ $COMPILE_RC -eq 0 ]; then
+    if [ -f "$error_file" ]; then
+        expected_error="$(cat "$error_file")"
+        compile_exit=0
+        (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        if [ "$compile_exit" -eq 0 ]; then
+            echo "FAIL  $name  (expected compile error, but succeeded)"
             fail=$((fail + 1))
-            echo "FAIL  $name  (expected compile error, but compilation succeeded)"
             continue
         fi
-        expected_err=$(cat "$ERROR_FILE")
-        if echo "$COMPILE_OUT" | grep -qF "$expected_err"; then
-            pass=$((pass + 1))
-        else
+        actual_error="$(cat "$test_work/${name}.stderr")"
+        if [ -n "$expected_error" ] && ! echo "$actual_error" | grep -qF "$expected_error"; then
+            echo "FAIL  $name  (error message mismatch)"
             fail=$((fail + 1))
-            echo "FAIL  $name  (wrong compile error)"
+            continue
         fi
+        pass=$((pass + 1))
         continue
     fi
 
-    if [ $COMPILE_RC -ne 0 ]; then
-        fail=$((fail + 1))
-        echo "FAIL  $name  (compiler error)"
-        continue
-    fi
+    obj_files=()
+    compile_failed=0
 
-    nasm_ok=1
-    for asm in "${ASM_FILES[@]}"; do
-        base=$(basename "$asm" .asm)
-        obj="$WORK_DIR/${base}.o"
-        if ! nasm -f elf64 "$asm" -o "$obj" 2>/dev/null; then
-            nasm_ok=0; break
+    for src in "$test_dir"*.c; do
+        [ -f "$src" ] || continue
+        src_name=$(basename "$src" .c)
+
+        if ! (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$src") 2>/dev/null; then
+            echo "FAIL  $name  (compiler error)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
         fi
-        OBJ_FILES+=("$obj")
+
+        if ! mv "$test_dir/${src_name}.asm" "$test_work/" 2>/dev/null; then
+            echo "FAIL  $name  (asm output missing)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
+        fi
+
+        if ! nasm -f elf64 "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
+            echo "FAIL  $name  (nasm error)"
+            fail=$((fail + 1))
+            compile_failed=1
+            break
+        fi
+
+        obj_files+=("$test_work/${src_name}.o")
     done
 
-    if [ $nasm_ok -eq 0 ]; then
-        fail=$((fail + 1))
-        echo "FAIL  $name  (nasm error)"
-        continue
-    fi
+    [ "$compile_failed" -eq 1 ] && continue
 
-    BIN="$WORK_DIR/${name}.out"
-    if ! cc -no-pie "${OBJ_FILES[@]}" -o "$BIN" "${EXTRA_LIBS[@]}" 2>/dev/null; then
-        fail=$((fail + 1))
+    if ! cc -no-pie "${obj_files[@]}" -o "$test_work/$name" "${extra_libs[@]}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
-        continue
-    fi
-
-    RUN_ARGS=()
-    if [ -f "$ARGS_FILE" ]; then
-        while IFS= read -r arg; do
-            RUN_ARGS+=("$arg")
-        done < "$ARGS_FILE"
-    fi
-
-    if [ -f "$INPUT_FILE" ]; then
-        ACTUAL_OUTPUT=$(timeout "$TIMEOUT" "$BIN" "${RUN_ARGS[@]}" < "$INPUT_FILE" 2>/dev/null)
-    else
-        ACTUAL_OUTPUT=$(timeout "$TIMEOUT" "$BIN" "${RUN_ARGS[@]}" 2>/dev/null)
-    fi
-    ACTUAL_STATUS=$?
-
-    if [ $ACTUAL_STATUS -ne $EXPECTED_STATUS ]; then
         fail=$((fail + 1))
-        echo "FAIL  $name  (expected $EXPECTED_STATUS, got $ACTUAL_STATUS)"
         continue
     fi
 
-    if [ -f "$EXPECTED_FILE" ]; then
-        EXPECTED_OUTPUT=$(cat "$EXPECTED_FILE")
-        if [ "$ACTUAL_OUTPUT" != "$EXPECTED_OUTPUT" ]; then
+    stdout_file="$test_work/${name}.stdout"
+    if [ -f "$input_file" ]; then
+        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
+    else
+        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
+    fi
+    actual=$?
+
+    if [ "$actual" -ne "$expected_status" ]; then
+        echo "FAIL  $name  (expected $expected_status, got $actual)"
+        fail=$((fail + 1))
+        continue
+    fi
+
+    if [ -f "$expected_file" ]; then
+        if ! diff -q "$expected_file" "$stdout_file" >/dev/null; then
+            echo "FAIL  $name  (output mismatch)"
             fail=$((fail + 1))
-            echo "FAIL  $name  (stdout mismatch)"
             continue
         fi
     fi

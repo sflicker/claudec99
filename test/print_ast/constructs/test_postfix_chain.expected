@@ -1,5 +1,7 @@
 TranslationUnit:
   TypedefDecl: 
+  TypedefDecl: __builtin_va_list
+  TypedefDecl: 
   TypedefDecl: 
   FunctionDecl: int main
     Block

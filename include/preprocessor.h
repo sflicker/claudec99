@@ -25,11 +25,15 @@ char *preprocess_with_defines(const char *source, const char *source_path,
  * directories to search for #include directives.  Quoted includes search
  * the including file's directory first, then include_dirs[] in order.
  * Angle-bracket includes search include_dirs[] only, in order.
- * include_dirs may be NULL when n_include_dirs is 0. */
+ * include_dirs may be NULL when n_include_dirs is 0.
+ * When inject_preamble is non-zero, a built-in C preamble (defining
+ * __builtin_va_list and related GCC builtins) is prepended before the
+ * source so system headers that rely on it compile cleanly. */
 char *preprocess_with_defines_and_includes(const char *source,
                                             const char *source_path,
                                             const char **defines, int n_defines,
                                             const char **include_dirs,
-                                            int n_include_dirs);
+                                            int n_include_dirs,
+                                            int inject_preamble);
 
 #endif

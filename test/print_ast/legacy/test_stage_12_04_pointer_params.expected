@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   FunctionDecl: int read
     Parameter: int *p
   FunctionDecl: int read2

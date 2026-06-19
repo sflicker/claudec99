@@ -73,6 +73,7 @@ typedef struct {
     int    param_count; /* -1 = object-like, >= 0 = function-like           */
     int    is_variadic; /* 1 if last param is ..., 0 otherwise               */
     char  *replacement;
+    int    disabled;    /* 1 while being expanded (prevents recursive rescan) */
 } MacroDef;
 
 typedef struct {
@@ -182,6 +183,7 @@ static void macro_define(MacroTable *t, const char *name, size_t nlen,
     t->defs[t->count].params      = params; /* takes ownership */
     t->defs[t->count].param_count = param_count;
     t->defs[t->count].is_variadic = is_variadic;
+    t->defs[t->count].disabled    = 0;
     t->count++;
 }
 
@@ -642,9 +644,14 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                 continue;
             }
             MacroDef *def = macro_find(macros, s + id_start, id_len);
-            if (def && def->param_count == -1) {
-                /* object-like macro */
-                gbuf_append(&out, def->replacement, strlen(def->replacement));
+            if (def && def->param_count == -1 && !def->disabled) {
+                /* object-like macro: rescan replacement so chains like
+                 * A→B→C expand fully (C99 §6.10.3.4). */
+                def->disabled = 1;
+                char *exp = expand_macros_text(def->replacement, macros);
+                def->disabled = 0;
+                gbuf_append(&out, exp, strlen(exp));
+                free(exp);
             } else if (def && def->param_count >= 0) {
                 /* function-like macro: look ahead for '(' */
                 size_t peek = in;
@@ -1205,6 +1212,46 @@ static long eval_cond_expr(const char *s, size_t *in, MacroTable *macros,
 
 /* ---- Phase 2: strip comments, expand directives and macros ----------- */
 
+/* Return a heap-allocated copy of s[start..end) with block comments replaced
+ * by a single space, then trailing whitespace trimmed.  Caller frees. */
+static char *strip_block_comments(const char *s, size_t start, size_t end) {
+    char *buf = malloc(end - start + 1);
+    if (!buf) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+    size_t o = 0;
+    for (size_t k = start; k < end; ) {
+        if (s[k] == '/' && k + 1 < end && s[k + 1] == '*') {
+            k += 2;
+            while (k < end && !(s[k] == '*' && k + 1 < end && s[k + 1] == '/'))
+                k++;
+            if (k + 1 < end) k += 2;
+            /* Replace comment with a space only if not at start and no trailing space. */
+            if (o > 0 && buf[o - 1] != ' ')
+                buf[o++] = ' ';
+        } else {
+            buf[o++] = s[k++];
+        }
+    }
+    while (o > 0 && (buf[o - 1] == ' ' || buf[o - 1] == '\t'))
+        o--;
+    buf[o] = '\0';
+    return buf;
+}
+
+/* Skip to end of a preprocessor directive line, consuming any block comment
+ * that spans multiple physical lines (after backslash-newline splicing). */
+static void skip_directive_tail(const char *s, size_t *in) {
+    while (s[*in] && s[*in] != '\n') {
+        if (s[*in] == '/' && s[*in + 1] == '*') {
+            *in += 2;
+            while (s[*in] && !(s[*in] == '*' && s[*in + 1] == '/'))
+                (*in)++;
+            if (s[*in]) *in += 2;
+        } else {
+            (*in)++;
+        }
+    }
+}
+
 static char *preprocess_internal(const char *source, const char *source_path,
                                   int depth, MacroTable *macros,
                                   const char **include_dirs, int n_include_dirs) {
@@ -1249,7 +1296,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
         /* Line comment: skip to end of line (newline is kept). */
         if (c == '/' && s[in + 1] == '/') {
-            while (s[in] && s[in] != '\n') in++;
+            skip_directive_tail(s, &in);
             continue;
         }
 
@@ -1289,7 +1336,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
                     in++;
                 size_t name_len = in - name_start;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (cond_depth >= MAX_COND_DEPTH) {
                     fprintf(stderr, "error: conditional nesting too deep\n");
                     free(out.data); free(spliced); exit(1);
@@ -1313,7 +1360,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
                     in++;
                 size_t name_len = in - name_start;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (cond_depth >= MAX_COND_DEPTH) {
                     fprintf(stderr, "error: conditional nesting too deep\n");
                     free(out.data); free(spliced); exit(1);
@@ -1340,7 +1387,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 if (emitting) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
                     size_t cond_start = in;
-                    while (s[in] && s[in] != '\n') in++;
+                    skip_directive_tail(s, &in);
                     size_t cond_len = in - cond_start;
                     char *cond_text = malloc(cond_len + 1);
                     memcpy(cond_text, s + cond_start, cond_len);
@@ -1358,7 +1405,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     free(expanded);
                     cond_val = (ifval != 0);
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 cond_stack[cond_depth].parent_emitting = emitting;
                 cond_stack[cond_depth].emitting = emitting && cond_val;
                 cond_stack[cond_depth].seen_else = 0;
@@ -1390,7 +1437,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     size_t name_len = in - name_start;
                     cond_val = (macro_find(macros, s + name_start, name_len) != NULL);
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (top->parent_emitting) {
                     if (!top->branch_taken && cond_val) {
                         top->emitting = 1;
@@ -1425,7 +1472,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     size_t name_len = in - name_start;
                     cond_val = (macro_find(macros, s + name_start, name_len) == NULL);
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (top->parent_emitting) {
                     if (!top->branch_taken && cond_val) {
                         top->emitting = 1;
@@ -1455,7 +1502,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 if (top->parent_emitting && !top->branch_taken) {
                     while (s[in] == ' ' || s[in] == '\t') in++;
                     size_t cond_start = in;
-                    while (s[in] && s[in] != '\n') in++;
+                    skip_directive_tail(s, &in);
                     size_t cond_len = in - cond_start;
                     char *cond_text = malloc(cond_len + 1);
                     memcpy(cond_text, s + cond_start, cond_len);
@@ -1473,7 +1520,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     free(expanded);
                     cond_val = (elifval != 0);
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (top->parent_emitting) {
                     if (!top->branch_taken && cond_val) {
                         top->emitting = 1;
@@ -1490,7 +1537,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
             if (strncmp(s + in, "else", 4) == 0 &&
                 !isalnum((unsigned char)s[in + 4]) && s[in + 4] != '_') {
                 in += 4;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (cond_depth == 0) {
                     fprintf(stderr, "error: #else without conditional\n");
                     free(out.data); free(spliced); exit(1);
@@ -1511,7 +1558,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
             if (strncmp(s + in, "endif", 5) == 0 &&
                 !isalnum((unsigned char)s[in + 5]) && s[in + 5] != '_') {
                 in += 5;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (cond_depth == 0) {
                     fprintf(stderr, "error: #endif without conditional\n");
                     free(out.data); free(spliced); exit(1);
@@ -1523,7 +1570,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
             /* In inactive regions, skip all remaining directives without error. */
             if (!emitting) {
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 continue;
             }
 
@@ -1555,7 +1602,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 in++; /* skip closing delimiter */
 
                 /* Discard rest of directive line. */
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
 
                 char *include_path;
                 if (is_angle) {
@@ -1714,7 +1761,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
 
                 /* Replacement: rest of line, trailing whitespace trimmed. */
                 size_t repl_start = in;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 size_t repl_end = in;
                 while (repl_end > repl_start &&
                        (s[repl_end - 1] == ' ' || s[repl_end - 1] == '\t'))
@@ -1802,10 +1849,14 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     }
                 }
 
+                /* C99: block comments in replacement text become whitespace
+                 * (translation phase 3 runs before phase 4/preprocessing). */
+                char *stripped = strip_block_comments(s, repl_start, repl_end);
                 macro_define(macros,
                              s + name_start, name_len,
                              params, param_count, is_variadic,
-                             s + repl_start, repl_end - repl_start);
+                             stripped, strlen(stripped));
+                free(stripped);
                 /* Directive line consumed; newline handled on next iteration. */
                 continue;
             }
@@ -1819,7 +1870,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 while (s[in] && (isalnum((unsigned char)s[in]) || s[in] == '_'))
                     in++;
                 size_t name_len = in - name_start;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 if (name_len > 0)
                     macro_undef(macros, s + name_start, name_len);
                 continue;
@@ -1831,7 +1882,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 in += 5;
                 while (s[in] == ' ' || s[in] == '\t') in++;
                 size_t msg_start = in;
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 size_t msg_len = in - msg_start;
                 while (msg_len > 0 &&
                        (s[msg_start + msg_len - 1] == ' ' ||
@@ -1875,7 +1926,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     free(current_file_override);
                     current_file_override = fbuf.data; /* fbuf.data now owned here */
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 continue;
             }
 
@@ -1890,7 +1941,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     if (source_path)
                         macro_table_add_once(macros, source_path);
                 }
-                while (s[in] && s[in] != '\n') in++;
+                skip_directive_tail(s, &in);
                 continue;
             }
 
@@ -2008,9 +2059,16 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     /* _Pragma(...) is replaced by nothing. */
                 } else {
                     MacroDef *def = macro_find(macros, s + id_start, id_len);
-                    if (def && def->param_count == -1) {
-                        /* object-like macro: expand replacement directly */
-                        gbuf_append(&out, def->replacement, strlen(def->replacement));
+                    if (def && def->param_count == -1 && !def->disabled) {
+                        /* object-like macro: rescan replacement so chains
+                         * like A→B→C expand fully (C99 §6.10.3.4). */
+                        g_expand_source_path  = current_file_override ? current_file_override : source_path;
+                        g_expand_current_line = current_line;
+                        def->disabled = 1;
+                        char *exp = expand_macros_text(def->replacement, macros);
+                        def->disabled = 0;
+                        gbuf_append(&out, exp, strlen(exp));
+                        free(exp);
                     } else if (def && def->param_count >= 0) {
                         /* function-like macro: look ahead for '(' */
                         size_t peek = in;
@@ -2157,14 +2215,16 @@ char *preprocess(const char *source, const char *source_path) {
 char *preprocess_with_defines(const char *source, const char *source_path,
                                const char **defines, int n_defines) {
     return preprocess_with_defines_and_includes(source, source_path,
-                                                defines, n_defines, NULL, 0);
+                                                defines, n_defines, NULL, 0,
+                                                /*inject_preamble=*/1);
 }
 
 char *preprocess_with_defines_and_includes(const char *source,
                                             const char *source_path,
                                             const char **defines, int n_defines,
                                             const char **include_dirs,
-                                            int n_include_dirs) {
+                                            int n_include_dirs,
+                                            int inject_preamble) {
     MacroTable macros;
     macro_table_init(&macros);
 
@@ -2201,6 +2261,13 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__SIZEOF_SIZE_T__",    strlen("__SIZEOF_SIZE_T__"),    NULL, -1, 0, "8", 1);
     macro_define(&macros, "__SIZEOF_LONG_LONG__", strlen("__SIZEOF_LONG_LONG__"), NULL, -1, 0, "8", 1);
 
+    /* GCC extension keywords that system headers don't define are silenced
+     * here so user code that uses them compiles cleanly. */
+    macro_define(&macros, "__restrict__",  strlen("__restrict__"),  NULL, -1, 0, "restrict", strlen("restrict"));
+    macro_define(&macros, "__volatile__",  strlen("__volatile__"),  NULL, -1, 0, "volatile", strlen("volatile"));
+    macro_define(&macros, "__const__",     strlen("__const__"),     NULL, -1, 0, "const",    strlen("const"));
+    macro_define(&macros, "__inline__",    strlen("__inline__"),    NULL, -1, 0, "",          0);
+
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
         const char *eq  = strchr(def, '=');
@@ -2213,9 +2280,46 @@ char *preprocess_with_defines_and_includes(const char *source,
         }
     }
 
-    char *result = preprocess_internal(source,
-                                       source_path ? source_path : ".",
-                                       0, &macros, include_dirs, n_include_dirs);
+    char *result;
+    if (inject_preamble) {
+        /* Compiler built-in preamble: defines __builtin_va_list so system
+         * stdarg.h's "typedef __builtin_va_list __gnuc_va_list;" resolves
+         * to the same struct our codegen uses for va_start/va_arg. */
+        static const char builtin_preamble[] =
+            "struct __claudec00_va_list_tag {"
+            " unsigned int gp_offset;"
+            " unsigned int fp_offset;"
+            " void *overflow_arg_area;"
+            " void *reg_save_area;"
+            "};\n"
+            "typedef struct __claudec00_va_list_tag __builtin_va_list[1];\n";
+
+        size_t preamble_len = sizeof(builtin_preamble) - 1;
+        size_t src_len      = strlen(source);
+
+        /* Append a #line directive so errors in the user source report the
+         * correct file name and line numbers (not shifted by the preamble). */
+        const char *file = source_path ? source_path : "<stdin>";
+        int line_dir_len = (int)strlen(file) + 32;
+        char *line_dir   = malloc((size_t)line_dir_len);
+        snprintf(line_dir, (size_t)line_dir_len, "#line 1 \"%s\"\n", file);
+        size_t ld_len = strlen(line_dir);
+
+        char *combined = malloc(preamble_len + ld_len + src_len + 1);
+        memcpy(combined,                             builtin_preamble, preamble_len);
+        memcpy(combined + preamble_len,              line_dir,         ld_len);
+        memcpy(combined + preamble_len + ld_len,     source,           src_len + 1);
+        free(line_dir);
+
+        result = preprocess_internal(combined,
+                                     source_path ? source_path : ".",
+                                     0, &macros, include_dirs, n_include_dirs);
+        free(combined);
+    } else {
+        result = preprocess_internal(source,
+                                     source_path ? source_path : ".",
+                                     0, &macros, include_dirs, n_include_dirs);
+    }
     macro_table_free(&macros);
     return result;
 }

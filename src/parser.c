@@ -394,6 +394,7 @@ static Token parser_expect(Parser *parser, TokenType type) {
 static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind);
 static ParsedDeclarator parse_declarator(Parser *parser);
 static long eval_const_expr(Parser *parser, const char *context);
+static long eval_const_unary(Parser *parser, const char *context);
 
 /* Stage 30: struct tag table helpers. */
 static StructTag *parser_find_struct_tag(Parser *parser, const char *tag) {
@@ -1065,15 +1066,73 @@ static Type *parse_type_specifier(Parser *parser, TypeKind *out_kind) {
     case TOKEN_LONG: {
         /* Stage 64: "long long" — peek at next token for second 'long'. */
         parser->current = lexer_next_token(parser->lexer);
+        /* "long unsigned ..." → delegate to unsigned path */
+        if (parser->current.type == TOKEN_UNSIGNED) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_LONG) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LONG) {
+                    PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
+                }
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_UNSIGNED_LONG_LONG;
+                return type_unsigned_long_long();
+            }
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = TYPE_LONG;
+            return type_unsigned_long();
+        }
+        /* "long signed ..." → signed long */
+        if (parser->current.type == TOKEN_SIGNED) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (parser->current.type == TOKEN_LONG) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_LONG) {
+                    PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
+                }
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_LONG_LONG;
+                return type_long_long();
+            }
+            if (parser->current.type == TOKEN_INT)
+                parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = TYPE_LONG;
+            return type_long();
+        }
         if (parser->current.type == TOKEN_LONG) {
             parser->current = lexer_next_token(parser->lexer);
             if (parser->current.type == TOKEN_LONG) {
                 PARSER_ERROR(parser, "error: 'long long long' is not a valid type\n");
             }
+            /* "long long unsigned [int]" */
+            if (parser->current.type == TOKEN_UNSIGNED) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_UNSIGNED_LONG_LONG;
+                return type_unsigned_long_long();
+            }
+            /* "long long signed [int]" */
+            if (parser->current.type == TOKEN_SIGNED) {
+                parser->current = lexer_next_token(parser->lexer);
+                if (parser->current.type == TOKEN_INT)
+                    parser->current = lexer_next_token(parser->lexer);
+                if (out_kind) *out_kind = TYPE_LONG_LONG;
+                return type_long_long();
+            }
             if (parser->current.type == TOKEN_INT)
                 parser->current = lexer_next_token(parser->lexer);
             if (out_kind) *out_kind = TYPE_LONG_LONG;
             return type_long_long();
+        }
+        /* "long double" — treat as double for codegen purposes */
+        if (parser->current.type == TOKEN_DOUBLE) {
+            parser->current = lexer_next_token(parser->lexer);
+            if (out_kind) *out_kind = TYPE_DOUBLE;
+            return type_double();
         }
         /* single "long" — optional trailing "int" consumed below */
         kind = TYPE_LONG;  t = type_long();
@@ -2950,6 +3009,26 @@ static long eval_const_primary(Parser *parser, const char *context) {
     }
     if (parser->current.type == TOKEN_LPAREN) {
         parser->current = lexer_next_token(parser->lexer);
+        /* Cast expression: '(' type-name ')' operand */
+        int is_cast = (
+            parser->current.type == TOKEN_VOID     ||
+            parser->current.type == TOKEN_CHAR     ||
+            parser->current.type == TOKEN_SHORT    ||
+            parser->current.type == TOKEN_INT      ||
+            parser->current.type == TOKEN_LONG     ||
+            parser->current.type == TOKEN_SIGNED   ||
+            parser->current.type == TOKEN_UNSIGNED ||
+            parser->current.type == TOKEN_FLOAT    ||
+            parser->current.type == TOKEN_DOUBLE   ||
+            parser->current.type == TOKEN_CONST    ||
+            parser->current.type == TOKEN_VOLATILE ||
+            (parser->current.type == TOKEN_IDENTIFIER &&
+             parser_find_typedef(parser, parser->current.value)));
+        if (is_cast) {
+            parse_type_name(parser); /* parse and discard the cast type (leaves ')' in stream) */
+            parser_expect(parser, TOKEN_RPAREN); /* consume ')' of cast */
+            return eval_const_unary(parser, context);
+        }
         long v = eval_const_expr(parser, context);
         parser_expect(parser, TOKEN_RPAREN);
         return v;
@@ -3307,8 +3386,21 @@ static ASTNode *parse_statement(Parser *parser) {
         Type *base_type = parse_type_specifier(parser, &base_kind);
         ParsedDeclarator d = parse_declarator(parser);
         if (d.is_function) {
-            PARSER_ERROR(parser, 
-                    "error: only scalar, pointer, and array typedefs are supported\n");
+            /* Function-type typedef: 'typedef ret name(params);'
+             * Skip the parameter list and register name as a long-sized type so
+             * 'name *fp' is accepted as a function-pointer-sized field in structs. */
+            {
+                parser_expect(parser, TOKEN_LPAREN);
+                int depth = 1;
+                while (depth > 0 && parser->current.type != TOKEN_EOF) {
+                    if      (parser->current.type == TOKEN_LPAREN) depth++;
+                    else if (parser->current.type == TOKEN_RPAREN) depth--;
+                    parser->current = lexer_next_token(parser->lexer);
+                }
+            }
+            parser_expect(parser, TOKEN_SEMICOLON);
+            parser_register_typedef(parser, d.name, TYPE_LONG, NULL);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         /* Stage 28-04: array typedef — register with the full array Type*.
          * Stage 86: multi-dimensional array typedefs. */
@@ -3780,6 +3872,24 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
         return param;
     }
 
+    /* C99 §6.7.5.3p7: unnamed array parameter 'T[N]' — skip the dimension(s)
+     * and adjust to pointer-to-T, same as 'T *'. */
+    if (leading_stars == 0 && parser->current.type == TOKEN_LBRACKET) {
+        while (parser->current.type == TOKEN_LBRACKET) {
+            parser->current = lexer_next_token(parser->lexer);
+            int depth = 1;
+            while (depth > 0 && parser->current.type != TOKEN_EOF) {
+                if      (parser->current.type == TOKEN_LBRACKET) depth++;
+                else if (parser->current.type == TOKEN_RBRACKET) depth--;
+                parser->current = lexer_next_token(parser->lexer);
+            }
+        }
+        ASTNode *param = parser_node(parser, AST_PARAM, "");
+        param->decl_type = TYPE_POINTER;
+        param->full_type = type_pointer(base_type);
+        return param;
+    }
+
     ParsedDeclarator d = parse_declarator(parser);
     /* Any stars we pre-consumed contribute to the declarator's pointer
      * count. parse_declarator saw zero leading stars for this declarator. */
@@ -4076,8 +4186,21 @@ static ASTNode *parse_external_declaration(Parser *parser) {
     /* Stage 28-01/28-02/28-03/28-04: typedef declaration at file scope. */
     if (sc == SC_TYPEDEF) {
         if (d.is_function) {
-            PARSER_ERROR(parser, 
-                    "error: only scalar, pointer, and array typedefs are supported\n");
+            /* Function-type typedef: 'typedef ret name(params);'
+             * Skip the parameter list and register name as a long-sized type so
+             * 'name *fp' is accepted as a function-pointer-sized field in structs. */
+            {
+                parser_expect(parser, TOKEN_LPAREN);
+                int depth = 1;
+                while (depth > 0 && parser->current.type != TOKEN_EOF) {
+                    if      (parser->current.type == TOKEN_LPAREN) depth++;
+                    else if (parser->current.type == TOKEN_RPAREN) depth--;
+                    parser->current = lexer_next_token(parser->lexer);
+                }
+            }
+            parser_expect(parser, TOKEN_SEMICOLON);
+            parser_register_typedef(parser, d.name, TYPE_LONG, NULL);
+            return parser_node(parser, AST_TYPEDEF_DECL, d.name);
         }
         /* Stage 28-04: array typedef — register with the full array Type*.
          * Stage 86: multi-dimensional array typedefs. */

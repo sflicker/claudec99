@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   VariableDeclaration: int x
     IntLiteral: 3
   FunctionDecl: int main

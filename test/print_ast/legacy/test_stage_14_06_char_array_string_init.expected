@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   FunctionDecl: int main
     Block
       VariableDeclaration: char s[3]

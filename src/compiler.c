@@ -261,11 +261,14 @@ static int compile_one_file(const char *source_file,
                             int warnings_are_errors,
                             const char **defines, int n_defines,
                             const char **include_dirs, int n_include_dirs) {
-    /* Read source and preprocess */
+    /* Read source and preprocess.
+     * inject_preamble=0 for --print-tokens (diagnostic mode; preamble is
+     * implementation detail that should not appear in raw token dumps). */
     char *source = read_file(source_file);
     char *preprocessed = preprocess_with_defines_and_includes(source, source_file,
                                                                defines, n_defines,
-                                                               include_dirs, n_include_dirs);
+                                                               include_dirs, n_include_dirs,
+                                                               /*inject_preamble=*/!print_tokens);
     free(source);
 
     if (print_tokens) {

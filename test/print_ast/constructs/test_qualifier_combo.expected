@@ -1,4 +1,6 @@
 TranslationUnit:
+  TypedefDecl: 
+  TypedefDecl: __builtin_va_list
   VariableDeclaration: static const unsigned int w
     IntLiteral: 42
   FunctionDecl: int main
