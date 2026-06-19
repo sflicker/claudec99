@@ -2286,13 +2286,7 @@ char *preprocess_with_defines_and_includes(const char *source,
          * stdarg.h's "typedef __builtin_va_list __gnuc_va_list;" resolves
          * to the same struct our codegen uses for va_start/va_arg. */
         static const char builtin_preamble[] =
-            "struct __claudec00_va_list_tag {"
-            " unsigned int gp_offset;"
-            " unsigned int fp_offset;"
-            " void *overflow_arg_area;"
-            " void *reg_save_area;"
-            "};\n"
-            "typedef struct __claudec00_va_list_tag __builtin_va_list[1];\n";
+            "struct __claudec00_va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void *overflow_arg_area; void *reg_save_area; };\ntypedef struct __claudec00_va_list_tag __builtin_va_list[1];\n";
 
         size_t preamble_len = sizeof(builtin_preamble) - 1;
         size_t src_len      = strlen(source);
