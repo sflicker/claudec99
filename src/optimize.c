@@ -145,6 +145,68 @@ static ASTNode *optimize_expr(ASTNode *node) {
         }
     }
 
+    /* Algebraic identity folding. */
+    if (node->type == AST_BINARY_OP && node->child_count == 2) {
+        const char *op        = node->value;
+        ASTNode    *left      = node->children[0];
+        ASTNode    *right     = node->children[1];
+        int left_is_lit       = (left->type  == AST_INT_LITERAL);
+        int right_is_lit      = (right->type == AST_INT_LITERAL);
+        long lval             = left_is_lit  ? strtol(left->value,  NULL, 0) : 0L;
+        long rval             = right_is_lit ? strtol(right->value, NULL, 0) : 0L;
+        int left_is_zero      = left_is_lit  && (lval == 0L);
+        int right_is_zero     = right_is_lit && (rval == 0L);
+        int left_is_one       = left_is_lit  && (lval == 1L);
+        int right_is_one      = right_is_lit && (rval == 1L);
+        int left_is_allones   = left_is_lit  && (lval == -1L);
+        int right_is_allones  = right_is_lit && (rval == -1L);
+        int both_same_var     = (left->type  == AST_VAR_REF &&
+                                 right->type == AST_VAR_REF &&
+                                 strcmp(left->value, right->value) == 0);
+        ASTNode *z;
+
+        /* Identity rules: result is one existing child.
+           Null the kept child's slot before ast_free to avoid double-free. */
+        if (strcmp(op, "+") == 0 && right_is_zero)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "+") == 0 && left_is_zero)
+            { node->children[1] = NULL; ast_free(node); return right; }
+        if (strcmp(op, "-") == 0 && right_is_zero)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "*") == 0 && right_is_one)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "*") == 0 && left_is_one)
+            { node->children[1] = NULL; ast_free(node); return right; }
+        if (strcmp(op, "/") == 0 && right_is_one)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "|") == 0 && right_is_zero)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "|") == 0 && left_is_zero)
+            { node->children[1] = NULL; ast_free(node); return right; }
+        if (strcmp(op, "&") == 0 && right_is_allones)
+            { node->children[0] = NULL; ast_free(node); return left; }
+        if (strcmp(op, "&") == 0 && left_is_allones)
+            { node->children[1] = NULL; ast_free(node); return right; }
+
+        /* Zero rules: free entire subtree and return a fresh zero literal. */
+        z = NULL;
+        if      (strcmp(op, "*") == 0 && right_is_zero)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = left->decl_type;  z->is_unsigned = left->is_unsigned;  }
+        else if (strcmp(op, "*") == 0 && left_is_zero)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = right->decl_type; z->is_unsigned = right->is_unsigned; }
+        else if (strcmp(op, "/") == 0 && left_is_zero)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = right->decl_type; z->is_unsigned = right->is_unsigned; }
+        else if (strcmp(op, "&") == 0 && right_is_zero)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = left->decl_type;  z->is_unsigned = left->is_unsigned;  }
+        else if (strcmp(op, "&") == 0 && left_is_zero)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = right->decl_type; z->is_unsigned = right->is_unsigned; }
+        else if (strcmp(op, "-") == 0 && both_same_var)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = left->decl_type;  z->is_unsigned = left->is_unsigned;  }
+        else if (strcmp(op, "^") == 0 && both_same_var)
+            { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = left->decl_type;  z->is_unsigned = left->is_unsigned;  }
+        if (z != NULL) { ast_free(node); return z; }
+    }
+
     return node;
 }
 
