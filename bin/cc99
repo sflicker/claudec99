@@ -59,6 +59,8 @@ Options:
   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
   --sysinclude     Use system include paths instead of test/include stubs
                    (Linux x86_64 only)
+  -O0              Disable optimization (default)
+  -O1              Enable AST-level optimization
   -Werror          Treat warnings as errors
   --max-errors=N   Stop after N errors (0 = unlimited)
   -l <lib>         Link with library
@@ -102,6 +104,8 @@ while [[ $# -gt 0 ]]; do
         --print-ast|--print-tokens)
             mode="print"; compiler_flags+=("$1"); shift ;;
         -Werror)
+            compiler_flags+=("$1"); shift ;;
+        -O0|-O1)
             compiler_flags+=("$1"); shift ;;
         --max-errors=*)
             compiler_flags+=("$1"); shift ;;

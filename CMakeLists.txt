@@ -31,6 +31,7 @@ add_executable(ccompiler
     src/strbuf.c
     src/vec.c
     src/version.c
+    src/optimize.c
 )
 
 # Record which compiler built the binary.  Dots in the version number are
