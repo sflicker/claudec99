@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 140 self-hosting test
+
+None. Stage 140 adds a single line in `parse_cast` (`src/parser.c`) to set
+`cast->is_unsigned = !cast_type->is_signed`. The compiler's own source does
+not use casts to unsigned typedef types in contexts where signedness affects
+control flow, so the new path is dormant during bootstrap. All 1982 tests
+passed at C0, C1, and C2 with no source changes needed during the bootstrap.
+
+## Result (stage 140)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.14000000.01052` | 1982/1982 |
+| C1 | `build/ccompiler-c1` | `00.03.14000000.01053` | 1982/1982 |
+| C2 | `build/ccompiler-c2` | `00.03.14000000.01054` | 1982/1982 |
+
+---
+
 ## Issues found during stage 139 supplemental self-hosting test
 
 One issue found during bootstrap: adjacent string literal concatenation in a
