@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 142 self-hosting test
+
+One issue found during bootstrap: `src/optimize.c` was missing from
+`build.sh`'s `SRC_FILES` array, causing a link failure (undefined reference
+to `optimize_translation_unit`) when bootstrapping with the ClaudeC99 binary.
+Fixed by adding `src/optimize.c` to `SRC_FILES` in `build.sh` (the same entry
+already present in `CMakeLists.txt`). No other source changes needed. All 1982
+tests passed at C0, C1, and C2.
+
+## Result (stage 142)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01420000.01072` | 1982/1982 |
+| C1 | `build/ccompiler-c1` | `00.03.01420000.01073` | 1982/1982 |
+| C2 | `build/ccompiler-c2` | `00.03.01420000.01074` | 1982/1982 |
+
+---
+
 ## Issues found during stage 141 self-hosting test
 
 None. Stage 141 changes are confined to shell scripts (`bin/cc99` and

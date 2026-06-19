@@ -2013,6 +2013,24 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1982 portable tests pass; 99/99 system-include tests pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 
+## Stage 142 - Optimizer Infrastructure
+
+- [x] New `include/optimize.h` — declares `optimize_translation_unit(ASTNode *root, int opt_level)`
+- [x] New `src/optimize.c` — no-op AST-walking pass with `optimize_expr` / `optimize_stmt` helpers
+	- Bottom-up tree traversal (children first, then node)
+	- Return-value replacement convention: callers update child pointers with returned pointer
+	- Full statement coverage: blocks, if/while/do-while/for/switch, return, expression-stmt, declarations, labels, break/continue/goto
+- [x] `src/compiler.c`: pipeline wiring — optimizer called after parse, before codegen
+	- `opt_level` variable in `main()` and `compile_one_file()`
+	- `-O0` flag: disable optimization (default)
+	- `-O1` flag: enable AST-level optimization
+- [x] `bin/cc99`: `-O0`/`-O1` flag passthrough to `ccompiler`
+- [x] `build.sh`: `src/optimize.c` added to `SRC_FILES` (bootstrap fix)
+- [x] `CMakeLists.txt`: `src/optimize.c` added to source list
+- [x] Test results: 1982 portable tests pass at `-O0` and `-O1`; output identical for no-op pass
+- [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
+	- Bootstrap fix: `src/optimize.c` missing from `build.sh` `SRC_FILES` — added during self-host
+
 ---
 
 ## TODO
@@ -2135,7 +2153,7 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parser and codegen.
 
-- [ ] Infrastructure: `optimize_translation_unit(ASTNode *tu)` entry point; recursive `optimize_expr(ASTNode *)` / `optimize_stmt(ASTNode *)` helpers that rewrite nodes in-place
+- [x] Infrastructure: `optimize_translation_unit(ASTNode *root, int opt_level)` entry point; recursive `optimize_expr(ASTNode *)` / `optimize_stmt(ASTNode *)` helpers that walk the tree bottom-up (Stage 142)
 - [ ] Constant integer binary folding — `AST_BINARY_OP` with both children `AST_INT_LITERAL`: evaluate at compile time and replace the binary node with a single `AST_INT_LITERAL`
   - [ ] Arithmetic: `+`, `-`, `*`, `/`, `%`
   - [ ] Bitwise: `&`, `|`, `^`, `~` (unary), `<<`, `>>`
@@ -2168,7 +2186,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
 - [ ] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable
 - [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
 - [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label
-- [ ] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it)
+- [x] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it) (Stage 142)
 
 ### Optimize Level 2 — Peephole Optimizer
 

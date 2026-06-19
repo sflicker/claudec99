@@ -125,7 +125,7 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
+ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
 ```
 
 - Default: writes `<name>.asm` for each source file next to the invocation directory and
@@ -224,9 +224,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 141 (system includes: `--sysinclude` flag, `#include_next`, and WCHAR predefined macros):
+Through stage 142 (optimizer infrastructure: `-O0`/`-O1` flags and AST-level optimizer scaffolding):
 
-> Stage 141 adds a `--sysinclude` flag to the `bin/cc99` wrapper (Linux x86_64 only) that switches from the project's `test/include` stub headers to real system include paths. `test/run_all_tests.sh` now automatically runs `test/integration/run_tests_sysinclude.sh` on Linux x86_64 and reports results in a separate "System include:" section. Two preprocessor gaps blocking real system headers were also fixed: `#include_next` (GCC extension used by `gcc/include/stdint.h` to forward to `/usr/include/stdint.h`) is now supported, and the GCC built-in wide-character ABI macros `__WCHAR_MAX__`, `__WCHAR_MIN__`, `__SIZEOF_WCHAR_T__`, and `__WCHAR_TYPE__` are now injected unconditionally (matching GCC's x86_64 Linux values), allowing `bits/wchar.h` to skip its `L'\0'` fallback expressions. All 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). System include suite: 99/99 pass. Self-host C0→C1→C2 verified.
+> Stage 142 introduces the AST-level optimizer scaffolding: a new `optimize.h` / `optimize.c` module with `optimize_translation_unit(ASTNode *root, int opt_level)` entry point and recursive `optimize_expr()` / `optimize_stmt()` helpers that walk the AST bottom-up and return every node unchanged (pure no-op infrastructure). Subsequent stages (143+) will add constant-folding and dead-branch-elimination rules on top of this skeleton. Two new flags are wired end-to-end: `-O0` (default, skip optimizer) and `-O1` (enable optimizer), accepted by both `ccompiler` and the `bin/cc99` wrapper. All 1982 portable tests pass (165 unit, 1286 valid, 261 invalid, 99 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System include suite: 99/99 pass. Self-host C0→C1→C2 verified.
 
 Through stage 139 (preprocessor `#if` expression gaps: integer suffixes, function-like macros, ternary):
 
