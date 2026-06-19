@@ -324,6 +324,39 @@ static char *resolve_include_path(const char *fname, size_t fname_len,
     return NULL;
 }
 
+/* Search -I directories starting from the one *after* the directory that
+ * contains source_path.  Used for #include_next.
+ * Returns a heap-allocated path on success, or NULL if not found. */
+static char *resolve_include_next_path(const char *fname, size_t fname_len,
+                                       const char *source_path,
+                                       const char **include_dirs, int n_include_dirs) {
+    /* Determine which include dir contains the current file. */
+    int start = 0;
+    if (source_path) {
+        for (int i = 0; i < n_include_dirs; i++) {
+            size_t idir_len = strlen(include_dirs[i]);
+            if (strncmp(source_path, include_dirs[i], idir_len) == 0 &&
+                source_path[idir_len] == '/') {
+                start = i + 1;
+                break;
+            }
+        }
+    }
+    for (int i = start; i < n_include_dirs; i++) {
+        size_t idir_len = strlen(include_dirs[i]);
+        char *path = malloc(idir_len + 1 + fname_len + 1);
+        if (!path) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+        memcpy(path, include_dirs[i], idir_len);
+        path[idir_len] = '/';
+        memcpy(path + idir_len + 1, fname, fname_len);
+        path[idir_len + 1 + fname_len] = '\0';
+        FILE *f = fopen(path, "r");
+        if (f) { fclose(f); return path; }
+        free(path);
+    }
+    return NULL;
+}
+
 /* ---- Argument collection for function-like macro calls --------------- */
 
 /* Collects arguments from s[*pos..], which must be positioned immediately
@@ -1652,6 +1685,61 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 continue;
             }
 
+            /* #include_next <filename> — GCC extension: search for filename
+             * starting from the include dir *after* the current file's dir. */
+            if (strncmp(s + in, "include_next", 12) == 0 &&
+                !isalnum((unsigned char)s[in + 12]) && s[in + 12] != '_') {
+                in += 12;
+                while (s[in] == ' ' || s[in] == '\t') in++;
+
+                if (s[in] != '<' && s[in] != '"') {
+                    fprintf(stderr, "error: expected '<' or '\"' after #include_next\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                char close_delim = (s[in] == '<') ? '>' : '"';
+                in++; /* skip opening delimiter */
+
+                size_t fname_start = in;
+                while (s[in] && s[in] != close_delim && s[in] != '\n') in++;
+                if (s[in] != close_delim) {
+                    fprintf(stderr, "error: unterminated filename in #include_next\n");
+                    free(out.data); free(spliced); exit(1);
+                }
+                size_t fname_len = in - fname_start;
+                in++; /* skip closing delimiter */
+                skip_directive_tail(s, &in);
+
+                char *include_path = resolve_include_next_path(s + fname_start, fname_len,
+                                                                source_path,
+                                                                include_dirs, n_include_dirs);
+                if (!include_path) {
+                    char fname_buf[256];
+                    size_t copy = fname_len < sizeof(fname_buf) - 1
+                                  ? fname_len : sizeof(fname_buf) - 1;
+                    memcpy(fname_buf, s + fname_start, copy);
+                    fname_buf[copy] = '\0';
+                    fprintf(stderr, "error: include_next file not found: <%s>\n", fname_buf);
+                    free(out.data); free(spliced); exit(1);
+                }
+
+                char *included = preprocess_file(include_path, depth + 1, macros,
+                                                  include_dirs, n_include_dirs);
+                char loc_marker[512];
+                int mlen = snprintf(loc_marker, sizeof(loc_marker),
+                                    "\x01" "1:%s\n", include_path);
+                if (mlen > 0 && (size_t)mlen < sizeof(loc_marker))
+                    gbuf_append(&out, loc_marker, (size_t)mlen);
+                free(include_path);
+                gbuf_append(&out, included, strlen(included));
+                free(included);
+                mlen = snprintf(loc_marker, sizeof(loc_marker),
+                                "\x01" "%d:%s\n", current_line,
+                                source_path ? source_path : "");
+                if (mlen > 0 && (size_t)mlen < sizeof(loc_marker))
+                    gbuf_append(&out, loc_marker, (size_t)mlen);
+                continue;
+            }
+
             /* #define NAME[(params)] [replacement] */
             if (strncmp(s + in, "define", 6) == 0 &&
                 !isalnum((unsigned char)s[in + 6]) && s[in + 6] != '_') {
@@ -2260,6 +2348,10 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__SIZEOF_POINTER__",   strlen("__SIZEOF_POINTER__"),   NULL, -1, 0, "8", 1);
     macro_define(&macros, "__SIZEOF_SIZE_T__",    strlen("__SIZEOF_SIZE_T__"),    NULL, -1, 0, "8", 1);
     macro_define(&macros, "__SIZEOF_LONG_LONG__", strlen("__SIZEOF_LONG_LONG__"), NULL, -1, 0, "8", 1);
+    macro_define(&macros, "__SIZEOF_WCHAR_T__",   strlen("__SIZEOF_WCHAR_T__"),   NULL, -1, 0, "4", 1);
+    macro_define(&macros, "__WCHAR_TYPE__",        strlen("__WCHAR_TYPE__"),        NULL, -1, 0, "int", 3);
+    macro_define(&macros, "__WCHAR_MAX__",         strlen("__WCHAR_MAX__"),         NULL, -1, 0, "0x7fffffff", 10);
+    macro_define(&macros, "__WCHAR_MIN__",         strlen("__WCHAR_MIN__"),         NULL, -1, 0, "(-__WCHAR_MAX__ - 1)", 20);
 
     /* GCC extension keywords that system headers don't define are silenced
      * here so user code that uses them compiles cleanly. */
