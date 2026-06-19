@@ -1,5 +1,32 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 141 self-hosting test
+
+None. Stage 141 changes are confined to shell scripts (`bin/cc99` and
+`test/run_all_tests.sh`) and `src/version.c`. No C source paths exercised by
+the self-hosted compiler are affected. The `--sysinclude` flag is not used
+during bootstrap (the bootstrap always uses `test/include` stubs). The
+`run_all_tests.sh` change only adds a system-include section for Linux x86_64;
+portable suite aggregation is unchanged. All 1982 tests passed at C0, C1, and
+C2 with no source changes needed during the bootstrap.
+
+## Result (stage 141)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.14100000.01059` | 1982/1982 |
+| C1 | `build/ccompiler-c1` | `00.03.14100000.01060` | 1982/1982 |
+| C2 | `build/ccompiler-c2` | `00.03.14100000.01061` | 1982/1982 |
+
+System include suite (Linux x86_64, informational): 98/99 pass — 1 pre-existing
+failure (`test_std_pointer_size_typedefs` via `bits/wchar.h` L'\0' wide char
+literal in `#elif`, an unsupported preprocessor form).
+
+---
+
 ## Issues found during stage 140 self-hosting test
 
 None. Stage 140 adds a single line in `parse_cast` (`src/parser.c`) to set
