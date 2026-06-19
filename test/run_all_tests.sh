@@ -57,7 +57,36 @@ for suite in "${suites[@]}"; do
 done
 
 echo "===================================================="
-echo "Aggregate: $agg_pass passed, $agg_fail failed, $agg_total total"
+echo "Portable: $agg_pass passed, $agg_fail failed, $agg_total total"
 echo "===================================================="
+
+# On Linux x86_64 also run the system-include integration tests
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    sysinclude_runner="$SCRIPT_DIR/integration/run_tests_sysinclude.sh"
+    if [ -x "$sysinclude_runner" ]; then
+        echo ""
+        echo "===================================================="
+        echo "Running suite: system include (Linux x86_64)"
+        echo "===================================================="
+        sys_output=$("$sysinclude_runner" 2>&1)
+        sys_rc=$?
+        echo "$sys_output"
+        sys_summary=$(echo "$sys_output" | tail -n 1)
+        if [[ "$sys_summary" =~ Results:\ ([0-9]+)\ passed,\ ([0-9]+)\ failed,\ ([0-9]+)\ total ]]; then
+            sp="${BASH_REMATCH[1]}"
+            sf="${BASH_REMATCH[2]}"
+            st="${BASH_REMATCH[3]}"
+        else
+            sp=0; sf=0; st=0
+            echo "WARN  could not parse summary line for system include suite"
+        fi
+        echo ""
+        echo "===================================================="
+        echo "System include: $sp passed, $sf failed, $st total"
+        echo "===================================================="
+    else
+        echo "SKIP  system include suite (runner not found at $sysinclude_runner)"
+    fi
+fi
 
 exit $overall_rc

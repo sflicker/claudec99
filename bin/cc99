@@ -35,6 +35,14 @@ COMPILER="$PROJECT_DIR/build/ccompiler"
 # so user-supplied paths take precedence, matching the test harness convention.
 DEFAULT_IFLAGS=("-I$PROJECT_DIR/test/include")
 
+# System include paths used by --sysinclude (Linux x86_64 only)
+SYSINCLUDE_IFLAGS=(
+    "-I/usr/lib/gcc/x86_64-linux-gnu/13/include"
+    "-I/usr/local/include"
+    "-I/usr/include/x86_64-linux-gnu"
+    "-I/usr/include"
+)
+
 usage() {
     cat >&2 <<'EOF'
 Usage: cc99 [options] file.c [file2.c ...]
@@ -49,6 +57,8 @@ Options:
   -D NAME[=VAL]    Define a preprocessor macro
   -I <dir>         Add directory to include search path
   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
+  --sysinclude     Use system include paths instead of test/include stubs
+                   (Linux x86_64 only)
   -Werror          Treat warnings as errors
   --max-errors=N   Stop after N errors (0 = unlimited)
   -l <lib>         Link with library
@@ -74,6 +84,7 @@ mode="link"           # link | compile-only | asm-only | print
 compiler_flags=()
 link_flags=()
 input_files=()
+use_sysinclude=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -108,6 +119,12 @@ while [[ $# -gt 0 ]]; do
             compiler_flags+=("-I$dir"); shift ;;
         --sysroot=*)
             compiler_flags+=("$1"); shift ;;
+        --sysinclude)
+            if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+                echo "cc99: --sysinclude is only supported on Linux x86_64" >&2
+                exit 1
+            fi
+            use_sysinclude=1; shift ;;
         -l)
             [[ $# -lt 2 ]] && { echo "cc99: -l requires an argument" >&2; exit 1; }
             link_flags+=("-l$2"); shift 2 ;;
@@ -160,7 +177,12 @@ for src in "${input_files[@]}"; do
 
     # ── compile: .c → .asm ───────────────────────────────────────────────────
     # Run compiler from tmpdir so the .asm output lands there
-    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$abs_src"); then
+    if [[ "$use_sysinclude" -eq 1 ]]; then
+        active_iflags=("${SYSINCLUDE_IFLAGS[@]}")
+    else
+        active_iflags=("${DEFAULT_IFLAGS[@]}")
+    fi
+    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "${active_iflags[@]}" "$abs_src"); then
         exit 1
     fi
 
