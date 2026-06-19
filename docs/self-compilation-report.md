@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 147 self-hosting test
+
+None. The change is confined to `src/optimize.c`: two new rule blocks are
+inserted in `optimize_expr`. Task 1 (`!!x`) uses `ast_new`, `ast_add_child`,
+`util_strdup`, and `strcmp` — all available in C0. Task 2 (binary boolean) uses
+`strtol`, `strcmp`, `ast_new`, `ast_free`, and `util_strdup` — likewise
+available in C0. No VLAs, no `//` comments, all declarations at the top of
+their respective `if` blocks. No new AST node types, no parser changes, no
+codegen changes. All 126 tests passed at C0, C1, and C2 with no source
+changes needed.
+
+## Result (stage 147)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01470000.01100` | 126/126 |
+| C1 | `build/ccompiler-c1` | `00.03.01470000.01101` | 126/126 |
+| C2 | `build/ccompiler-c2` | `00.03.01470000.01102` | 126/126 |
+
+---
+
 ## Issues found during stage 146 self-hosting test
 
 None. The change is confined to `src/optimize.c`: a new strength reduction

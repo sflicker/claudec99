@@ -2083,6 +2083,29 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 2003 portable tests pass; all 5 new tests produce correct output at `-O1`
 - [x] Self-host C0→C1→C2 verified with all 2003 portable tests passing at every stage
 
+## Stage 147 - Boolean / Logical Simplification
+
+- [x] `src/optimize.c`: add `!!x` block after stage-144 constant unary folding, before stage-145 algebraic identity
+	- `!!x` → `(x != 0)` for non-constant `x`: detects outer `!` whose child is `!` with non-literal child; nulls inner child slot before `ast_free` to prevent double-free; builds new `AST_BINARY_OP("!=", x, 0)` via `ast_new` + `ast_add_child`
+	- `!!const` already handled by two applications of stage-144 unary folding; this rule fires only when inner child is non-literal
+- [x] `src/optimize.c`: add binary boolean block after stage-146 strength reduction, before final `return node`
+	- `x && 0` → `0`: free entire subtree, return new zero literal
+	- `x || nonzero` → `1`: free entire subtree, return new one literal
+	- `x && nonzero` → `(x != 0)`: free right child, replace with new zero literal, mutate operator to `!=`
+	- `x || 0` → `(x != 0)`: right child is already 0, just mutate operator to `!=`
+	- Left-operand-literal cases (`0 && x`, `nonzero || x`) already handled by stage-143 short-circuit block
+- [x] 6 new integration tests (and_zero, or_nonzero, and_one, or_zero, double_not, combined)
+- [x] Test results: 126/126 tests pass; all 6 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 126 tests passing at every stage (Stage 147)
+
+TODO items completed this stage:
+- [x] Boolean / logical simplification (Stage 147)
+  - [x] `!0` → `1`, `!nonzero_const` → `0` (Stage 147 — already done by Stage 144; confirmed complete)
+  - [x] `!!x` → cast to int (normalize); `!!const` → fold to 0 or 1 (Stage 147)
+  - [x] `x && 0` → `0`, `0 && x` → `0` (Stage 147)
+  - [x] `x || 1` → `1`, `1 || x` → `1` (Stage 147)
+  - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
+
 ---
 
 ## TODO
@@ -2221,12 +2244,12 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
 - [x] Strength reduction on multiplications by powers of two (Stage 146)
   - [x] `x * 2^N` → `x << N` (Stage 146)
   - [x] `x / 2^N` (signed, non-negative dividend known) → `x >> N` (Stage 146)
-- [ ] Boolean / logical simplification
-  - [ ] `!0` → `1`, `!nonzero_const` → `0`
-  - [ ] `!!x` → cast to int (normalize); `!!const` → fold to 0 or 1
-  - [ ] `x && 0` → `0`, `0 && x` → `0`
-  - [ ] `x || 1` → `1`, `1 || x` → `1`
-  - [ ] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast)
+- [x] Boolean / logical simplification (Stage 147)
+  - [x] `!0` → `1`, `!nonzero_const` → `0` (Stage 144 — constant unary folding)
+  - [x] `!!x` → cast to int (normalize); `!!const` → fold to 0 or 1 (Stage 147)
+  - [x] `x && 0` → `0`, `0 && x` → `0` (Stage 147)
+  - [x] `x || 1` → `1`, `1 || x` → `1` (Stage 147)
+  - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
 - [ ] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse
 - [ ] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node
 - [ ] Dead-branch elimination in `if`/`while`/`for` with constant condition
