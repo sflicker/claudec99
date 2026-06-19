@@ -4,6 +4,7 @@
  * Stage 142: infrastructure -- bottom-up tree walk, no transformations.
  * Stage 143: constant integer binary folding and unary ~ folding.
  * Stage 146: strength reduction -- x*2^N -> x<<N, x/2^N -> x>>N (unsigned).
+ * Stage 147: boolean/logical simplification -- !!x, x&&0, x||1, x&&1, x||0.
  */
 
 #include <stddef.h>
@@ -146,6 +147,39 @@ static ASTNode *optimize_expr(ASTNode *node) {
         }
     }
 
+    /* Double logical NOT: !!x -> (x != 0) for non-constant x.
+       When x is a literal, stage-144 already folds both ! applications;
+       this rule fires only when the inner !x child is not an INT_LITERAL. */
+    if (node->type == AST_UNARY_OP &&
+            node->child_count == 1 &&
+            strcmp(node->value, "!") == 0) {
+        ASTNode *inner = node->children[0];
+        ASTNode *x;
+        ASTNode *neq;
+        ASTNode *zero;
+        int fire;
+
+        fire = (inner != NULL &&
+                inner->type == AST_UNARY_OP &&
+                inner->child_count == 1 &&
+                strcmp(inner->value, "!") == 0 &&
+                inner->children[0] != NULL &&
+                inner->children[0]->type != AST_INT_LITERAL);
+
+        if (fire) {
+            x = inner->children[0];
+            inner->children[0] = NULL; /* prevent double-free of x */
+            ast_free(node);            /* frees outer ! and inner ! (not x) */
+            neq = ast_new(AST_BINARY_OP, util_strdup("!="));
+            neq->decl_type = TYPE_INT;
+            zero = ast_new(AST_INT_LITERAL, "0");
+            zero->decl_type = TYPE_INT;
+            ast_add_child(neq, x);
+            ast_add_child(neq, zero);
+            return neq;
+        }
+    }
+
     /* Algebraic identity folding. */
     if (node->type == AST_BINARY_OP && node->child_count == 2) {
         const char *op        = node->value;
@@ -271,6 +305,55 @@ static ASTNode *optimize_expr(ASTNode *node) {
             ast_free(right);
             node->children[1] = lit;
             node->value = util_strdup(">>");
+            return node;
+        }
+    }
+
+    /* Boolean/logical simplification: x&&0, x||nonzero, x&&nonzero, x||0.
+       Cases where the LEFT operand is a literal are already handled by the
+       logical short-circuit block (stage 143); this block handles a nonzero
+       or zero RIGHT constant. */
+    if (node->type == AST_BINARY_OP && node->child_count == 2) {
+        const char *op       = node->value;
+        ASTNode    *right    = node->children[1];
+        int right_is_lit     = (right->type == AST_INT_LITERAL);
+        long rval            = right_is_lit ? strtol(right->value, NULL, 0) : 0L;
+        int right_is_zero    = right_is_lit && (rval == 0L);
+        int right_is_nonzero = right_is_lit && (rval != 0L);
+        ASTNode *z;
+        ASTNode *zero_lit;
+
+        /* x && 0 -> 0 */
+        if (strcmp(op, "&&") == 0 && right_is_zero) {
+            z = ast_new(AST_INT_LITERAL, "0");
+            z->decl_type = TYPE_INT;
+            ast_free(node);
+            return z;
+        }
+
+        /* x || nonzero -> 1 */
+        if (strcmp(op, "||") == 0 && right_is_nonzero) {
+            z = ast_new(AST_INT_LITERAL, "1");
+            z->decl_type = TYPE_INT;
+            ast_free(node);
+            return z;
+        }
+
+        /* x && nonzero -> (x != 0): replace right child with 0, change op */
+        if (strcmp(op, "&&") == 0 && right_is_nonzero) {
+            zero_lit = ast_new(AST_INT_LITERAL, "0");
+            zero_lit->decl_type = TYPE_INT;
+            ast_free(right);
+            node->children[1] = zero_lit;
+            node->value = util_strdup("!=");
+            node->decl_type = TYPE_INT;
+            return node;
+        }
+
+        /* x || 0 -> (x != 0): right child is already 0, just change operator */
+        if (strcmp(op, "||") == 0 && right_is_zero) {
+            node->value = util_strdup("!=");
+            node->decl_type = TYPE_INT;
             return node;
         }
     }
