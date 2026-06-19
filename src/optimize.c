@@ -115,23 +115,34 @@ static ASTNode *optimize_expr(ASTNode *node) {
         }
     }
 
-    /* Constant unary bitwise-NOT folding. */
+    /* Constant unary folding: -, +, !, ~ */
     if (node->type == AST_UNARY_OP &&
             node->child_count == 1 &&
-            strcmp(node->value, "~") == 0 &&
             node->children[0]->type == AST_INT_LITERAL) {
-        long val = strtol(node->children[0]->value, NULL, 0);
-        long result = ~val;
+        const char *op           = node->value;
+        long val                 = strtol(node->children[0]->value, NULL, 0);
+        long result              = 0;
+        int  is_logical          = 0;
+        int  do_fold             = 1;
         TypeKind operand_type    = node->children[0]->decl_type;
-        int      operand_unsigned = node->children[0]->is_unsigned;
+        int  operand_unsigned    = node->children[0]->is_unsigned;
         char buf[32];
         ASTNode *lit;
-        snprintf(buf, sizeof(buf), "%ld", result);
-        ast_free(node);
-        lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
-        lit->decl_type   = operand_type;
-        lit->is_unsigned = operand_unsigned;
-        return lit;
+
+        if      (strcmp(op, "-") == 0) { result = -val; }
+        else if (strcmp(op, "+") == 0) { result = val; }
+        else if (strcmp(op, "!") == 0) { result = (val == 0) ? 1 : 0; is_logical = 1; }
+        else if (strcmp(op, "~") == 0) { result = ~val; }
+        else                           { do_fold = 0; }
+
+        if (do_fold) {
+            snprintf(buf, sizeof(buf), "%ld", result);
+            ast_free(node);
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = is_logical ? TYPE_INT : operand_type;
+            lit->is_unsigned = is_logical ? 0        : operand_unsigned;
+            return lit;
+        }
     }
 
     return node;
