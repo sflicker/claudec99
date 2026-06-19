@@ -2055,6 +2055,20 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1992 portable tests pass; all unary fold tests produce correct output at `-O1`
 - [x] Self-host C0→C1→C2 verified with all 1992 portable tests passing at every stage
 
+## Stage 145 - Algebraic Identity Folding
+
+- [x] `src/optimize.c`: insert algebraic identity block in `optimize_expr` after constant unary folding
+	- Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x`
+	- Multiplicative identities: `x * 1` → `x`, `1 * x` → `x`, `x / 1` → `x`
+	- Zero propagation: `x * 0` → `0`, `0 * x` → `0`, `0 / x` → `0` (UB-valid)
+	- Self-cancellation: `x - x` → `0`, `x ^ x` → `0` (AST_VAR_REF same-name only)
+	- Bitwise zero: `x & 0` → `0`, `0 & x` → `0`, `x | 0` → `x`, `0 | x` → `x`
+	- Identity mask: `x & ~0` → `x`, `~0 & x` → `x` (~0 arrives as -1 from stage-144 unary folding)
+	- Memory management: null kept child slot before ast_free for identity rules; fresh literal for zero rules
+- [x] 6 new integration tests (additive_identity, multiplicative_identity, zero_propagation, self_cancellation, identity_mask, algebraic_combined)
+- [x] Test results: 1998 portable tests pass; all algebraic fold tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 1998 portable tests passing at every stage
+
 ---
 
 ## TODO
@@ -2184,12 +2198,12 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → produces 0 or 1 (Stage 143)
   - [x] Logical: `&&`, `||` with short-circuit (second operand only folded when first is constant) (Stage 143)
 - [x] Constant unary folding — `AST_UNARY_OP` with constant operand: fold `-`, `+`, `!`, `~` (Stage 144)
-- [ ] Algebraic identities (even when one side is non-constant)
-  - [ ] Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x`
-  - [ ] Multiplicative identities: `x * 1` → `x`, `1 * x` → `x`, `x / 1` → `x`
-  - [ ] Zero propagation: `x * 0` → `0`, `0 * x` → `0`, `0 / x` → `0`
-  - [ ] Self-cancellation: `x - x` → `0`, `x ^ x` → `0`, `x & 0` → `0`, `x | 0` → `x`
-  - [ ] Identity masks: `x & ~0` → `x`, `x | 0` → `x`
+- [x] Algebraic identities (even when one side is non-constant) (Stage 145)
+  - [x] Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x` (Stage 145)
+  - [x] Multiplicative identities: `x * 1` → `x`, `1 * x` → `x`, `x / 1` → `x` (Stage 145)
+  - [x] Zero propagation: `x * 0` → `0`, `0 * x` → `0`, `0 / x` → `0` (Stage 145)
+  - [x] Self-cancellation: `x - x` → `0`, `x ^ x` → `0`, `x & 0` → `0`, `x | 0` → `x` (Stage 145)
+  - [x] Identity masks: `x & ~0` → `x`, `x | 0` → `x` (Stage 145)
 - [ ] Strength reduction on multiplications by powers of two
   - [ ] `x * 2^N` → `x << N`
   - [ ] `x / 2^N` (signed, non-negative dividend known) → `x >> N`

@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 145 (algebraic identity folding):
+
+> Stage 145 extends the stage-142 optimizer with algebraic identity rules in `optimize_expr`: rules that fire when only one operand is a constant integer, or when both operands are the same `AST_VAR_REF`. Identity rules (`x+0→x`, `0+x→x`, `x-0→x`, `x*1→x`, `1*x→x`, `x/1→x`, `x|0→x`, `0|x→x`, `x&~0→x`) null the kept child's slot before `ast_free` to avoid double-free. Zero rules (`x*0→0`, `0*x→0`, `0/x→0`, `x&0→0`, `0&x→0`, `x-x→0`, `x^x→0`) free the entire subtree and return a fresh `AST_INT_LITERAL`. Self-cancellation (`x-x`, `x^x`) is detected only for `AST_VAR_REF` nodes with the same `value` field (deliberately shallow). All folding gated behind `-O1`; `-O0` unaffected. No grammar changes. Six new integration tests. All 1998 portable tests pass (165 unit, 1286 valid, 261 invalid, 115 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 144 (constant unary folding):
 
 > Stage 144 completes constant unary folding in the stage-142 optimizer infrastructure: `AST_UNARY_OP` nodes whose single child is an `AST_INT_LITERAL` are now folded for all four unary operators under `-O1`. The stage-143 `~`-only block in `optimize_expr()` is replaced with a unified rule: `-val` (arithmetic negation), `+val` (unary plus, identity), `!val` (logical NOT, produces `TYPE_INT` 0 or 1), and `~val` (bitwise complement). Operators applied to non-constant operands are unaffected. No grammar changes. Four new integration tests (unary_minus, unary_plus, unary_not, unary_combined). All 1992 portable tests pass (165 unit, 1286 valid, 261 invalid, 109 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
