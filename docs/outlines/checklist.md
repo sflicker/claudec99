@@ -2131,6 +2131,89 @@ Additional improvements for designated-init and multidimensional static arrays (
   - [x] r12–r15 preserved in every function prologue and all four epilogue paths (Stage 127)
 - [ ] Red-zone usage or avoidance
 
+### Optimize Level 1 — AST-Level Constant Folding
+
+New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parser and codegen.
+
+- [ ] Infrastructure: `optimize_translation_unit(ASTNode *tu)` entry point; recursive `optimize_expr(ASTNode *)` / `optimize_stmt(ASTNode *)` helpers that rewrite nodes in-place
+- [ ] Constant integer binary folding — `AST_BINARY_OP` with both children `AST_INT_LITERAL`: evaluate at compile time and replace the binary node with a single `AST_INT_LITERAL`
+  - [ ] Arithmetic: `+`, `-`, `*`, `/`, `%`
+  - [ ] Bitwise: `&`, `|`, `^`, `~` (unary), `<<`, `>>`
+  - [ ] Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → produces 0 or 1
+  - [ ] Logical: `&&`, `||` with short-circuit (second operand only folded when first is constant)
+- [ ] Constant unary folding — `AST_UNARY_OP` with constant operand: fold `-`, `+`, `!`, `~`
+- [ ] Algebraic identities (even when one side is non-constant)
+  - [ ] Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x`
+  - [ ] Multiplicative identities: `x * 1` → `x`, `1 * x` → `x`, `x / 1` → `x`
+  - [ ] Zero propagation: `x * 0` → `0`, `0 * x` → `0`, `0 / x` → `0`
+  - [ ] Self-cancellation: `x - x` → `0`, `x ^ x` → `0`, `x & 0` → `0`, `x | 0` → `x`
+  - [ ] Identity masks: `x & ~0` → `x`, `x | 0` → `x`
+- [ ] Strength reduction on multiplications by powers of two
+  - [ ] `x * 2^N` → `x << N`
+  - [ ] `x / 2^N` (signed, non-negative dividend known) → `x >> N`
+- [ ] Boolean / logical simplification
+  - [ ] `!0` → `1`, `!nonzero_const` → `0`
+  - [ ] `!!x` → cast to int (normalize); `!!const` → fold to 0 or 1
+  - [ ] `x && 0` → `0`, `0 && x` → `0`
+  - [ ] `x || 1` → `1`, `1 || x` → `1`
+  - [ ] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast)
+- [ ] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse
+- [ ] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node
+- [ ] Dead-branch elimination in `if`/`while`/`for` with constant condition
+  - [ ] `if (0) { S1 } else { S2 }` → keep only `S2`
+  - [ ] `if (nonzero) { S1 } else { S2 }` → keep only `S1`
+  - [ ] `while (0) { S }` → remove loop
+  - [ ] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
+- [ ] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known)
+- [ ] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable
+- [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
+- [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label
+- [ ] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it)
+
+### Optimize Level 2 — Peephole Optimizer
+
+Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches short instruction windows, and rewrites them in place. Requires no structural changes to codegen.
+
+- [ ] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions
+- [ ] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits)
+- [ ] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove
+- [ ] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX`
+- [ ] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload
+- [ ] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store
+- [ ] Dead-jump removal: `jmp Lxx` immediately followed by `Lxx:` → remove the jump
+- [ ] Unreachable instruction removal: instructions after an unconditional `jmp` / `ret` with no intervening label → strip until next label
+- [ ] Dead-label removal: labels that have no `jmp`/`jne`/`je`/… or `call` referencing them → remove (requires a reference-count pass over all labels first)
+- [ ] Consecutive stack adjustments: `add rsp, A` followed immediately by `add rsp, B` → `add rsp, A+B`; same for `sub rsp`
+- [ ] `lea rax, [rax + 0]` → remove (zero-displacement lea is a no-op)
+- [ ] `add rax, 0` / `sub rax, 0` → remove
+- [ ] `imul rax, rax, 1` → remove
+- [ ] `test rax, rax` / `cmp rax, 0` deduplication: if the previous instruction already set flags from `rax` (e.g., `mov rax, …` + arithmetic), remove the redundant flag-setting instruction when flags are not consumed between them
+- [ ] `movsx rax, eax` after `mov eax, …` where `mov eax` already zero-extends → replace with `movsxd rax, eax` or remove when sign-extension is provably not needed
+
+### Optimize Level 3 — Intermediate Representation
+
+Major refactor: introduce an explicit IR layer between the AST and NASM codegen. Enables data-flow-aware transformations impossible at AST or peephole level.
+
+- [ ] IR definition (`ir.h`): three-address instruction set — `t1 = t2 OP t3`, `t1 = t2`, `t1 = CONST`, `t1 = CALL f(args...)`, `BRANCH cond L1 L2`, `JUMP L`, `LABEL L`, `RETURN t`, `LOAD t, addr`, `STORE addr, t`
+- [ ] IR operand types: virtual registers (unlimited), immediate integers, memory references, labels
+- [ ] AST → IR lowering pass (`ir_lower.c`): walk the AST and emit IR instructions into a flat instruction list per function
+- [ ] Basic block construction: partition the IR instruction list into basic blocks at `LABEL` / branch / jump boundaries
+- [ ] Control flow graph (CFG): predecessor/successor edges between basic blocks
+- [ ] Liveness analysis: compute live-in / live-out sets per basic block (backward dataflow)
+- [ ] Dead code elimination (DCE): remove IR instructions whose destination is never live
+- [ ] Reaching definitions / use-def chains: forward dataflow for propagation passes
+- [ ] Copy propagation: replace uses of `t1` with `t2` when `t1 = t2` reaches the use with no redefinition
+- [ ] Constant propagation: replace virtual register uses with constants when only one constant definition reaches each use
+- [ ] Common subexpression elimination (CSE): detect duplicate computations within a basic block (or globally with available-expressions analysis) and reuse earlier results
+- [ ] Dead store elimination: remove `STORE addr, t` when `addr` is never loaded before the next unconditional store or function exit
+- [ ] Loop detection: identify natural loops via dominator tree construction
+- [ ] Loop-invariant code motion (LICM): hoist computations whose operands do not change inside the loop to the loop pre-header
+- [ ] Induction variable simplification: recognize linear induction variables; simplify strength-reduced forms
+- [ ] Function inlining: for small callees with a single call site (or below a code-size threshold), replace the `CALL` instruction with the callee's IR body with parameter substitution
+- [ ] Register allocation: graph-coloring or linear-scan allocator mapping virtual registers to the 14 general-purpose x86-64 registers (rax/rcx/rdx/rsi/rdi/r8–r11 caller-saved; rbx/r12–r15 callee-saved); spill to stack when graph is not colorable
+- [ ] IR → NASM code generation (`ir_codegen.c`): replace the current AST→NASM path with an IR→NASM backend operating on allocated registers
+- [ ] -O2 flag to enable IR-level optimizations (superset of -O1)
+
 ### Diagnostics and Error Recovery
 - [x] Line and column numbers on parser error messages (Stage 70-03; codegen errors still lack position)
 - [x] Structured error output (file:line:col: error: message) (Stage 70-03)
