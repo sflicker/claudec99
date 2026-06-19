@@ -2071,6 +2071,20 @@ Additional improvements for designated-init and multidimensional static arrays (
 
 ---
 
+## Stage 146 - Strength Reduction: Power-of-Two Multiply/Divide
+
+- [x] `src/optimize.c`: add strength reduction block in `optimize_expr` after algebraic identity block
+	- `x * 2^N` → `x << N` (right operand is a power of two ≥ 2): mutate node in place, free old literal, install shift-amount literal, set operator to `<<`
+	- `2^N * x` → `x << N` (left operand is a power of two ≥ 2, commutative): move x to left slot, free old 2^N literal, install shift-amount literal
+	- `x / 2^N` → `x >> N` (right operand is a power of two ≥ 2; dividend is unsigned or a statically non-negative literal): mutate node in place, set operator to `>>`
+	- `* 1` and `/ 1` (2^0) already handled by Stage 145 identity rules; only fires for N ≥ 1 (rval > 1)
+	- All declarations at top of block; no VLAs; no `//` comments — C0 bootstrap-compatible
+- [x] 5 new integration tests (mul_pow2, mul_pow2_commutative, div_pow2_unsigned, no_signed_div, combined)
+- [x] Test results: 2003 portable tests pass; all 5 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 2003 portable tests passing at every stage
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2204,9 +2218,9 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] Zero propagation: `x * 0` → `0`, `0 * x` → `0`, `0 / x` → `0` (Stage 145)
   - [x] Self-cancellation: `x - x` → `0`, `x ^ x` → `0`, `x & 0` → `0`, `x | 0` → `x` (Stage 145)
   - [x] Identity masks: `x & ~0` → `x`, `x | 0` → `x` (Stage 145)
-- [ ] Strength reduction on multiplications by powers of two
-  - [ ] `x * 2^N` → `x << N`
-  - [ ] `x / 2^N` (signed, non-negative dividend known) → `x >> N`
+- [x] Strength reduction on multiplications by powers of two (Stage 146)
+  - [x] `x * 2^N` → `x << N` (Stage 146)
+  - [x] `x / 2^N` (signed, non-negative dividend known) → `x >> N` (Stage 146)
 - [ ] Boolean / logical simplification
   - [ ] `!0` → `1`, `!nonzero_const` → `0`
   - [ ] `!!x` → cast to int (normalize); `!!const` → fold to 0 or 1

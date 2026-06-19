@@ -3,6 +3,7 @@
  *
  * Stage 142: infrastructure -- bottom-up tree walk, no transformations.
  * Stage 143: constant integer binary folding and unary ~ folding.
+ * Stage 146: strength reduction -- x*2^N -> x<<N, x/2^N -> x>>N (unsigned).
  */
 
 #include <stddef.h>
@@ -205,6 +206,73 @@ static ASTNode *optimize_expr(ASTNode *node) {
         else if (strcmp(op, "^") == 0 && both_same_var)
             { z = ast_new(AST_INT_LITERAL, "0"); z->decl_type = left->decl_type;  z->is_unsigned = left->is_unsigned;  }
         if (z != NULL) { ast_free(node); return z; }
+    }
+
+    /* Strength reduction: x * 2^N -> x << N; x / 2^N -> x >> N (unsigned). */
+    if (node->type == AST_BINARY_OP && node->child_count == 2) {
+        const char *op    = node->value;
+        ASTNode    *left  = node->children[0];
+        ASTNode    *right = node->children[1];
+        int  do_mul       = (strcmp(op, "*") == 0);
+        int  do_div       = (strcmp(op, "/") == 0);
+        int  right_is_lit = (right->type == AST_INT_LITERAL);
+        int  left_is_lit  = (left->type  == AST_INT_LITERAL);
+        long rval         = right_is_lit ? strtol(right->value, NULL, 0) : 0L;
+        long lval         = left_is_lit  ? strtol(left->value,  NULL, 0) : 0L;
+        int  r_is_pow2    = right_is_lit && (rval > 1L) && ((rval & (rval - 1L)) == 0L);
+        int  l_is_pow2    = left_is_lit  && (lval > 1L) && ((lval & (lval - 1L)) == 0L);
+        int  r_shift      = 0;
+        int  l_shift      = 0;
+        int  left_nonneg  = left_is_lit  && (lval >= 0L);
+        long tmp;
+        ASTNode *lit;
+        char buf[16];
+
+        if (r_is_pow2) {
+            tmp = rval;
+            while (tmp > 1L) { tmp >>= 1; r_shift++; }
+        }
+        if (l_is_pow2) {
+            tmp = lval;
+            while (tmp > 1L) { tmp >>= 1; l_shift++; }
+        }
+
+        /* x * 2^N -> x << N  (right operand is power of two) */
+        if (do_mul && r_is_pow2) {
+            snprintf(buf, sizeof(buf), "%d", r_shift);
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = TYPE_INT;
+            lit->is_unsigned = 0;
+            ast_free(right);
+            node->children[1] = lit;
+            node->value = util_strdup("<<");
+            return node;
+        }
+
+        /* 2^N * x -> x << N  (left operand is power of two; move x to left slot) */
+        if (do_mul && l_is_pow2) {
+            snprintf(buf, sizeof(buf), "%d", l_shift);
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = TYPE_INT;
+            lit->is_unsigned = 0;
+            node->children[0] = right;  /* x moves to left slot  */
+            node->children[1] = lit;
+            ast_free(left);             /* free the 2^N literal  */
+            node->value = util_strdup("<<");
+            return node;
+        }
+
+        /* x / 2^N -> x >> N  (unsigned dividend or statically non-negative literal) */
+        if (do_div && r_is_pow2 && (left->is_unsigned || left_nonneg)) {
+            snprintf(buf, sizeof(buf), "%d", r_shift);
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = TYPE_INT;
+            lit->is_unsigned = 0;
+            ast_free(right);
+            node->children[1] = lit;
+            node->value = util_strdup(">>");
+            return node;
+        }
     }
 
     return node;
