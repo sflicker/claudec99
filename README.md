@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 146 (strength reduction: power-of-two multiply/divide):
+
+> Stage 146 adds strength reduction to the stage-142 optimizer: `x * 2^N` is rewritten to `x << N` and `x / 2^N` is rewritten to `x >> N` for unsigned or statically non-negative constant dividends. Three rules fire under `-O1` in `optimize_expr` (after the stage-145 algebraic identity block): the right-operand multiply form, the commutative left-operand multiply form, and the division form. All three mutate the `AST_BINARY_OP` node in place — freeing the old power-of-two literal, installing a new shift-amount `AST_INT_LITERAL`, and updating `node->value` to the new operator. `* 1` and `/ 1` (2^0) are already handled by stage-145 identity rules; this block only fires for N ≥ 1. No grammar changes. Five new integration tests (mul_pow2, mul_pow2_commutative, div_pow2_unsigned, no_signed_div, combined). All 2003 portable tests pass (165 unit, 1286 valid, 261 invalid, 120 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 145 (algebraic identity folding):
 
 > Stage 145 extends the stage-142 optimizer with algebraic identity rules in `optimize_expr`: rules that fire when only one operand is a constant integer, or when both operands are the same `AST_VAR_REF`. Identity rules (`x+0→x`, `0+x→x`, `x-0→x`, `x*1→x`, `1*x→x`, `x/1→x`, `x|0→x`, `0|x→x`, `x&~0→x`) null the kept child's slot before `ast_free` to avoid double-free. Zero rules (`x*0→0`, `0*x→0`, `0/x→0`, `x&0→0`, `0&x→0`, `x-x→0`, `x^x→0`) free the entire subtree and return a fresh `AST_INT_LITERAL`. Self-cancellation (`x-x`, `x^x`) is detected only for `AST_VAR_REF` nodes with the same `value` field (deliberately shallow). All folding gated behind `-O1`; `-O0` unaffected. No grammar changes. Six new integration tests. All 1998 portable tests pass (165 unit, 1286 valid, 261 invalid, 115 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -753,7 +757,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 141 all 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 99/99.
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 146 all 2003 portable tests pass (1286 valid, 261 invalid, 120 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 120/120.
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
