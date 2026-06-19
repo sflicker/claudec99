@@ -176,6 +176,7 @@ bin/cc99 [options] file.c [file2.c ...]
 | `-D NAME[=VAL]` | Preprocessor define (passed to `ccompiler`) |
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
+| `--sysinclude` | Use system include paths instead of `test/include` stubs (Linux x86_64 only) |
 | `--max-errors=N` | Stop after N errors; `0` = unlimited (passed to `ccompiler`) |
 | `-l <lib>` / `-llib` | Link with library (passed to `gcc`) |
 | `-L <dir>` / `-Ldir` | Library search path (passed to `gcc`) |
@@ -223,9 +224,9 @@ int main() {
 
 ## What the compiler currently supports
 
-Through stage 140 (pointer-size typedef behavior: unsigned cast semantics fix):
+Through stage 141 (system includes: `--sysinclude` flag and integrated test reporting):
 
-> Stage 140 fixes CC99-013: casts to `size_t` (and other unsigned typedef types) did not preserve unsigned arithmetic semantics. The failing check was `(size_t)0 - (size_t)1 > 0` (returned 105). **Root cause**: `parse_cast` in `src/parser.c` set `cast->decl_type` from the cast target's `TypeKind` but never set `cast->is_unsigned`, so typedef aliases like `size_t` (resolved to `unsigned long`) lost their signedness on the AST node; UAC then treated both operands as signed long. **Fix**: one line added — `cast->is_unsigned = !cast_type->is_signed` — immediately after `cast->decl_type` is set; no codegen change needed since the `AST_CAST` handler already passes `is_unsigned` through unchanged. 3 new tests (1 integration reproducing the spec's reduced source returning 10, 2 valid). Version bumped to 14000000. All 1982 tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+> Stage 141 adds a `--sysinclude` flag to the `bin/cc99` wrapper (Linux x86_64 only) that switches from the project's `test/include` stub headers to real system include paths (`/usr/lib/gcc/x86_64-linux-gnu/13/include`, `/usr/local/include`, `/usr/include/x86_64-linux-gnu`, `/usr/include`). The flag is guarded by a platform check — it errors on non-Linux or non-x86_64 systems. `test/run_all_tests.sh` now automatically runs `test/integration/run_tests_sysinclude.sh` on Linux x86_64 and reports its results in a separate "System include:" section, distinct from the portable suite aggregate (renamed from "Aggregate:" to "Portable:"). System include failures do not affect the overall exit code — one pre-existing failure exists (`test_std_pointer_size_typedefs` via `bits/wchar.h` `L'\0'` wide char literal in `#elif`, an unsupported preprocessor form). Version bumped to 14100000. All 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). System include suite: 98/99 pass. Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
 
 Through stage 139 (preprocessor `#if` expression gaps: integer suffixes, function-like macros, ternary):
 
@@ -734,8 +735,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 140 all 1982 tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 141 all 1982 portable tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 98/99.
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

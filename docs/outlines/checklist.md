@@ -1996,6 +1996,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Fix: pointer subtraction via `ptrdiff_t`, `intptr_t` round-trip verified
 	- Existing arithmetic paths benefit from corrected unsigned signedness propagation
 
+## Stage 141 - System Includes
+
+- [x] `bin/cc99` `--sysinclude` flag (Linux x86_64 only)
+	- Replaces stub `test/include` paths with real system include directories
+	- Searches in order: `/usr/lib/gcc/x86_64-linux-gnu/13/include`, `/usr/local/include`, `/usr/include/x86_64-linux-gnu`, `/usr/include`
+	- Platform guard: errors if used on non-Linux or non-x86_64 architectures
+- [x] System-include test suite integration
+	- `test/run_all_tests.sh` detects Linux x86_64 via `uname` and runs `test/integration/run_tests_sysinclude.sh`
+	- Results reported in separate "System include:" section distinct from portable aggregate
+	- System-include failures do not affect overall exit code (platform-specific limitations)
+- [x] Test results: 1982 portable tests pass; 98/99 system-include tests pass (1 pre-existing `bits/wchar.h` L'\0' limitation)
+- [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
+
 ---
 
 ## TODO
