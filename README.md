@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 139 (preprocessor `#if` expression gaps: integer suffixes, function-like macros, ternary):
+
+> Stage 139 fixes three deficiencies in the `#if`/`#elif` constant-expression evaluator (`eval_cond_primary` and friends in `src/preprocessor.c`) that prevented parsing system headers. **PP-01 (integer literal suffixes)**: `eval_cond_primary` now consumes trailing `u`/`U`/`l`/`L` suffix characters after integer literals and parses hex literals (`0x`/`0X` prefix). **PP-02 (function-like macros in `#if`)**: the `#if` and `#elif` handlers now collect the raw condition text and pass it through `expand_macros_text()` before evaluation, implementing C99 §6.10.1 macro replacement; `expand_macros_text()` gains a special case to pass `defined(X)` / `defined X` through unexpanded; the function-like macro guard in `eval_cond_primary` changed from `exit(1)` to `return 0L`. **PP-03 (ternary operator)**: `eval_cond_ternary` added between `eval_cond_logical_or` and `eval_cond_expr`, enabling `condition ? then : else` in `#if` expressions. 9 new integration tests. Manual system-header validation script `test/integration/run_tests_sysinclude.sh` added. Version bumped to 13900000. All 1979 tests pass (1284 valid, 262 invalid, 97 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 138 (auto and register storage-class specifiers):
 
 > Stage 138 adds `auto` and `register` storage-class specifiers (CC99-011 and CC99-012). **Tokenizer**: `TOKEN_AUTO` and `TOKEN_REGISTER` added. **AST**: `SC_AUTO=8` and `SC_REGISTER=16` added to `StorageClass` enum. **Parser**: `auto` at block scope treated as default automatic storage; `register` at block scope allocates identically but marks the variable `SC_REGISTER`; both are rejected at file scope; `register` is also accepted as a leading qualifier in function parameter declarations. **Codegen**: `is_register` field added to `LocalVar`; `AST_ADDR_OF` rejects `&register_var` with a compile error. **Tests**: 5 new tests (2 valid returning 27, 3 invalid). Version bumped to 13800000. All 1970 tests pass (1284 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
@@ -446,12 +450,12 @@ Through stage 91 (address-of member lvalues):
     suppressed. Nesting up to 64 levels deep. Errors on a missing `#endif`,
     unmatched `#else`/`#endif`, duplicate `#else`, `#elif` without a
     conditional, and `#elif` after `#else`.
-  - _`#if`/`#elif` expression operands_: integer literals; `defined(NAME)` and
+  - _`#if`/`#elif` expression operands_: integer literals (including hexadecimal form `0x`/`0X`); `defined(NAME)` and
     `defined NAME`; object-like macros that expand to integer literals
-    (`0` = false, nonzero = true); bare undefined identifiers (evaluate to 0);
+    (`0` = false, nonzero = true); function-like macro calls (pre-expanded per C99 §6.10.1); bare undefined identifiers (evaluate to 0);
     parenthesized expressions with arbitrary nesting; and macros expanding to
     negative literals (e.g. `#define VALUE -1`).
-  - _`#if`/`#elif` operators_, loosest to tightest precedence: logical `||`
+  - _`#if`/`#elif` operators_, loosest to tightest precedence: ternary `?:` (lowest, right-associative); logical `||`
     then `&&`; bitwise `|`, `^`, `&`; equality `==`, `!=`; relational `<`,
     `<=`, `>`, `>=`; shift `<<`, `>>`; additive `+`, `-`; multiplicative `*`,
     `/`, `%`; unary `!`, `-`, `+`, `~` (chainable, e.g. `!-1`). Division or
@@ -727,7 +731,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 138 all 1970 tests pass (1284 valid, 262 invalid, 88 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 139 all 1979 tests pass (1284 valid, 262 invalid, 97 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
