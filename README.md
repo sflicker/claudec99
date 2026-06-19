@@ -223,6 +223,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 140 (pointer-size typedef behavior: unsigned cast semantics fix):
+
+> Stage 140 fixes CC99-013: casts to `size_t` (and other unsigned typedef types) did not preserve unsigned arithmetic semantics. The failing check was `(size_t)0 - (size_t)1 > 0` (returned 105). **Root cause**: `parse_cast` in `src/parser.c` set `cast->decl_type` from the cast target's `TypeKind` but never set `cast->is_unsigned`, so typedef aliases like `size_t` (resolved to `unsigned long`) lost their signedness on the AST node; UAC then treated both operands as signed long. **Fix**: one line added — `cast->is_unsigned = !cast_type->is_signed` — immediately after `cast->decl_type` is set; no codegen change needed since the `AST_CAST` handler already passes `is_unsigned` through unchanged. 3 new tests (1 integration reproducing the spec's reduced source returning 10, 2 valid). Version bumped to 14000000. All 1982 tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
+
 Through stage 139 (preprocessor `#if` expression gaps: integer suffixes, function-like macros, ternary):
 
 > Stage 139 fixes three deficiencies in the `#if`/`#elif` constant-expression evaluator (`eval_cond_primary` and friends in `src/preprocessor.c`) that prevented parsing system headers. **PP-01 (integer literal suffixes)**: `eval_cond_primary` now consumes trailing `u`/`U`/`l`/`L` suffix characters after integer literals and parses hex literals (`0x`/`0X` prefix). **PP-02 (function-like macros in `#if`)**: the `#if` and `#elif` handlers now collect the raw condition text and pass it through `expand_macros_text()` before evaluation, implementing C99 §6.10.1 macro replacement; `expand_macros_text()` gains a special case to pass `defined(X)` / `defined X` through unexpanded; the function-like macro guard in `eval_cond_primary` changed from `exit(1)` to `return 0L`. **PP-03 (ternary operator)**: `eval_cond_ternary` added between `eval_cond_logical_or` and `eval_cond_expr`, enabling `condition ? then : else` in `#if` expressions. 9 new integration tests. Manual system-header validation script `test/integration/run_tests_sysinclude.sh` added. Version bumped to 13900000. All 1979 tests pass (1284 valid, 262 invalid, 97 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit). Self-host C0→C1→C2 verified with all tests passing at every stage, no source changes needed during bootstrap.
@@ -731,7 +735,7 @@ Run everything from the project root after building:
 ```
 
 The runner aggregates per-suite results and prints a final
-`Aggregate: P passed, F failed, T total` line. As of stage 139 all 1979 tests pass (1284 valid, 262 invalid, 97 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
+`Aggregate: P passed, F failed, T total` line. As of stage 140 all 1982 tests pass (1284 valid, 262 invalid, 98 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 

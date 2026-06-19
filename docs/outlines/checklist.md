@@ -1985,6 +1985,17 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Preprocessor: object-like macro rescan A→B→C (previous session)
 	- `disabled` flag in `MacroDef` prevents recursive expansion; rescan in both expansion sites
 
+## Stage 140 - Pointer-Size Typedef Behavior
+
+- [x] Fix: cast to unsigned typedef type now propagates `is_unsigned` flag
+	- Single line added in `parse_cast()` in `src/parser.c` (~line 2237): `cast->is_unsigned = !cast_type->is_signed;`
+	- Enables downstream Usual Arithmetic Conversions to correctly treat casts to `size_t` and similar unsigned typedefs as unsigned operands
+- [x] Fix: `(size_t)0 - (size_t)1 > 0` now evaluates correctly under unsigned arithmetic
+	- Previously returned 105 (false) due to signed arithmetic on casted operands
+	- Now returns true as expected with unsigned arithmetic semantics
+- [x] Fix: pointer subtraction via `ptrdiff_t`, `intptr_t` round-trip verified
+	- Existing arithmetic paths benefit from corrected unsigned signedness propagation
+
 ---
 
 ## TODO
