@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 143 self-hosting test
+
+None. The change is confined to `src/optimize.c`: new folding rules inserted
+into `optimize_expr` after the existing child-recursion loop. The new code uses
+`strtol`, `snprintf`, `strcmp`, `ast_new`, `ast_free`, and `util_strdup` — all
+available in C0. No new AST node types, no parser changes, no codegen changes.
+The new integration tests compile and run correctly under C0, C1, and C2. All
+1988 tests passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 143)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01430000.01077` | 1988/1988 |
+| C1 | `build/ccompiler-c1` | `00.03.01430000.01078` | 1988/1988 |
+| C2 | `build/ccompiler-c2` | `00.03.01430000.01079` | 1988/1988 |
+
+---
+
 ## Issues found during stage 142 self-hosting test
 
 One issue found during bootstrap: `src/optimize.c` was missing from

@@ -2013,6 +2013,19 @@ Additional improvements for designated-init and multidimensional static arrays (
 - [x] Test results: 1982 portable tests pass; 99/99 system-include tests pass
 - [x] Self-host C0→C1→C2 verified with all 1982 portable tests passing at every stage
 
+## Stage 143 - Constant Integer Binary Folding
+
+- [x] `src/optimize.c`: binary fold rule in `optimize_expr` — `AST_BINARY_OP` with both children `AST_INT_LITERAL`
+	- Arithmetic: `+`, `-`, `*`, `/` (div-by-zero guard), `%` (div-by-zero guard)
+	- Bitwise: `&`, `|`, `^`, `<<`, `>>`
+	- Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → `TYPE_INT` result 0 or 1
+	- Logical short-circuit: `0 && X` → 0; `nonzero || X` → 1; fold fully when both constant
+- [x] `src/optimize.c`: unary `~` fold — `AST_UNARY_OP` with `AST_INT_LITERAL` operand
+- [x] New includes: `<stdio.h>`, `<stdlib.h>`, `<string.h>`, `"util.h"` in `src/optimize.c`
+- [x] 6 new integration tests (arithmetic, bitwise, relational, logical, divzero-skipped, nested)
+- [x] Test results: 1988 portable tests pass; all fold tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified with all 1988 portable tests passing at every stage
+
 ## Stage 142 - Optimizer Infrastructure
 
 - [x] New `include/optimize.h` — declares `optimize_translation_unit(ASTNode *root, int opt_level)`
@@ -2154,11 +2167,11 @@ Additional improvements for designated-init and multidimensional static arrays (
 New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parser and codegen.
 
 - [x] Infrastructure: `optimize_translation_unit(ASTNode *root, int opt_level)` entry point; recursive `optimize_expr(ASTNode *)` / `optimize_stmt(ASTNode *)` helpers that walk the tree bottom-up (Stage 142)
-- [ ] Constant integer binary folding — `AST_BINARY_OP` with both children `AST_INT_LITERAL`: evaluate at compile time and replace the binary node with a single `AST_INT_LITERAL`
-  - [ ] Arithmetic: `+`, `-`, `*`, `/`, `%`
-  - [ ] Bitwise: `&`, `|`, `^`, `~` (unary), `<<`, `>>`
-  - [ ] Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → produces 0 or 1
-  - [ ] Logical: `&&`, `||` with short-circuit (second operand only folded when first is constant)
+- [x] Constant integer binary folding — `AST_BINARY_OP` with both children `AST_INT_LITERAL`: evaluate at compile time and replace the binary node with a single `AST_INT_LITERAL` (Stage 143)
+  - [x] Arithmetic: `+`, `-`, `*`, `/`, `%` (Stage 143)
+  - [x] Bitwise: `&`, `|`, `^`, `~` (unary), `<<`, `>>` (Stage 143)
+  - [x] Relational: `<`, `<=`, `>`, `>=`, `==`, `!=` → produces 0 or 1 (Stage 143)
+  - [x] Logical: `&&`, `||` with short-circuit (second operand only folded when first is constant) (Stage 143)
 - [ ] Constant unary folding — `AST_UNARY_OP` with constant operand: fold `-`, `+`, `!`, `~`
 - [ ] Algebraic identities (even when one side is non-constant)
   - [ ] Additive identities: `x + 0` → `x`, `0 + x` → `x`, `x - 0` → `x`
