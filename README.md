@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 147 (boolean and logical simplification):
+
+> Stage 147 adds boolean and logical simplification to the stage-142 optimizer: `!!x → (x != 0)`, `x && 0 → 0`, `x || nonzero → 1`, `x && nonzero → (x != 0)`, and `x || 0 → (x != 0)`. Two rule blocks fire under `-O1` in `optimize_expr`: the double-NOT block (after stage-144 unary folding) and the binary boolean block (after stage-146 strength reduction). The constant case `!!const` is skipped (already handled by stage-144). Left-operand-literal cases (`0 && x`, `nonzero || x`) are already handled by stage-143 short-circuit folding and are not re-implemented. No grammar changes. Six new integration tests (bool_simplify_and_zero, bool_simplify_or_nonzero, bool_simplify_and_one, bool_simplify_or_zero, bool_double_not, bool_simplify_combined). All 2009 portable tests pass (165 unit, 1286 valid, 261 invalid, 126 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 146 (strength reduction: power-of-two multiply/divide):
 
 > Stage 146 adds strength reduction to the stage-142 optimizer: `x * 2^N` is rewritten to `x << N` and `x / 2^N` is rewritten to `x >> N` for unsigned or statically non-negative constant dividends. Three rules fire under `-O1` in `optimize_expr` (after the stage-145 algebraic identity block): the right-operand multiply form, the commutative left-operand multiply form, and the division form. All three mutate the `AST_BINARY_OP` node in place — freeing the old power-of-two literal, installing a new shift-amount `AST_INT_LITERAL`, and updating `node->value` to the new operator. `* 1` and `/ 1` (2^0) are already handled by stage-145 identity rules; this block only fires for N ≥ 1. No grammar changes. Five new integration tests (mul_pow2, mul_pow2_commutative, div_pow2_unsigned, no_signed_div, combined). All 2003 portable tests pass (165 unit, 1286 valid, 261 invalid, 120 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
