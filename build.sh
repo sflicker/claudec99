@@ -59,6 +59,7 @@ SRC_FILES=(
     src/util.c
     src/vec.c
     src/version.c
+    src/optimize.c
 )
 
 do_cmake_build() {
