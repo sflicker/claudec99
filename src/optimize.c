@@ -6,6 +6,7 @@
  * Stage 146: strength reduction -- x*2^N -> x<<N, x/2^N -> x>>N (unsigned).
  * Stage 147: boolean/logical simplification -- !!x, x&&0, x||1, x&&1, x||0.
  * Stage 148: negation folding -- -(-x) -> x for non-constant x.
+ * Stage 149: conditional expression folding -- const ? T : F -> selected branch.
  */
 
 #include <stddef.h>
@@ -382,6 +383,21 @@ static ASTNode *optimize_expr(ASTNode *node) {
             node->decl_type = TYPE_INT;
             return node;
         }
+    }
+
+    /* Conditional expression folding: const ? T : F -> selected branch.
+       Bottom-up walk ensures the condition has already been folded; if it
+       reduced to a literal we eliminate the dead branch entirely. */
+    if (node->type == AST_CONDITIONAL_EXPR &&
+            node->child_count == 3 &&
+            node->children[0] != NULL &&
+            node->children[0]->type == AST_INT_LITERAL) {
+        long cval     = strtol(node->children[0]->value, NULL, 0);
+        int  keep_idx = (cval != 0L) ? 1 : 2;
+        ASTNode *keep = node->children[keep_idx];
+        node->children[keep_idx] = NULL; /* detach before ast_free */
+        ast_free(node);                  /* frees ?: node, condition, dead branch */
+        return keep;
     }
 
     return node;

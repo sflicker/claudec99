@@ -2120,6 +2120,20 @@ TODO items completed this stage:
 
 ---
 
+## Stage 149 - Conditional Expression Folding
+
+- [x] `src/optimize.c`: add `AST_CONDITIONAL_EXPR` folding block after stage-147 boolean/logical simplification block, before `return node`
+	- `const ? T : F` → selected branch: when condition is `AST_INT_LITERAL`, null the kept child slot, `ast_free(node)` (frees `?:` node, condition literal, dead branch), return kept branch directly
+	- Fires on any integer constant condition; both branches already optimized by bottom-up walk before this rule is reached
+- [x] 4 new integration tests (cond_fold_true, cond_fold_false, cond_fold_nested, cond_fold_combined)
+- [x] Test results: 133/133 integration tests pass; all 4 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 149)
+
+TODO items completed this stage:
+- [x] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node (Stage 149)
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2263,7 +2277,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `x || 1` → `1`, `1 || x` → `1` (Stage 147)
   - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
 - [x] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse (Stage 148 / Stage 147)
-- [ ] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node
+- [x] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node (Stage 149)
 - [ ] Dead-branch elimination in `if`/`while`/`for` with constant condition
   - [ ] `if (0) { S1 } else { S2 }` → keep only `S2`
   - [ ] `if (nonzero) { S1 } else { S2 }` → keep only `S1`
