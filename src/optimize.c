@@ -7,6 +7,7 @@
  * Stage 147: boolean/logical simplification -- !!x, x&&0, x||1, x&&1, x||0.
  * Stage 148: negation folding -- -(-x) -> x for non-constant x.
  * Stage 149: conditional expression folding -- const ? T : F -> selected branch.
+ * Stage 150: dead-branch elimination -- if/while/for with constant-zero condition.
  */
 
 #include <stddef.h>
@@ -414,18 +415,43 @@ static ASTNode *optimize_stmt(ASTNode *node) {
             node->children[i] = optimize_stmt(node->children[i]);
         return node;
 
-    case AST_IF_STATEMENT:
+    case AST_IF_STATEMENT: {
         /* children: [condition, then-body, (optional) else-body] */
+        ASTNode *keep;
         node->children[0] = optimize_expr(node->children[0]);
         node->children[1] = optimize_stmt(node->children[1]);
         if (node->child_count > 2)
             node->children[2] = optimize_stmt(node->children[2]);
+        if (node->children[0]->type == AST_INT_LITERAL) {
+            long cval = strtol(node->children[0]->value, NULL, 0);
+            if (cval != 0L) {
+                /* Always true: keep then-branch, drop else-branch. */
+                keep = node->children[1];
+                node->children[1] = NULL;
+                ast_free(node);
+                return keep;
+            } else {
+                /* Always false: keep else-branch (or empty block). */
+                keep = (node->child_count > 2)
+                       ? node->children[2]
+                       : ast_new(AST_BLOCK, NULL);
+                if (node->child_count > 2) node->children[2] = NULL;
+                ast_free(node);
+                return keep;
+            }
+        }
         return node;
+    }
 
     case AST_WHILE_STATEMENT:
         /* children: [condition, body] */
         node->children[0] = optimize_expr(node->children[0]);
         node->children[1] = optimize_stmt(node->children[1]);
+        if (node->children[0]->type == AST_INT_LITERAL &&
+                strtol(node->children[0]->value, NULL, 0) == 0L) {
+            ast_free(node);
+            return ast_new(AST_BLOCK, NULL);
+        }
         return node;
 
     case AST_DO_WHILE_STATEMENT:
@@ -434,13 +460,31 @@ static ASTNode *optimize_stmt(ASTNode *node) {
         node->children[1] = optimize_expr(node->children[1]);
         return node;
 
-    case AST_FOR_STATEMENT:
+    case AST_FOR_STATEMENT: {
         /* children: [init|NULL, cond|NULL, update|NULL, body] */
+        ASTNode *init;
         if (node->children[0]) node->children[0] = optimize_stmt(node->children[0]);
         if (node->children[1]) node->children[1] = optimize_expr(node->children[1]);
         if (node->children[2]) node->children[2] = optimize_expr(node->children[2]);
         node->children[3] = optimize_stmt(node->children[3]);
+        if (node->children[1] != NULL &&
+                node->children[1]->type == AST_INT_LITERAL &&
+                strtol(node->children[1]->value, NULL, 0) == 0L) {
+            ASTNode *stmt;
+            init = node->children[0];
+            node->children[0] = NULL; /* detach init before ast_free */
+            ast_free(node);           /* frees for-node, cond, update, body */
+            if (init == NULL) return ast_new(AST_BLOCK, NULL);
+            /* Declarations are already statement nodes; expression inits
+               must be wrapped so codegen_statement can emit them. */
+            if (init->type == AST_DECLARATION || init->type == AST_DECL_LIST)
+                return init;
+            stmt = ast_new(AST_EXPRESSION_STMT, NULL);
+            ast_add_child(stmt, init);
+            return stmt;
+        }
         return node;
+    }
 
     case AST_SWITCH_STATEMENT:
         /* children: [discriminant, body] */
