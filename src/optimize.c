@@ -5,6 +5,7 @@
  * Stage 143: constant integer binary folding and unary ~ folding.
  * Stage 146: strength reduction -- x*2^N -> x<<N, x/2^N -> x>>N (unsigned).
  * Stage 147: boolean/logical simplification -- !!x, x&&0, x||1, x&&1, x||0.
+ * Stage 148: negation folding -- -(-x) -> x for non-constant x.
  */
 
 #include <stddef.h>
@@ -177,6 +178,31 @@ static ASTNode *optimize_expr(ASTNode *node) {
             ast_add_child(neq, x);
             ast_add_child(neq, zero);
             return neq;
+        }
+    }
+
+    /* Double arithmetic negation: -(-x) -> x for non-constant x.
+       When x is a literal, stage-144 folds both - applications in two passes;
+       this rule fires only when the innermost child is not an INT_LITERAL. */
+    if (node->type == AST_UNARY_OP &&
+            node->child_count == 1 &&
+            strcmp(node->value, "-") == 0) {
+        ASTNode *inner = node->children[0];
+        ASTNode *x;
+        int fire;
+
+        fire = (inner != NULL &&
+                inner->type == AST_UNARY_OP &&
+                inner->child_count == 1 &&
+                strcmp(inner->value, "-") == 0 &&
+                inner->children[0] != NULL &&
+                inner->children[0]->type != AST_INT_LITERAL);
+
+        if (fire) {
+            x = inner->children[0];
+            inner->children[0] = NULL; /* prevent double-free of x */
+            ast_free(node);            /* frees outer - and inner - (not x) */
+            return x;
         }
     }
 

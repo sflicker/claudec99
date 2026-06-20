@@ -2106,6 +2106,18 @@ TODO items completed this stage:
   - [x] `x || 1` → `1`, `1 || x` → `1` (Stage 147)
   - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
 
+## Stage 148 - Negation Folding
+
+- [x] `src/optimize.c`: add `-(-x)` block after stage-147 `!!x` block, before stage-145 algebraic identity
+	- `-(-x)` → `x` for non-constant `x`: detects outer `-` whose child is `-` with non-literal grandchild; nulls inner child slot before `ast_free` to prevent double-free; returns `x` directly
+	- `-(-const)` already handled by two applications of stage-144 constant unary folding; this rule fires only when grandchild is non-literal
+- [x] 3 new integration tests (neg_fold_double_minus, neg_fold_triple_minus, neg_fold_combined)
+- [x] Test results: 129/129 integration tests pass; all 3 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 148)
+
+TODO items completed this stage:
+- [x] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse (Stage 148 / Stage 147)
+
 ---
 
 ## TODO
@@ -2250,7 +2262,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `x && 0` → `0`, `0 && x` → `0` (Stage 147)
   - [x] `x || 1` → `1`, `1 || x` → `1` (Stage 147)
   - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
-- [ ] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse
+- [x] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse (Stage 148 / Stage 147)
 - [ ] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node
 - [ ] Dead-branch elimination in `if`/`while`/`for` with constant condition
   - [ ] `if (0) { S1 } else { S2 }` → keep only `S2`
