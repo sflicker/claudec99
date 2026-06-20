@@ -11,6 +11,9 @@
  * Stage 151: sizeof constant folding -- AST_SIZEOF_TYPE/EXPR -> AST_INT_LITERAL.
  * Stage 152: const propagation -- const scalar locals with literal init replaced
  *            at each AST_VAR_REF with the recorded integer literal.
+ * Stage 153: cast constant folding -- AST_CAST of AST_INT_LITERAL to scalar
+ *            integer type replaced with a fresh AST_INT_LITERAL of target type,
+ *            provided the numeric value is preserved (fits in target type).
  */
 
 #include <stddef.h>
@@ -63,6 +66,32 @@ static const ConstEntry *const_prop_lookup(const char *name) {
             return &g_const_table[j];
     }
     return NULL;
+}
+
+/* Return 1 if val can be represented exactly in integer type (target, unsigned).
+   Used to gate AST_CAST folding: only fold when the numeric value is preserved. */
+static int cast_value_safe(long val, TypeKind target, int target_unsigned) {
+    switch (target) {
+    case TYPE_BOOL:
+        return (val == 0L || val == 1L);
+    case TYPE_CHAR:
+        if (target_unsigned) return (val >= 0L && val <= 255L);
+        return (val >= -128L && val <= 127L);
+    case TYPE_SHORT:
+        if (target_unsigned) return (val >= 0L && val <= 65535L);
+        return (val >= -32768L && val <= 32767L);
+    case TYPE_INT:
+        if (target_unsigned) return (val >= 0L && val <= 4294967295L);
+        return (val >= -2147483648L && val <= 2147483647L);
+    case TYPE_LONG:
+    case TYPE_LONG_LONG:
+        if (target_unsigned) return (val >= 0L);
+        return 1; /* signed 64-bit: long stores value exactly */
+    case TYPE_UNSIGNED_LONG_LONG:
+        return (val >= 0L);
+    default:
+        return 0;
+    }
 }
 
 /* Map a scalar TypeKind to its sizeof value.
@@ -512,6 +541,30 @@ static ASTNode *optimize_expr(ASTNode *node) {
             return make_sizeof_literal(4);
         }
         /* Variable references and complex expressions: leave for codegen. */
+    }
+
+    /* Cast constant folding: (integer_type) integer_literal -> integer_literal
+       with target type, provided the value is preserved (fits in target type).
+       The bottom-up walk ensures children[0] is already folded before this
+       fires, so sizeof/const-prop results flow through casts in one pass. */
+    if (node->type == AST_CAST &&
+            node->child_count == 1 &&
+            node->children[0] != NULL &&
+            node->children[0]->type == AST_INT_LITERAL &&
+            is_scalar_int_type(node->decl_type)) {
+        long val = strtol(node->children[0]->value, NULL, 0);
+        if (cast_value_safe(val, node->decl_type, node->is_unsigned)) {
+            char buf[32];
+            ASTNode *lit;
+            TypeKind dst_type     = node->decl_type;
+            int      dst_unsigned = node->is_unsigned;
+            snprintf(buf, sizeof(buf), "%ld", val);
+            ast_free(node); /* frees AST_CAST and its INT_LITERAL child */
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = dst_type;
+            lit->is_unsigned = dst_unsigned;
+            return lit;
+        }
     }
 
     /* Const propagation: replace a reference to a const-scalar-literal

@@ -2180,6 +2180,19 @@ TODO items completed this stage:
 TODO items completed this stage:
 - [x] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable (Stage 152)
 
+## Stage 153 - Cast Constant Folding
+
+- [x] `src/optimize.c`: add `cast_value_safe(long val, TypeKind target, int target_unsigned)` helper — returns 1 when `val` fits exactly in the target integer type; handles `TYPE_BOOL`, `TYPE_CHAR`, `TYPE_SHORT`, `TYPE_INT`, `TYPE_LONG`, `TYPE_LONG_LONG`, `TYPE_UNSIGNED_LONG_LONG`
+- [x] `src/optimize.c`: `AST_CAST` folding block in `optimize_expr` — when child is `AST_INT_LITERAL` and target is scalar integer and `cast_value_safe` passes, frees the cast node and returns a fresh `AST_INT_LITERAL` with `decl_type`/`is_unsigned` from the cast target; placed between sizeof-expr and VAR_REF blocks
+- [x] Bottom-up ordering ensures `sizeof → literal → cast → literal → binary fold` resolves in one pass; also enables `const-prop → literal → cast → literal` chain
+- [x] Unsafe casts (truncating, sign-changing, unsigned-wrapping) are left unchanged for codegen to handle (e.g., `(char)300` → 44, `(unsigned char)(-1)` → 255)
+- [x] 5 new integration tests with `.expected` and `.cflags` (`-O1`): cast_fold_basic, cast_fold_sizeof, cast_fold_const_prop, cast_fold_dead_branch, cast_fold_unsafe
+- [x] Test results: 2037/2037 portable tests pass; all 5 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 153)
+
+TODO items completed this stage:
+- [x] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value) (Stage 153)
+
 ---
 
 ## TODO
@@ -2333,7 +2346,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
 - [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
 - [x] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable (Stage 152)
-- [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
+- [x] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value) (Stage 153)
 - [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label
 - [x] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it) (Stage 142)
 
