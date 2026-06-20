@@ -2151,6 +2151,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 151 - sizeof Constant Folding
+
+- [x] `src/optimize.c`: add `sizeof_scalar_size(TypeKind)` helper mapping scalar kinds to byte sizes (fixes latent `sizeof(double)→4` bug in codegen for `-O1`)
+- [x] `src/optimize.c`: add `make_sizeof_literal(int)` helper producing `AST_INT_LITERAL` with `decl_type=TYPE_LONG`, `is_unsigned=1`
+- [x] `src/optimize.c`: `AST_SIZEOF_TYPE` folding block in `optimize_expr` — complete coverage (scalar, struct/union/array via `full_type->size`)
+- [x] `src/optimize.c`: `AST_SIZEOF_EXPR` folding block — string-literal (`byte_length+1`), int-literal (`child->decl_type`), char-literal (4); variable/complex operands fall through to codegen unchanged
+- [x] 5 new integration tests (sizeof_type_fold, sizeof_expr_fold, sizeof_dead_branch, sizeof_string_fold, sizeof_struct_fold)
+- [x] Test results: 144/144 integration tests pass; all 5 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 151)
+
+TODO items completed this stage:
+- [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2300,7 +2315,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `if (nonzero) { S1 } else { S2 }` → keep only `S1`
   - [x] `while (0) { S }` → remove loop
   - [x] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
-- [ ] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known)
+- [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
 - [ ] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable
 - [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
 - [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label

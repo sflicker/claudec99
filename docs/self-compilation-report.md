@@ -1,5 +1,30 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 151 self-hosting test
+
+None. The change is confined to `src/optimize.c`: two new static helper
+functions (`sizeof_scalar_size`, `make_sizeof_literal`) added before
+`optimize_expr`, and two new folding blocks added inside `optimize_expr`
+for `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR`. One bootstrap-specific bug
+was caught and fixed before committing: `ast_new` stores the `value`
+pointer directly without copying, so the local `buf[16]` in
+`make_sizeof_literal` must be duplicated with `util_strdup(buf)` to avoid
+a dangling pointer. After that fix, all 2027 tests passed at C0, C1, and
+C2 with no further source changes needed.
+
+## Result (stage 151)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01510000.01123` | 2027/2027 |
+| C1 | `build/ccompiler-c1` | `00.03.01510000.01124` | 2027/2027 |
+| C2 | `build/ccompiler-c2` | `00.03.01510000.01125` | 2027/2027 |
+
+---
+
 ## Issues found during stage 150 self-hosting test
 
 None. The change is confined to `src/optimize.c`: three case blocks in

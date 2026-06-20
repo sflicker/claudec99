@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 151 (sizeof constant folding):
+
+> Stage 151 adds sizeof constant folding to the stage-142 optimizer: `AST_SIZEOF_TYPE` nodes are always folded to `AST_INT_LITERAL` at `-O1` (the parser stores the resolved type and size on the node); `AST_SIZEOF_EXPR` nodes are partially folded for string-literal and integer-literal operands. Two new static helpers in `optimize.c`: `sizeof_scalar_size(TypeKind)` maps type kinds to byte sizes (also fixes a latent codegen bug where `sizeof(double)` returned 4); `make_sizeof_literal(int)` produces an unsigned `TYPE_LONG` literal. After folding, sizeof values compose freely with stages 143–150 (e.g., `sizeof(long) == 8` triggers dead-branch elimination via stage 150). Five new integration tests. All 2027 portable tests pass (165 unit, 1286 valid, 261 invalid, 144 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 150 (dead-branch elimination):
 
 > Stage 150 extends the stage-142 optimizer with dead-branch elimination for `if`, `while`, and `for` statements whose controlling condition is a compile-time integer constant. When the condition folds to an `AST_INT_LITERAL` after child optimization, the unreachable code path is freed and only the live path (or an empty block) is returned. Three new rules in `optimize_stmt`: `if(nonzero)` → then-branch, `if(0)` → else-branch or empty block, `while(0)` → empty block (non-zero while not eliminated to preserve infinite loops), `for(init;0;update)` → init only or empty block. All gated behind `-O1`. Memory management nulls dead-child slots before `ast_free` to prevent double-free. No grammar changes. Six new integration tests (test_dead_if_true, test_dead_if_false, test_dead_while, test_dead_for, test_dead_for_no_init, test_dead_combined). All 2022 portable tests pass (165 unit, 1286 valid, 261 invalid, 139 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
