@@ -52,4 +52,13 @@ void peephole_apply(char ***lines, int *nlines,
 int peephole_run_file(const char *path,
                       const PeepholePattern *patterns, int n_pats);
 
+/*
+ * peephole_builtin_patterns -- return the built-in pattern table.
+ *
+ * Sets *n_pats to the number of entries and returns a pointer to the
+ * static pattern array.  Pass directly to peephole_run_file or
+ * peephole_apply.
+ */
+const PeepholePattern *peephole_builtin_patterns(int *n_pats);
+
 #endif /* CCOMPILER_PEEPHOLE_H */

@@ -334,7 +334,9 @@ static int compile_one_file(const char *source_file,
     fclose(out);
 
     if (opt_level >= 2) {
-        if (peephole_run_file(output_path, NULL, 0) != 0) {
+        int n_pats;
+        const PeepholePattern *pats = peephole_builtin_patterns(&n_pats);
+        if (peephole_run_file(output_path, pats, n_pats) != 0) {
             parser_free(&parser);
             lexer_free(&lexer);
             ast_free(ast);

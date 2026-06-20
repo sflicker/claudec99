@@ -5,6 +5,9 @@
  *            NASM text; patterns expressed as matcher + replacer pairs.
  *            No patterns registered at this stage; the pass is a no-op.
  *
+ * Stage 157: zero-register idiom -- `mov REG, 0` -> `xor REG32, REG32`
+ *            for all 64-bit and 32-bit GP registers; single-line window.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -98,6 +101,102 @@ static int write_lines(const char *path, char * const *lines, int n) {
     fclose(f);
     return 0;
 }
+
+/* -----------------------------------------------------------------------
+ * Zero-register idiom: mov REG, 0  ->  xor REG32, REG32
+ *
+ * Parallel tables: g_zr_src[i] is the source register name in the mov
+ * instruction; g_zr_dst[i] is the 32-bit register name for the xor.
+ * Covers all 64-bit GP registers (writing a 32-bit reg zeroes the upper
+ * 32 bits on x86-64) and their 32-bit forms (also valid to xor).
+ * ----------------------------------------------------------------------- */
+static const char * const g_zr_src[] = {
+    "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
+    "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15",
+    "eax", "ebx", "ecx", "edx", "esi", "edi",
+    NULL
+};
+static const char * const g_zr_dst[] = {
+    "eax", "ebx", "ecx", "edx", "esi", "edi",
+    "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    "eax", "ebx", "ecx", "edx", "esi", "edi",
+    NULL
+};
+
+/*
+ * zr_find_reg -- scan line for "mov REG, 0" (after leading whitespace).
+ * Returns the table index on match, -1 otherwise.
+ */
+static int zr_find_reg(const char *line) {
+    const char *p;
+    int i;
+    size_t rlen;
+
+    /* Skip leading whitespace. */
+    p = line;
+    while (*p == ' ' || *p == '\t') p++;
+
+    /* Must start with "mov ". */
+    if (strncmp(p, "mov ", 4) != 0) return -1;
+    p += 4;
+
+    /* Try each known source register. */
+    for (i = 0; g_zr_src[i] != NULL; i++) {
+        rlen = strlen(g_zr_src[i]);
+        if (strncmp(p, g_zr_src[i], rlen) == 0) {
+            /* Must be followed by exactly ", 0" and nothing else. */
+            if (strcmp(p + rlen, ", 0") == 0) return i;
+        }
+    }
+    return -1;
+}
+
+static int match_zero_reg(const char **win, int n) {
+    (void)n;
+    return zr_find_reg(win[0]) >= 0;
+}
+
+static void replace_zero_reg(const char **win, int n,
+                              char **out, int *out_count) {
+    const char *p;
+    char buf[64];
+    int  idx;
+    size_t prefix_len;
+
+    (void)n;
+
+    idx = zr_find_reg(win[0]);
+
+    /* Measure leading whitespace to preserve indentation. */
+    p = win[0];
+    while (*p == ' ' || *p == '\t') p++;
+    prefix_len = (size_t)(p - win[0]);
+
+    if (prefix_len >= sizeof(buf) - 1) prefix_len = sizeof(buf) - 2;
+    strncpy(buf, win[0], prefix_len);
+    buf[prefix_len] = '\0';
+    strncat(buf, "xor ", sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, g_zr_dst[idx], sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, ", ", sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, g_zr_dst[idx], sizeof(buf) - strlen(buf) - 1);
+
+    out[0] = util_strdup(buf);
+    *out_count = 1;
+}
+
+/* Built-in pattern table. */
+static const PeepholePattern g_builtin_patterns[] = {
+    { 1, match_zero_reg, replace_zero_reg }
+};
+
+const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
+    *n_pats = (int)(sizeof(g_builtin_patterns) / sizeof(g_builtin_patterns[0]));
+    return g_builtin_patterns;
+}
+
+/* -----------------------------------------------------------------------
+ * Sliding window engine
+ * ----------------------------------------------------------------------- */
 
 /*
  * peephole_apply -- run all patterns over the line array in place.

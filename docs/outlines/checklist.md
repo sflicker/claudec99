@@ -2236,6 +2236,21 @@ TODO items completed this stage:
 
 TODO items completed this stage: none (pure bug fix)
 
+## Stage 157 - Zero-Register Peephole Pattern
+
+- [x] `src/peephole.c`: register tables `g_zr_src[]` / `g_zr_dst[]` (20 register pairs covering all 64-bit and 32-bit GP registers), `zr_find_reg` helper, `match_zero_reg` matcher, `replace_zero_reg` replacer, static `g_builtin_patterns[]` table, `peephole_builtin_patterns()` accessor
+- [x] `include/peephole.h`: added `peephole_builtin_patterns(int *n_pats)` declaration
+- [x] `src/compiler.c`: updated `-O2` peephole call to pass built-in pattern table (`peephole_builtin_patterns`) instead of `NULL, 0`
+- [x] Pattern: single-line window; strips leading whitespace; matches `mov REG, 0` exactly; replaces with `xor REG32, REG32` preserving indentation
+	- Covers 64-bit sources: `rax`→`eax`, `rbx`→`ebx`, `rcx`→`ecx`, `rdx`→`edx`, `rsi`→`esi`, `rdi`→`edi`, `r8`→`r8d` through `r15`→`r15d`
+	- Covers 32-bit sources: `eax`→`eax`, `ebx`→`ebx`, `ecx`→`ecx`, `edx`→`edx`, `esi`→`esi`, `edi`→`edi`
+- [x] 4 new integration tests with `.expected` and `.cflags` (`-O2`): `test_zero_reg_int`, `test_zero_reg_long`, `test_zero_reg_arithmetic`, `test_zero_reg_logical`
+- [x] Test results: 2053/2053 portable tests pass (165 unit, 1286 valid, 261 invalid, 170 integration, 50 print-AST, 100 print-tokens, 21 print-asm)
+- [x] Self-host C0→C1→C2 verified (Stage 157)
+
+TODO items completed this stage:
+- [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (Stage 157)
+
 ---
 
 ## TODO
@@ -2398,7 +2413,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
 Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches short instruction windows, and rewrites them in place. Requires no structural changes to codegen.
 
 - [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
-- [ ] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits)
+- [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits) (Stage 157)
 - [ ] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove
 - [ ] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX`
 - [ ] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload
