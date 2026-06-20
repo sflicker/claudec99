@@ -1,5 +1,44 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 157 self-hosting test
+
+Two bootstrap issues fixed.
+
+**Issue 1 — struct aggregate initializer with function pointers:**
+The original stage 157 implementation used a static aggregate initializer for
+`g_builtin_patterns`: `static const PeepholePattern g_builtin_patterns[] = { { 1, match_zero_reg, replace_zero_reg } };`.
+C0 does not support function-pointer initializers in struct aggregate literals
+(`error: unsupported initializer for struct field 'matcher'`). Fixed by converting
+to a runtime lazy-initialization pattern using a `g_builtin_patterns_ready` guard
+and explicit field assignments inside `peephole_builtin_patterns()`.
+
+**Issue 2 — pointer arithmetic via multi-level dereference generates wrong code in C0:**
+`peephole_apply` passed `(const char **)(*lines + i)` to matcher and replacer
+callbacks, where `lines` is `char ***`. C0's codegen loses element-type information
+when the base pointer is obtained by dereferencing a pointer-to-pointer, generating
+`add eax, ecx` (32-bit addition, no element-size scaling) instead of the correct
+64-bit addition scaled by `sizeof(char*) = 8`. This produced a corrupt window
+pointer → segfault in all C1 `-O2` tests.
+
+Fixed by introducing a local `char **arr` variable refreshed to `*lines` at the
+top of each while-loop iteration; `arr + i` uses a typed local and C0 generates
+correct pointer arithmetic for it.
+
+All 2053 tests passed at C0, C1, and C2 after both fixes.
+
+## Result (stage 157)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01570000.01165` | 2053/2053 |
+| C1 | `build/ccompiler-c1` | `00.03.01570000.01166` | 2053/2053 |
+| C2 | `build/ccompiler-c2` | `00.03.01570000.01167` | 2053/2053 |
+
+---
+
 ## Issues found during stage 156 self-hosting test
 
 None. The change is confined to `src/optimize.c`: the dead-code scan loop
