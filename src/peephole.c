@@ -184,13 +184,19 @@ static void replace_zero_reg(const char **win, int n,
     *out_count = 1;
 }
 
-/* Built-in pattern table. */
-static const PeepholePattern g_builtin_patterns[] = {
-    { 1, match_zero_reg, replace_zero_reg }
-};
+/* Built-in pattern table -- initialized at first call because C0 does not
+   support function-pointer initializers in struct aggregate literals. */
+static PeepholePattern g_builtin_patterns[1];
+static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
-    *n_pats = (int)(sizeof(g_builtin_patterns) / sizeof(g_builtin_patterns[0]));
+    if (!g_builtin_patterns_ready) {
+        g_builtin_patterns[0].window_size = 1;
+        g_builtin_patterns[0].matcher     = match_zero_reg;
+        g_builtin_patterns[0].replacer    = replace_zero_reg;
+        g_builtin_patterns_ready          = 1;
+    }
+    *n_pats = 1;
     return g_builtin_patterns;
 }
 
