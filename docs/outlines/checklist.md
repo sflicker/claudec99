@@ -2224,6 +2224,18 @@ TODO items completed this stage:
 TODO items completed this stage:
 - [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
 
+## Stage 156 - -O1 Switch Dead-Code Removal Bug Fix (CC99-014)
+
+- [x] Bug fix in `src/optimize.c`: dead-code scan in `AST_BLOCK` case now stops at `AST_CASE_SECTION` and `AST_DEFAULT_SECTION` in addition to `AST_LABEL_STATEMENT`
+	- Previously: `break` in a switch body block caused all subsequent case/default sections to be removed as "dead code," since only `AST_LABEL_STATEMENT` was recognized as a control-flow boundary
+	- Fix: two additional conditions added to the while loop scanning for the end of the dead zone
+- [x] 4 new integration tests: `test_switch_break_o0`, `test_switch_break_o1` (CC99-014 repro), `test_switch_break_default_o1`, `test_switch_state_update_o1`
+- [x] `cc99_testing/test_o1_state_machine_switch.c`: manual repro file matching spec
+- [x] Test results: 2049/2049 portable tests pass (165 unit, 1286 valid, 261 invalid, 166 integration, 50 print-AST, 100 print-tokens, 21 print-asm)
+- [x] Self-host C0→C1→C2 verified; no source changes during bootstrap (Stage 156)
+
+TODO items completed this stage: none (pure bug fix)
+
 ---
 
 ## TODO
