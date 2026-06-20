@@ -60,6 +60,7 @@ SRC_FILES=(
     src/vec.c
     src/version.c
     src/optimize.c
+    src/peephole.c
 )
 
 do_cmake_build() {
