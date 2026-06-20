@@ -216,23 +216,25 @@ void peephole_apply(char ***lines, int *nlines,
     char  *out_buf[PEEPHOLE_WINDOW_MAX];
     char **old_arr;
     char **new_arr;
+    char **arr;
 
     if (n_pats == 0 || patterns == NULL) return;
 
     i = 0;
     while (i < *nlines) {
+        arr     = *lines;
         matched = 0;
         for (p = 0; p < n_pats && !matched; p++) {
             w = patterns[p].window_size;
             if (i + w > *nlines) continue;
 
             if (!patterns[p].matcher(
-                    (const char **)(*lines + i), w))
+                    (const char **)(arr + i), w))
                 continue;
 
             out_count = 0;
             patterns[p].replacer(
-                (const char **)(*lines + i), w,
+                (const char **)(arr + i), w,
                 out_buf, &out_count);
 
             /* Build a new array: prefix + replacements + suffix. */
