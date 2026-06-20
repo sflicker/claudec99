@@ -125,7 +125,7 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
+ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
 ```
 
 - Default: writes `<name>.asm` for each source file next to the invocation directory and
@@ -223,6 +223,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through stage 155 (peephole optimizer infrastructure):
+
+> Stage 155 establishes the post-codegen peephole optimizer infrastructure: `include/peephole.h` and `src/peephole.c`. The peephole pass reads the emitted NASM assembly file as a line array, slides a window of 2–4 lines across it, and applies registered `PeepholeMatcher`/`PeepholeReplacer` function-pointer pairs. A new `-O2` flag wires the pass into the pipeline (at `-O2`, both the AST optimizer and the peephole pass run; no structural changes to codegen). No patterns are registered at this stage — the pass is a transparent no-op. Three new integration tests verify `-O2` produces correct output. Two bootstrap issues found and fixed: `const char * const *` in function pointer parameters (C0 does not support const-after-star in this position) simplified to `const char **`; `src/peephole.c` missing from `build.sh`'s `SRC_FILES` added. All 2045 portable tests pass (165 unit, 1286 valid, 261 invalid, 162 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through stage 154 (unreachable statement removal):
 
