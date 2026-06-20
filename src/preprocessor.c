@@ -1270,6 +1270,34 @@ static char *strip_block_comments(const char *s, size_t start, size_t end) {
     return buf;
 }
 
+/* Strip C-style block comments (/ * ... * /) and line comments (//) from a
+ * preprocessor condition string.  Each comment is replaced by a single space
+ * so that surrounding tokens remain separated.  Returns a newly malloc'd
+ * NUL-terminated string; the caller is responsible for freeing it. */
+static char *strip_cond_comments(const char *s) {
+    size_t len = strlen(s);
+    char *out = malloc(len + 1);
+    if (!out) { fprintf(stderr, "error: out of memory\n"); exit(1); }
+    size_t in = 0, o = 0;
+    while (s[in]) {
+        if (s[in] == '/' && s[in + 1] == '*') {
+            out[o++] = ' ';
+            in += 2;
+            while (s[in] && !(s[in] == '*' && s[in + 1] == '/'))
+                in++;
+            if (s[in]) in += 2;
+        } else if (s[in] == '/' && s[in + 1] == '/') {
+            out[o++] = ' ';
+            while (s[in] && s[in] != '\n')
+                in++;
+        } else {
+            out[o++] = s[in++];
+        }
+    }
+    out[o] = '\0';
+    return out;
+}
+
 /* Skip to end of a preprocessor directive line, consuming any block comment
  * that spans multiple physical lines (after backslash-newline splicing). */
 static void skip_directive_tail(const char *s, size_t *in) {
@@ -1425,8 +1453,10 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     char *cond_text = malloc(cond_len + 1);
                     memcpy(cond_text, s + cond_start, cond_len);
                     cond_text[cond_len] = '\0';
-                    char *expanded = expand_macros_text(cond_text, macros);
+                    char *stripped = strip_cond_comments(cond_text);
                     free(cond_text);
+                    char *expanded = expand_macros_text(stripped, macros);
+                    free(stripped);
                     size_t exp_in = 0;
                     while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
                     long ifval = eval_cond_expr(expanded, &exp_in, macros, out.data, spliced);
@@ -1540,8 +1570,10 @@ static char *preprocess_internal(const char *source, const char *source_path,
                     char *cond_text = malloc(cond_len + 1);
                     memcpy(cond_text, s + cond_start, cond_len);
                     cond_text[cond_len] = '\0';
-                    char *expanded = expand_macros_text(cond_text, macros);
+                    char *stripped = strip_cond_comments(cond_text);
                     free(cond_text);
+                    char *expanded = expand_macros_text(stripped, macros);
+                    free(stripped);
                     size_t exp_in = 0;
                     while (expanded[exp_in] == ' ' || expanded[exp_in] == '\t') exp_in++;
                     long elifval = eval_cond_expr(expanded, &exp_in, macros, out.data, spliced);
@@ -1871,6 +1903,16 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             if (s[k] == '\\' && k + 1 < repl_end) k++;
                             k++;
                         }
+                        continue;
+                    }
+                    /* Skip block comments: '#' inside a comment is not
+                     * a stringification or paste operator. */
+                    if (s[k] == '/' && k + 1 < repl_end && s[k + 1] == '*') {
+                        k += 2;
+                        while (k + 1 < repl_end &&
+                               !(s[k] == '*' && s[k + 1] == '/'))
+                            k++;
+                        if (k + 1 < repl_end) k++;
                         continue;
                     }
                     if (s[k] == '#' && k + 1 < repl_end && s[k + 1] == '#') {
