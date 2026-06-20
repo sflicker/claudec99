@@ -122,12 +122,12 @@ void peephole_apply(char ***lines, int *nlines,
             if (i + w > *nlines) continue;
 
             if (!patterns[p].matcher(
-                    (const char * const *)(*lines + i), w))
+                    (const char **)(*lines + i), w))
                 continue;
 
             out_count = 0;
             patterns[p].replacer(
-                (const char * const *)(*lines + i), w,
+                (const char **)(*lines + i), w,
                 out_buf, &out_count);
 
             /* Build a new array: prefix + replacements + suffix. */

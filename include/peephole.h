@@ -10,7 +10,7 @@
  * PeepholeMatcher -- return 1 if the window of `n` lines matches.
  * `win` is a read-only array of `n` trimmed strings (no trailing newline).
  */
-typedef int (*PeepholeMatcher)(const char * const *win, int n);
+typedef int (*PeepholeMatcher)(const char **win, int n);
 
 /*
  * PeepholeReplacer -- write replacement lines for a matched window.
@@ -18,7 +18,7 @@ typedef int (*PeepholeMatcher)(const char * const *win, int n);
  * The replacer fills out[0..*out_count-1] with heap-allocated strings
  * (no trailing newline) and sets *out_count (0 = delete all n lines).
  */
-typedef void (*PeepholeReplacer)(const char * const *win, int n,
+typedef void (*PeepholeReplacer)(const char **win, int n,
                                   char **out, int *out_count);
 
 typedef struct {
