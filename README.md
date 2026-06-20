@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 152 (constant propagation for `const` scalar locals):
+
+> Stage 152 adds constant propagation to the stage-142 optimizer: each `AST_VAR_REF` of a `const`-qualified scalar local variable initialized with an integer literal is replaced by a fresh `AST_INT_LITERAL` in `optimize_expr`. A file-static `g_const_table[64]` records eligible declarations as the optimizer walks function bodies; scope nesting is tracked by saving/restoring the table count in the `AST_BLOCK` case of `optimize_stmt`. The substituted literal is immediately visible to all downstream folding passes — binary folding (stage 143), dead-branch elimination (stage 150), etc. Only `AST_DECLARATION` nodes (not multi-var `AST_DECL_LIST`) are recorded; global consts and aggregates are excluded. Five new integration tests (const_prop_basic, const_prop_fold, const_prop_dead_branch, const_prop_scope, const_prop_init_fold), all with `.expected` output and `-O1` cflags. All 2032 portable tests pass (165 unit, 1286 valid, 261 invalid, 149 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 151 (sizeof constant folding):
 
 > Stage 151 adds sizeof constant folding to the stage-142 optimizer: `AST_SIZEOF_TYPE` nodes are always folded to `AST_INT_LITERAL` at `-O1` (the parser stores the resolved type and size on the node); `AST_SIZEOF_EXPR` nodes are partially folded for string-literal and integer-literal operands. Two new static helpers in `optimize.c`: `sizeof_scalar_size(TypeKind)` maps type kinds to byte sizes (also fixes a latent codegen bug where `sizeof(double)` returned 4); `make_sizeof_literal(int)` produces an unsigned `TYPE_LONG` literal. After folding, sizeof values compose freely with stages 143–150 (e.g., `sizeof(long) == 8` triggers dead-branch elimination via stage 150). Five new integration tests. All 2027 portable tests pass (165 unit, 1286 valid, 261 invalid, 144 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.

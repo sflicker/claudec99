@@ -2164,6 +2164,22 @@ TODO items completed this stage:
 TODO items completed this stage:
 - [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
 
+## Stage 152 - Constant Propagation for `const` Scalar Locals
+
+- [x] `src/optimize.c`: add `CONST_PROP_MAX` (64), `ConstEntry` typedef (name, value, decl_type, is_unsigned), `g_const_table[]` and `g_const_count` file-statics
+- [x] `src/optimize.c`: add `is_scalar_int_type(TypeKind)` helper — returns 1 for `TYPE_BOOL/CHAR/SHORT/INT/LONG/LONG_LONG/UNSIGNED_LONG_LONG`
+- [x] `src/optimize.c`: add `const_prop_lookup(name)` helper — scans table right-to-left for innermost-scope match
+- [x] `src/optimize.c`: `AST_BLOCK` case saves/restores `g_const_count` for scope tracking; inner-scope entries discarded on block exit
+- [x] `src/optimize.c`: `AST_DECLARATION` case split from `AST_DECL_LIST`; after initializer optimization, records const scalar-int locals whose initializer is `AST_INT_LITERAL`
+- [x] `src/optimize.c`: `AST_VAR_REF` substitution in `optimize_expr` — replaces matched VAR_REF with fresh `AST_INT_LITERAL` carrying declaration's `decl_type`/`is_unsigned`
+- [x] `src/optimize.c`: `optimize_translation_unit` resets `g_const_count = 0` before each function body
+- [x] 5 new integration tests with `.expected` and `.cflags` (`-O1`): const_prop_basic, const_prop_fold, const_prop_dead_branch, const_prop_scope, const_prop_init_fold
+- [x] Test results: 2032/2032 portable tests pass; all 5 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 152)
+
+TODO items completed this stage:
+- [x] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable (Stage 152)
+
 ---
 
 ## TODO
@@ -2316,7 +2332,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `while (0) { S }` → remove loop
   - [x] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
 - [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
-- [ ] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable
+- [x] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable (Stage 152)
 - [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
 - [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label
 - [x] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it) (Stage 142)
