@@ -1,5 +1,30 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 150 self-hosting test
+
+None. The change is confined to `src/optimize.c`: three case blocks in
+`optimize_stmt` are extended with constant-condition dead-branch checks for
+`AST_IF_STATEMENT`, `AST_WHILE_STATEMENT`, and `AST_FOR_STATEMENT`. All new
+code uses `strtol`, `ast_free`, `ast_new`, `ast_add_child`, and pointer
+operations — all available in C0. New `{ }` case blocks declare `keep` /
+`init` / `stmt` at the top before any executable statements, satisfying C0's
+declaration-before-statement rule. No VLAs, no `//` comments, no new AST node
+types, no parser changes, no codegen changes. All 2022 tests passed at C0, C1,
+and C2 with no source changes needed.
+
+## Result (stage 150)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01500000.01117` | 2022/2022 |
+| C1 | `build/ccompiler-c1` | `00.03.01500000.01118` | 2022/2022 |
+| C2 | `build/ccompiler-c2` | `00.03.01500000.01119` | 2022/2022 |
+
+---
+
 ## Issues found during stage 149 self-hosting test
 
 None. The change is confined to `src/optimize.c`: a new `AST_CONDITIONAL_EXPR`

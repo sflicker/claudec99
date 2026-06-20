@@ -2134,6 +2134,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 150 - Dead-Branch Elimination
+
+- [x] `src/optimize.c`: extend `optimize_stmt` with constant-condition dead-branch checks for `AST_IF_STATEMENT`, `AST_WHILE_STATEMENT`, and `AST_FOR_STATEMENT`
+	- `if(nonzero){S1}else{S2}` → `S1`: null `children[1]`, `ast_free(node)`, return then-branch
+	- `if(0){S1}else{S2}` → `S2`: null `children[2]`, `ast_free(node)`, return else-branch
+	- `if(0){S1}` (no else) → `{}`: `ast_free(node)`, return `ast_new(AST_BLOCK, NULL)`
+	- `while(0){S}` → `{}`: `ast_free(node)`, return `ast_new(AST_BLOCK, NULL)`
+	- `for(init;0;update){S}` → `init` (or `{}`): null `children[0]`, `ast_free(node)`, return init or empty block; expression inits wrapped in `AST_EXPRESSION_STMT` so `codegen_statement` can emit them
+- [x] 6 new integration tests (dead_if_true, dead_if_false, dead_while, dead_for, dead_for_no_init, dead_combined)
+- [x] Test results: 139/139 integration tests pass; all 6 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 150)
+
+TODO items completed this stage:
+- [x] Dead-branch elimination in `if`/`while`/`for` with constant condition (Stage 150)
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2278,11 +2295,11 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
   - [x] `x && 1` → `(x != 0)`, `x || 0` → `(x != 0)` (simplify to boolean cast) (Stage 147)
 - [x] Negation folding: `--x` (unary minus of unary minus) → `x`; `!!x` double-not chain collapse (Stage 148 / Stage 147)
 - [x] Conditional expression folding — `AST_CONDITIONAL_EXPR` with constant condition: replace with the selected branch node (Stage 149)
-- [ ] Dead-branch elimination in `if`/`while`/`for` with constant condition
-  - [ ] `if (0) { S1 } else { S2 }` → keep only `S2`
-  - [ ] `if (nonzero) { S1 } else { S2 }` → keep only `S1`
-  - [ ] `while (0) { S }` → remove loop
-  - [ ] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
+- [x] Dead-branch elimination in `if`/`while`/`for` with constant condition (Stage 150)
+  - [x] `if (0) { S1 } else { S2 }` → keep only `S2`
+  - [x] `if (nonzero) { S1 } else { S2 }` → keep only `S1`
+  - [x] `while (0) { S }` → remove loop
+  - [x] `for (init; 0; update) { S }` → emit only `init` (if present), drop loop
 - [ ] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known)
 - [ ] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable
 - [ ] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value)
