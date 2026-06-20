@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 155 self-hosting test
+
+One bootstrap issue fixed: `include/peephole.h` originally used
+`const char * const *` in the `PeepholeMatcher` and `PeepholeReplacer`
+function pointer parameter types. The C0 compiler does not support `const`
+after `*` in a parameter type, producing `error: expected ')', got 'const'`.
+Fixed by simplifying to `const char **` in both the header and `src/peephole.c`.
+Also, `src/peephole.c` was missing from `build.sh`'s `SRC_FILES` array,
+causing the bootstrap linker to report `undefined reference to peephole_run_file`.
+Both issues fixed; C0→C1→C2 verified with all 2045 tests passing at every stage.
+
+## Result (stage 155)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01550000.01149` | 2045/2045 |
+| C1 | `build/ccompiler-c1` | `00.03.01550000.01150` | 2045/2045 |
+| C2 | `build/ccompiler-c2` | `00.03.01550000.01151` | 2045/2045 |
+
+---
+
 ## Issues found during stage 154 self-hosting test
 
 None. The change is confined to `src/optimize.c`: one new static helper
