@@ -6887,18 +6887,27 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
             codegen_statement(cg, body->children[i], is_main);
         }
 
-        /* Void functions get an implicit epilogue so falling off the end
-         * returns cleanly.  For non-void functions the behaviour of
-         * falling off the end is undefined; we don't emit a spurious ret. */
-        if (node->decl_type == TYPE_VOID) {
-            fprintf(cg->output, "    mov r12, [rbp - 16]\n");
-            fprintf(cg->output, "    mov r13, [rbp - 24]\n");
-            fprintf(cg->output, "    mov r14, [rbp - 32]\n");
-            fprintf(cg->output, "    mov r15, [rbp - 40]\n");
-            fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
-            fprintf(cg->output, "    mov rsp, rbp\n");
-            fprintf(cg->output, "    pop rbp\n");
-            fprintf(cg->output, "    ret\n");
+        /* Void functions and main() get an implicit epilogue so falling off
+         * the end returns cleanly.  C99 §5.1.2.2.3: reaching } of main is
+         * equivalent to return 0.  For other non-void functions the behaviour
+         * is undefined; we don't emit a spurious ret.
+         * Skip the epilogue when the last statement is already a return so we
+         * don't emit unreachable dead code after an explicit `ret`. */
+        {
+            int last_is_return = body->child_count > 0 &&
+                body->children[body->child_count - 1]->type == AST_RETURN_STATEMENT;
+            if ((node->decl_type == TYPE_VOID || is_main) && !last_is_return) {
+                if (is_main)
+                    fprintf(cg->output, "    mov eax, 0\n");
+                fprintf(cg->output, "    mov r12, [rbp - 16]\n");
+                fprintf(cg->output, "    mov r13, [rbp - 24]\n");
+                fprintf(cg->output, "    mov r14, [rbp - 32]\n");
+                fprintf(cg->output, "    mov r15, [rbp - 40]\n");
+                fprintf(cg->output, "    mov rbx, [rbp - 8]\n");
+                fprintf(cg->output, "    mov rsp, rbp\n");
+                fprintf(cg->output, "    pop rbp\n");
+                fprintf(cg->output, "    ret\n");
+            }
         }
     }
 }
