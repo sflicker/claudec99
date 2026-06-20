@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 148 (negation folding):
+
+> Stage 148 extends the stage-142 optimizer with negation folding: reducing `-(-x)` to `x` for non-constant expressions. This is the arithmetic analogue of the `!!x` (double logical NOT) rule added in Stage 147. A new rule block in `optimize_expr` detects double unary-minus chains with non-literal operands and returns the inner operand directly. When the operand is a compile-time integer literal, stage-144's two-pass constant unary folding already reduces `-(-const)` to the original value, so this rule fires only for non-constant cases. Memory management nulls the inner node's child slot before freeing to prevent double-free. No grammar changes. Three new integration tests (test_neg_fold_double_minus, test_neg_fold_triple_minus, test_neg_fold_combined). All 2012 portable tests pass (165 unit, 1286 valid, 261 invalid, 129 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 147 (boolean and logical simplification):
 
 > Stage 147 adds boolean and logical simplification to the stage-142 optimizer: `!!x → (x != 0)`, `x && 0 → 0`, `x || nonzero → 1`, `x && nonzero → (x != 0)`, and `x || 0 → (x != 0)`. Two rule blocks fire under `-O1` in `optimize_expr`: the double-NOT block (after stage-144 unary folding) and the binary boolean block (after stage-146 strength reduction). The constant case `!!const` is skipped (already handled by stage-144). Left-operand-literal cases (`0 && x`, `nonzero || x`) are already handled by stage-143 short-circuit folding and are not re-implemented. No grammar changes. Six new integration tests (bool_simplify_and_zero, bool_simplify_or_nonzero, bool_simplify_and_one, bool_simplify_or_zero, bool_double_not, bool_simplify_combined). All 2009 portable tests pass (165 unit, 1286 valid, 261 invalid, 126 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
