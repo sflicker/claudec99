@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 149 (conditional expression folding):
+
+> Stage 149 extends the stage-142 optimizer with conditional expression folding: when the condition of a ternary operator (`?:`) is a compile-time integer constant, the entire expression is replaced with the selected branch. The condition child (condition of `?:`) may have been folded to an `AST_INT_LITERAL` by stage-143 (constant binary folding), stage-144 (constant unary folding), or earlier optimizer rules. A new rule block in `optimize_expr` detects `AST_CONDITIONAL_EXPR` nodes whose condition child is an `AST_INT_LITERAL`, selects the appropriate branch (true branch for nonzero, false branch for zero), and frees the dead branch and ternary node via `ast_free`. Memory management nulls the kept branch's child slot before freeing to prevent double-free. No grammar changes. Four new integration tests (test_cond_fold_true, test_cond_fold_false, test_cond_fold_nested, test_cond_fold_combined). All 2016 portable tests pass (165 unit, 1286 valid, 261 invalid, 133 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 148 (negation folding):
 
 > Stage 148 extends the stage-142 optimizer with negation folding: reducing `-(-x)` to `x` for non-constant expressions. This is the arithmetic analogue of the `!!x` (double logical NOT) rule added in Stage 147. A new rule block in `optimize_expr` detects double unary-minus chains with non-literal operands and returns the inner operand directly. When the operand is a compile-time integer literal, stage-144's two-pass constant unary folding already reduces `-(-const)` to the original value, so this rule fires only for non-constant cases. Memory management nulls the inner node's child slot before freeing to prevent double-free. No grammar changes. Three new integration tests (test_neg_fold_double_minus, test_neg_fold_triple_minus, test_neg_fold_combined). All 2012 portable tests pass (165 unit, 1286 valid, 261 invalid, 129 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -765,7 +769,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 146 all 2003 portable tests pass (1286 valid, 261 invalid, 120 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 120/120.
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 149 all 2016 portable tests pass (1286 valid, 261 invalid, 133 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 133/133.
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
