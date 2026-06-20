@@ -9,6 +9,8 @@
  * Stage 149: conditional expression folding -- const ? T : F -> selected branch.
  * Stage 150: dead-branch elimination -- if/while/for with constant-zero condition.
  * Stage 151: sizeof constant folding -- AST_SIZEOF_TYPE/EXPR -> AST_INT_LITERAL.
+ * Stage 152: const propagation -- const scalar locals with literal init replaced
+ *            at each AST_VAR_REF with the recorded integer literal.
  */
 
 #include <stddef.h>
@@ -21,6 +23,47 @@
 
 static ASTNode *optimize_expr(ASTNode *node);
 static ASTNode *optimize_stmt(ASTNode *node);
+
+/* Const propagation table for the current function.
+   Populated by AST_DECLARATION (is_const + scalar-int + literal init).
+   Entries are scoped: AST_BLOCK saves/restores g_const_count on entry/exit.
+   Reset to 0 before each function in optimize_translation_unit. */
+#define CONST_PROP_MAX 64
+typedef struct {
+    const char *name;        /* aliases AST_DECLARATION.value; stable lifetime */
+    long        value;       /* numeric value of the recorded initializer */
+    TypeKind    decl_type;   /* declared type of the variable */
+    int         is_unsigned; /* 1 if the variable is unsigned */
+} ConstEntry;
+static ConstEntry g_const_table[CONST_PROP_MAX];
+static int        g_const_count = 0;
+
+/* Return 1 if k is a scalar integer type eligible for const propagation. */
+static int is_scalar_int_type(TypeKind k) {
+    switch (k) {
+    case TYPE_BOOL:
+    case TYPE_CHAR:
+    case TYPE_SHORT:
+    case TYPE_INT:
+    case TYPE_LONG:
+    case TYPE_LONG_LONG:
+    case TYPE_UNSIGNED_LONG_LONG:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* Scan g_const_table right-to-left (innermost scope first).
+   Returns the ConstEntry for name, or NULL if not found. */
+static const ConstEntry *const_prop_lookup(const char *name) {
+    int j;
+    for (j = g_const_count - 1; j >= 0; j--) {
+        if (strcmp(name, g_const_table[j].name) == 0)
+            return &g_const_table[j];
+    }
+    return NULL;
+}
 
 /* Map a scalar TypeKind to its sizeof value.
    Mirrors codegen_expression's AST_SIZEOF_TYPE scalar switch, with one fix:
@@ -471,6 +514,22 @@ static ASTNode *optimize_expr(ASTNode *node) {
         /* Variable references and complex expressions: leave for codegen. */
     }
 
+    /* Const propagation: replace a reference to a const-scalar-literal
+       local with the recorded integer literal so folding passes can see it. */
+    if (node->type == AST_VAR_REF && node->value != NULL) {
+        const ConstEntry *ce = const_prop_lookup(node->value);
+        if (ce != NULL) {
+            char buf[32];
+            ASTNode *lit;
+            snprintf(buf, sizeof(buf), "%ld", ce->value);
+            lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+            lit->decl_type   = ce->decl_type;
+            lit->is_unsigned = ce->is_unsigned;
+            ast_free(node); /* frees VAR_REF node; value string not freed by ast_free */
+            return lit;
+        }
+    }
+
     return node;
 }
 
@@ -480,10 +539,15 @@ static ASTNode *optimize_stmt(ASTNode *node) {
 
     switch (node->type) {
 
-    case AST_BLOCK:
+    case AST_BLOCK: {
+        /* Save g_const_count so entries added in this block are invisible
+           in the enclosing scope after the block exits. */
+        int saved_count = g_const_count;
         for (i = 0; i < node->child_count; i++)
             node->children[i] = optimize_stmt(node->children[i]);
+        g_const_count = saved_count;
         return node;
+    }
 
     case AST_IF_STATEMENT: {
         /* children: [condition, then-body, (optional) else-body] */
@@ -573,8 +637,28 @@ static ASTNode *optimize_stmt(ASTNode *node) {
         return node;
 
     case AST_DECLARATION:
+        /* Optimize initializer expression (child 0, if present). */
+        if (node->child_count > 0)
+            node->children[0] = optimize_expr(node->children[0]);
+        /* Record const scalar-int locals whose initializer folded to a literal. */
+        if (node->is_const &&
+                is_scalar_int_type(node->decl_type) &&
+                node->child_count > 0 &&
+                node->children[0] != NULL &&
+                node->children[0]->type == AST_INT_LITERAL &&
+                g_const_count < CONST_PROP_MAX) {
+            g_const_table[g_const_count].name        = node->value;
+            g_const_table[g_const_count].value       = strtol(node->children[0]->value, NULL, 0);
+            g_const_table[g_const_count].decl_type   = node->decl_type;
+            g_const_table[g_const_count].is_unsigned = node->is_unsigned;
+            g_const_count++;
+        }
+        return node;
+
     case AST_DECL_LIST:
-        /* Initializer expressions are children of DECLARATION nodes. */
+        /* Multi-variable declarations: optimize each sub-declaration's
+           initializer.  Const-prop recording for multi-var decls is out
+           of scope for this stage. */
         for (i = 0; i < node->child_count; i++)
             node->children[i] = optimize_expr(node->children[i]);
         return node;
@@ -613,8 +697,10 @@ ASTNode *optimize_translation_unit(ASTNode *root, int opt_level) {
              * is a definition, not a prototype).  Prototypes have no body;
              * detect by checking whether the last child is AST_BLOCK. */
             int last = decl->child_count - 1;
-            if (last >= 0 && decl->children[last]->type == AST_BLOCK)
+            if (last >= 0 && decl->children[last]->type == AST_BLOCK) {
+                g_const_count = 0; /* reset per-function const propagation table */
                 decl->children[last] = optimize_stmt(decl->children[last]);
+            }
         }
     }
     return root;
