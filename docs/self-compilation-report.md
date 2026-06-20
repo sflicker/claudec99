@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 148 self-hosting test
+
+None. The change is confined to `src/optimize.c`: a new `-(-x)` block is
+inserted after the stage-147 `!!x` block and before the stage-145 algebraic
+identity block in `optimize_expr`. All new code uses `strcmp`, `ast_free`, and
+pointer operations — all available in C0. No VLAs, no `//` comments, all
+declarations at the top of the `if` block. No new AST node types, no parser
+changes, no codegen changes. All 2012 tests passed at C0, C1, and C2 with no
+source changes needed.
+
+## Result (stage 148)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01480000.01106` | 2012/2012 |
+| C1 | `build/ccompiler-c1` | `00.03.01480000.01107` | 2012/2012 |
+| C2 | `build/ccompiler-c2` | `00.03.01480000.01108` | 2012/2012 |
+
+---
+
 ## Issues found during stage 147 self-hosting test
 
 None. The change is confined to `src/optimize.c`: two new rule blocks are
