@@ -1,5 +1,32 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 152 self-hosting test
+
+None. The change is confined to `src/optimize.c`: a file-static `ConstEntry`
+table (`g_const_table[64]`) and count (`g_const_count`) were added, along with
+three new static helpers (`is_scalar_int_type`, `const_prop_lookup`, and the
+`CONST_PROP_MAX` macro). The `AST_DECLARATION` case in `optimize_stmt` was
+split from `AST_DECL_LIST` and extended to record eligible const scalars. The
+`AST_BLOCK` case now saves and restores `g_const_count` for scope tracking.
+`optimize_expr` got a new `AST_VAR_REF` substitution block before the final
+`return node;`. `optimize_translation_unit` resets `g_const_count = 0` before
+each function. All new code uses `/* */` comments, places declarations before
+executable statements, and uses no VLAs — compatible with C0. All 2032 tests
+passed at C0, C1, and C2 with no source changes needed.
+
+## Result (stage 152)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01520000.01127` | 2032/2032 |
+| C1 | `build/ccompiler-c1` | `00.03.01520000.01128` | 2032/2032 |
+| C2 | `build/ccompiler-c2` | `00.03.01520000.01129` | 2032/2032 |
+
+---
+
 ## Issues found during stage 151 self-hosting test
 
 None. The change is confined to `src/optimize.c`: two new static helper
