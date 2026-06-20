@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 153 self-hosting test
+
+None. The change is confined to `src/optimize.c`: one new static helper
+`cast_value_safe(long val, TypeKind target, int target_unsigned)` added before
+`sizeof_scalar_size`, and one new `AST_CAST` folding block added inside
+`optimize_expr` between the `AST_SIZEOF_EXPR` block and the `AST_VAR_REF`
+const-propagation block. All new code uses `/* */` comments, places
+declarations before executable statements, and uses no VLAs — compatible
+with C0. All 2037 tests passed at C0, C1, and C2 with no source changes
+needed during bootstrap.
+
+## Result (stage 153)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01530000.01133` | 2037/2037 |
+| C1 | `build/ccompiler-c1` | `00.03.01530000.01134` | 2037/2037 |
+| C2 | `build/ccompiler-c2` | `00.03.01530000.01135` | 2037/2037 |
+
+---
+
 ## Issues found during stage 152 self-hosting test
 
 None. The change is confined to `src/optimize.c`: a file-static `ConstEntry`
