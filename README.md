@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through stage 154 (unreachable statement removal):
+
+> Stage 154 adds unreachable statement removal to the stage-142 optimizer: in `optimize_stmt`'s `AST_BLOCK` case, after each child statement is optimized, if it is a direct-child terminal statement (`return`, `break`, `continue`, or `goto`), all subsequent siblings in the same block are freed up to the next label (exclusive) and the children array is compacted. A new `is_terminal_stmt()` helper identifies the four terminal node types. Labels are never removed since they are reachable via `goto`; multiple dead zones in one block are handled by the outer loop continuing past each label. Only direct block-level children are checked — nested blocks ending in a terminal do not trigger removal of outer siblings. All gated behind `-O1`. Five new integration tests (unreachable_return, unreachable_break, unreachable_continue, unreachable_goto, unreachable_label_stop). All 2042 portable tests pass (165 unit, 1286 valid, 261 invalid, 159 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through stage 153 (cast constant folding for scalar integer types):
 
 > Stage 153 adds `AST_CAST` constant folding to the stage-142 optimizer: when a cast to a scalar integer type has an `AST_INT_LITERAL` operand whose numeric value fits exactly in the target type (no truncation, no sign change, no unsigned wrap), `optimize_expr` replaces the cast node with a fresh `AST_INT_LITERAL` of the target type. A new `cast_value_safe()` helper checks per-type value ranges. Unsafe casts (e.g., `(char)300` → 44, `(unsigned char)(-1)` → 255) are left for codegen. Because the optimizer walks bottom-up, `sizeof→cast→binary-fold` and `const-prop→cast→dead-branch` chains all resolve in one pass. Five new integration tests (cast_fold_basic, cast_fold_sizeof, cast_fold_const_prop, cast_fold_dead_branch, cast_fold_unsafe). All 2037 portable tests pass (165 unit, 1286 valid, 261 invalid, 154 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -785,7 +789,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 149 all 2016 portable tests pass (1286 valid, 261 invalid, 133 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 133/133.
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 154 all 2042 portable tests pass (1286 valid, 261 invalid, 159 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 159/159.
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
