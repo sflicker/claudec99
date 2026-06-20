@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 158 self-hosting test
+
+None. The changes are confined to `src/preprocessor.c` (comment stripping in
+`#if`/`#elif` condition text and in the `#define` replacement validation loop)
+and `src/version.c`. All changes use only C99 features within the compiler's
+own supported subset; no new structs, VLAs, or compound literals were
+introduced. All 2056 tests passed at C0, C1, and C2 with no source changes
+needed during bootstrap.
+
+## Result (stage 158)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01580000.01173` | 2056/2056 |
+| C1 | `build/ccompiler-c1` | `00.03.01580000.01174` | 2056/2056 |
+| C2 | `build/ccompiler-c2` | `00.03.01580000.01175` | 2056/2056 |
+
+---
+
 ## Issues found during stage 157 self-hosting test
 
 Two bootstrap issues fixed.
