@@ -2210,6 +2210,20 @@ TODO items completed this stage:
 TODO items completed this stage:
 - [x] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label (Stage 154)
 
+## Stage 155 - Peephole Optimizer Infrastructure
+
+- [x] `include/peephole.h`: declare `PeepholeMatcher`, `PeepholeReplacer`, `PeepholePattern` types; `PEEPHOLE_WINDOW_MAX 4`; `peephole_apply` and `peephole_run_file` functions
+- [x] `src/peephole.c`: `read_lines` (reads file into heap-allocated line array, strips trailing newlines), `write_lines` (writes line array back to file), `peephole_apply` (forward-scanning sliding window engine; builds new array for each match), `peephole_run_file` (read → apply → write orchestrator)
+- [x] `src/compiler.c`: parse `-O2` flag (`opt_level = 2`), include `peephole.h`, call `peephole_run_file(output_path, NULL, 0)` after `fclose(out)` when `opt_level >= 2`; `-O2` implies `-O1` (AST optimizer also runs)
+- [x] `CMakeLists.txt`: add `src/peephole.c` to source list
+- [x] No patterns registered at this stage; pass is a transparent no-op at `-O2`
+- [x] 3 new integration tests with `.expected` and `.cflags` (`-O2`): test_peephole_noop, test_peephole_noop_loop, test_peephole_noop_function
+- [x] Test results: 2045/2045 portable tests pass; all 3 new tests produce correct output at `-O2`
+- [x] Self-host C0→C1→C2 verified (Stage 155)
+
+TODO items completed this stage:
+- [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
+
 ---
 
 ## TODO
@@ -2371,7 +2385,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
 
 Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches short instruction windows, and rewrites them in place. Requires no structural changes to codegen.
 
-- [ ] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions
+- [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
 - [ ] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits)
 - [ ] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove
 - [ ] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX`

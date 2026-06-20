@@ -17,6 +17,8 @@
  * Stage 154: unreachable statement removal -- direct-child terminal nodes
  *            (return/break/continue/goto) in AST_BLOCK trigger a forward
  *            scan that frees all subsequent siblings up to the next label.
+ * Stage 155: peephole infrastructure added in peephole.c / peephole.h;
+ *            this file (optimize.c) is unaffected.
  */
 
 #include <stddef.h>

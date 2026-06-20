@@ -14,6 +14,7 @@
 #include "lexer.h"
 #include "optimize.h"
 #include "parser.h"
+#include "peephole.h"
 #include "preprocessor.h"
 #include "token.h"
 #include "util.h"
@@ -331,6 +332,17 @@ static int compile_one_file(const char *source_file,
     codegen_free(&cg);
 
     fclose(out);
+
+    if (opt_level >= 2) {
+        if (peephole_run_file(output_path, NULL, 0) != 0) {
+            parser_free(&parser);
+            lexer_free(&lexer);
+            ast_free(ast);
+            free(preprocessed);
+            return 1;
+        }
+    }
+
     parser_free(&parser);
     lexer_free(&lexer);
     ast_free(ast);
@@ -400,6 +412,8 @@ int main(int argc, char **argv) {
             opt_level = 0;
         } else if (strcmp(argv[i], "-O1") == 0) {
             opt_level = 1;
+        } else if (strcmp(argv[i], "-O2") == 0) {
+            opt_level = 2;
         } else if (strncmp(argv[i], "-I", 2) == 0) {
             const char *ipath;
             if (argv[i][2] != '\0') {
@@ -440,7 +454,7 @@ int main(int argc, char **argv) {
     }
 
     if (n_source_files == 0) {
-        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
+        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
         free(defines); free(include_dirs); free(source_files);
         return 1;
     }

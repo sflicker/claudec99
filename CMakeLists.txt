@@ -32,6 +32,7 @@ add_executable(ccompiler
     src/vec.c
     src/version.c
     src/optimize.c
+    src/peephole.c
 )
 
 # Record which compiler built the binary.  Dots in the version number are
