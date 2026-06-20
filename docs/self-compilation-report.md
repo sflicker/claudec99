@@ -1,5 +1,30 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 154 self-hosting test
+
+None. The change is confined to `src/optimize.c`: one new static helper
+`is_terminal_stmt(ASTNode *node)` added before `optimize_stmt`, and the
+`AST_BLOCK` case in `optimize_stmt` extended with `int j, k` declarations
+and a scan-and-compact loop that frees dead siblings after terminal
+statements up to the next label. All new code uses `/* */` comments,
+places declarations at the top of the `case AST_BLOCK: {}` block before
+any executable statements, and uses no VLAs — compatible with C0.
+All 2042 tests passed at C0, C1, and C2 with no source changes needed
+during bootstrap.
+
+## Result (stage 154)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01540000.01139` | 2042/2042 |
+| C1 | `build/ccompiler-c1` | `00.03.01540000.01140` | 2042/2042 |
+| C2 | `build/ccompiler-c2` | `00.03.01540000.01141` | 2042/2042 |
+
+---
+
 ## Issues found during stage 153 self-hosting test
 
 None. The change is confined to `src/optimize.c`: one new static helper
