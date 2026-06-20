@@ -2251,6 +2251,20 @@ TODO items completed this stage: none (pure bug fix)
 TODO items completed this stage:
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (Stage 157)
 
+## Stage 158 - Compile Failure with External Library
+
+- [x] Preprocessor bug fixes for external library support
+	- [x] Bug 1: Block comments (`/* ... */`) in `#if`/`#elif` condition text included in expression evaluation string, causing `/*` to be misinterpreted as division operator. Fix: new `strip_cond_comments()` helper in `src/preprocessor.c` strips comments before evaluating condition in both `#if` and `#elif` handlers
+	- [x] Bug 2: `#` characters inside block comments in macro replacement lists incorrectly triggered "hash in object like macro" errors. Fix: `#define` replacement validation loop in `src/preprocessor.c` now skips over `/* */` comment spans
+- [x] Version update: `src/version.c` incremented to `01580000`
+- [x] 3 new integration tests: `test_if_inline_comment`, `test_elif_inline_comment`, `test_macro_comment_hash`
+- [x] Test results: 2056/2056 portable tests pass (165 unit, 1286 valid, 261 invalid, 173 integration, 50 print-AST, 100 print-tokens, 21 print-asm)
+- [x] Self-host C0→C1→C2 verified (Stage 158)
+
+TODO items completed this stage:
+- [x] External library support: fix `#if`/`#elif` expression evaluation when comments present (Stage 158)
+- [x] External library support: fix `#define` validation when hash appears in comment (Stage 158)
+
 ---
 
 ## TODO
