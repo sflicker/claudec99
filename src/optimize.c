@@ -19,6 +19,10 @@
  *            scan that frees all subsequent siblings up to the next label.
  * Stage 155: peephole infrastructure added in peephole.c / peephole.h;
  *            this file (optimize.c) is unaffected.
+ * Stage 156: bug fix -- dead-code removal in AST_BLOCK must stop at
+ *            AST_CASE_SECTION and AST_DEFAULT_SECTION, not only at
+ *            AST_LABEL_STATEMENT.  Without this, a break in a switch body
+ *            incorrectly removes subsequent case/default sections.
  */
 
 #include <stddef.h>
@@ -619,7 +623,9 @@ static ASTNode *optimize_stmt(ASTNode *node) {
                    or the end of the block, then compact the children array. */
                 k = i + 1;
                 while (k < node->child_count &&
-                       node->children[k]->type != AST_LABEL_STATEMENT) {
+                       node->children[k]->type != AST_LABEL_STATEMENT &&
+                       node->children[k]->type != AST_CASE_SECTION &&
+                       node->children[k]->type != AST_DEFAULT_SECTION) {
                     ast_free(node->children[k]);
                     k++;
                 }
