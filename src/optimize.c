@@ -8,6 +8,7 @@
  * Stage 148: negation folding -- -(-x) -> x for non-constant x.
  * Stage 149: conditional expression folding -- const ? T : F -> selected branch.
  * Stage 150: dead-branch elimination -- if/while/for with constant-zero condition.
+ * Stage 151: sizeof constant folding -- AST_SIZEOF_TYPE/EXPR -> AST_INT_LITERAL.
  */
 
 #include <stddef.h>
@@ -20,6 +21,36 @@
 
 static ASTNode *optimize_expr(ASTNode *node);
 static ASTNode *optimize_stmt(ASTNode *node);
+
+/* Map a scalar TypeKind to its sizeof value.
+   Mirrors codegen_expression's AST_SIZEOF_TYPE scalar switch, with one fix:
+   TYPE_DOUBLE is returned as 8 (codegen falls through to default:4, a bug). */
+static int sizeof_scalar_size(TypeKind k) {
+    switch (k) {
+    case TYPE_BOOL:               return 1;
+    case TYPE_CHAR:               return 1;
+    case TYPE_SHORT:              return 2;
+    case TYPE_LONG:               return 8;
+    case TYPE_LONG_LONG:          return 8;
+    case TYPE_UNSIGNED_LONG_LONG: return 8;
+    case TYPE_POINTER:            return 8;
+    case TYPE_DOUBLE:             return 8;
+    default:                      return 4; /* TYPE_INT, TYPE_FLOAT */
+    }
+}
+
+/* Create an AST_INT_LITERAL whose value and type match what sizeof returns.
+   sizeof always yields unsigned size_t (C99 §6.5.3.4); we represent that as
+   TYPE_LONG / is_unsigned=1 to match what codegen sets on sizeof nodes. */
+static ASTNode *make_sizeof_literal(int sz) {
+    char buf[16];
+    ASTNode *lit;
+    snprintf(buf, sizeof(buf), "%d", sz);
+    lit = ast_new(AST_INT_LITERAL, util_strdup(buf));
+    lit->decl_type = TYPE_LONG;
+    lit->is_unsigned = 1;
+    return lit;
+}
 
 static ASTNode *optimize_expr(ASTNode *node) {
     int i;
@@ -399,6 +430,45 @@ static ASTNode *optimize_expr(ASTNode *node) {
         node->children[keep_idx] = NULL; /* detach before ast_free */
         ast_free(node);                  /* frees ?: node, condition, dead branch */
         return keep;
+    }
+
+    /* sizeof(type) folding: AST_SIZEOF_TYPE is always a compile-time constant.
+       All type information (decl_type, full_type) is set by the parser. */
+    if (node->type == AST_SIZEOF_TYPE) {
+        int sz;
+        if ((node->decl_type == TYPE_STRUCT || node->decl_type == TYPE_UNION ||
+                node->decl_type == TYPE_ARRAY) && node->full_type) {
+            sz = node->full_type->size;
+        } else {
+            sz = sizeof_scalar_size(node->decl_type);
+        }
+        ast_free(node);
+        return make_sizeof_literal(sz);
+    }
+
+    /* sizeof(expr) folding for operands whose size the optimizer can determine
+       without symbol-table access.  All other cases fall through to codegen. */
+    if (node->type == AST_SIZEOF_EXPR && node->child_count == 1 &&
+            node->children[0] != NULL) {
+        ASTNode *child = node->children[0];
+        /* sizeof("literal") = byte_length + 1 (includes null terminator). */
+        if (child->type == AST_STRING_LITERAL) {
+            int sz = child->byte_length + 1;
+            ast_free(node);
+            return make_sizeof_literal(sz);
+        }
+        /* sizeof(integer-literal): size from suffix-determined decl_type. */
+        if (child->type == AST_INT_LITERAL) {
+            int sz = sizeof_scalar_size(child->decl_type);
+            ast_free(node);
+            return make_sizeof_literal(sz);
+        }
+        /* sizeof(char-literal): character constants have type int in C99. */
+        if (child->type == AST_CHAR_LITERAL) {
+            ast_free(node);
+            return make_sizeof_literal(4);
+        }
+        /* Variable references and complex expressions: leave for codegen. */
     }
 
     return node;
