@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 149 self-hosting test
+
+None. The change is confined to `src/optimize.c`: a new `AST_CONDITIONAL_EXPR`
+folding block is inserted after the stage-147 boolean/logical simplification
+block and before `return node` in `optimize_expr`. All new code uses `strtol`,
+`ast_free`, and pointer operations — all available in C0. No VLAs, no `//`
+comments, all declarations at the top of the `if` block. No new AST node types,
+no parser changes, no codegen changes. All 2016 tests passed at C0, C1, and C2
+with no source changes needed.
+
+## Result (stage 149)
+
+**Date:** 2026-06-19
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01490000.01111` | 2016/2016 |
+| C1 | `build/ccompiler-c1` | `00.03.01490000.01112` | 2016/2016 |
+| C2 | `build/ccompiler-c2` | `00.03.01490000.01113` | 2016/2016 |
+
+---
+
 ## Issues found during stage 148 self-hosting test
 
 None. The change is confined to `src/optimize.c`: a new `-(-x)` block is
