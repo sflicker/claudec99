@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 156 self-hosting test
+
+None. The change is confined to `src/optimize.c`: the dead-code scan loop
+in the `AST_BLOCK` case of `optimize_stmt` gained two additional stop
+conditions (`AST_CASE_SECTION` and `AST_DEFAULT_SECTION`), a minimal
+one-line change with no new declarations, VLAs, or C99-only features.
+All 2049 tests passed at C0, C1, and C2 with no source changes needed
+during bootstrap.
+
+## Result (stage 156)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01560000.01157` | 2049/2049 |
+| C1 | `build/ccompiler-c1` | `00.03.01560000.01158` | 2049/2049 |
+| C2 | `build/ccompiler-c2` | `00.03.01560000.01159` | 2049/2049 |
+
+---
+
 ## Issues found during stage 155 self-hosting test
 
 One bootstrap issue fixed: `include/peephole.h` originally used
