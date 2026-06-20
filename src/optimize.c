@@ -14,6 +14,9 @@
  * Stage 153: cast constant folding -- AST_CAST of AST_INT_LITERAL to scalar
  *            integer type replaced with a fresh AST_INT_LITERAL of target type,
  *            provided the numeric value is preserved (fits in target type).
+ * Stage 154: unreachable statement removal -- direct-child terminal nodes
+ *            (return/break/continue/goto) in AST_BLOCK trigger a forward
+ *            scan that frees all subsequent siblings up to the next label.
  */
 
 #include <stddef.h>
@@ -586,6 +589,16 @@ static ASTNode *optimize_expr(ASTNode *node) {
     return node;
 }
 
+/* Return 1 if node is an unconditional transfer-of-control statement at the
+   current block level.  Used to identify the start of a dead-code zone. */
+static int is_terminal_stmt(ASTNode *node) {
+    if (node == NULL) return 0;
+    return (node->type == AST_RETURN_STATEMENT   ||
+            node->type == AST_BREAK_STATEMENT    ||
+            node->type == AST_CONTINUE_STATEMENT ||
+            node->type == AST_GOTO_STATEMENT);
+}
+
 static ASTNode *optimize_stmt(ASTNode *node) {
     int i;
     if (node == NULL) return NULL;
@@ -596,8 +609,24 @@ static ASTNode *optimize_stmt(ASTNode *node) {
         /* Save g_const_count so entries added in this block are invisible
            in the enclosing scope after the block exits. */
         int saved_count = g_const_count;
-        for (i = 0; i < node->child_count; i++)
+        int j, k;
+        for (i = 0; i < node->child_count; i++) {
             node->children[i] = optimize_stmt(node->children[i]);
+            if (is_terminal_stmt(node->children[i])) {
+                /* Free dead siblings [i+1 .. k-1] where k is the first label
+                   or the end of the block, then compact the children array. */
+                k = i + 1;
+                while (k < node->child_count &&
+                       node->children[k]->type != AST_LABEL_STATEMENT) {
+                    ast_free(node->children[k]);
+                    k++;
+                }
+                j = i + 1;
+                while (k < node->child_count)
+                    node->children[j++] = node->children[k++];
+                node->child_count = j;
+            }
+        }
         g_const_count = saved_count;
         return node;
     }

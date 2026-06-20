@@ -2195,6 +2195,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 154 - Unreachable Statement Removal
+
+- [x] `src/optimize.c`: add `is_terminal_stmt(ASTNode *node)` helper — returns 1 for `AST_RETURN_STATEMENT`, `AST_BREAK_STATEMENT`, `AST_CONTINUE_STATEMENT`, `AST_GOTO_STATEMENT`; 0 otherwise
+- [x] `src/optimize.c`: modify `AST_BLOCK` case in `optimize_stmt` — after each child is optimized, if it is terminal, scan forward freeing dead siblings until the next `AST_LABEL_STATEMENT` (exclusive), then compact the children array; add `int j, k` declarations at block top (C89 compliance)
+- [x] Only direct children of `AST_BLOCK` are checked; nested blocks ending in a terminal do not trigger removal of outer siblings
+- [x] `AST_LABEL_STATEMENT` stops the dead-code sweep; labels are always reachable via `goto` and must never be removed
+- [x] Multiple dead zones in one block handled naturally by the outer `for` loop in `AST_BLOCK` processing
+- [x] Gated behind `-O1`; `-O0` path unaffected
+- [x] 5 new integration tests with `.expected` and `.cflags` (`-O1`): unreachable_return, unreachable_break, unreachable_continue, unreachable_goto, unreachable_label_stop
+- [x] Test results: 2042/2042 portable tests pass; all 5 new tests produce correct output at `-O1`
+- [x] Self-host C0→C1→C2 verified (Stage 154)
+
+TODO items completed this stage:
+- [x] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label (Stage 154)
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2347,7 +2364,7 @@ New `optimize.c` / `include/optimize.h` tree-walking pass inserted between parse
 - [x] sizeof constant folding — `AST_SIZEOF_TYPE` and `AST_SIZEOF_EXPR` replaced with `AST_INT_LITERAL` (size is always statically known) (Stage 151)
 - [x] Constant propagation for simple `const`-qualified scalar locals initialized with an integer literal — substitute the literal value at each `AST_VAR_REF` of that variable (Stage 152)
 - [x] Fold through parentheses / `AST_CAST` to constant integer where safe (casts between integer types of same value) (Stage 153)
-- [ ] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label
+- [x] Unreachable statement removal after `return`, `break`, `continue`, `goto` — drop subsequent statements in the same block up to the next label (Stage 154)
 - [x] -O0 / -O1 flags for enabling/disabling the pass (`-O0` skips optimize_translation_unit; `-O1` enables it) (Stage 142)
 
 ### Optimize Level 2 — Peephole Optimizer
