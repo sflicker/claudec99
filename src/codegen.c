@@ -7299,6 +7299,14 @@ static void codegen_add_global(CodeGen *cg, ASTNode *decl) {
              * e.g. int *p = (int[]){1,2,3}. */
             gv->init_node = init;
             gv->is_initialized = 1;
+        } else if (gv->kind == TYPE_POINTER && init->type == AST_CAST &&
+                   init->child_count > 0 &&
+                   init->children[0]->type == AST_INT_LITERAL &&
+                   strcmp(init->children[0]->value, "0") == 0) {
+            /* Stage 163: null pointer constant cast, e.g. (void *)0 from NULL
+             * when defined as ((void *)0) in system stddef.h. Emits as 0. */
+            gv->init_value = 0;
+            gv->is_initialized = 1;
         }
     }
     vec_push(&cg->globals, gv);

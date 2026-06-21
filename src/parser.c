@@ -4637,14 +4637,23 @@ static ASTNode *parse_external_declaration(Parser *parser) {
                             "error: compound literals at file scope are not yet supported\n");
                 }
                 /* Accept integer/char/string literals, function designators (VAR_REF),
-                 * address constants (&global, &global[N]), and compound literals
-                 * for pointer globals (Stage 124). */
-                if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
-                    init->type != AST_STRING_LITERAL && init->type != AST_VAR_REF &&
-                    init->type != AST_ADDR_OF &&
-                    init->type != AST_COMPOUND_LITERAL) {
-                    PARSER_ERROR(parser,
-                            "error: non-constant initializer for global '%s'\n", d.name);
+                 * address constants (&global, &global[N]), compound literals
+                 * for pointer globals (Stage 124), and null pointer constant casts
+                 * like (void *)0 from NULL when defined as ((void *)0) (Stage 163). */
+                {
+                    int is_null_cast = (init->type == AST_CAST &&
+                                        init->decl_type == TYPE_POINTER &&
+                                        init->child_count > 0 &&
+                                        init->children[0]->type == AST_INT_LITERAL &&
+                                        strcmp(init->children[0]->value, "0") == 0);
+                    if (init->type != AST_INT_LITERAL && init->type != AST_CHAR_LITERAL &&
+                        init->type != AST_STRING_LITERAL && init->type != AST_VAR_REF &&
+                        init->type != AST_ADDR_OF &&
+                        init->type != AST_COMPOUND_LITERAL &&
+                        !is_null_cast) {
+                        PARSER_ERROR(parser,
+                                "error: non-constant initializer for global '%s'\n", d.name);
+                    }
                 }
             }
             ast_add_child(decl, init);
