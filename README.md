@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 162 (zlib integration test):
+
+> Stage 162 adds a zlib optional-library integration test (`test_zlib_compress`) to the `test/integration_sysinclude/` suite. The test compiles and runs the zlib compression program from the stage 158 spec: it compresses "Hello From ClaudeC99" using `compress()` from zlib and prints the original and compressed byte counts. The test is auto-skipped when zlib is not installed (`pkg-config --exists zlib` prerequisite check); it links with `-lz` and expects exit status 0. README updated to list zlib as a supported optional library. All 2065 portable tests pass (165 unit, 1286 valid, 261 invalid, 182 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 182 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 161 (void * comparison with typed pointers):
 
 > Stage 161 fixes a C99 compatibility bug where comparing a typed pointer (e.g., `FILE *fp`) to `NULL` was rejected with "incompatible pointer types in comparison" when using `--sysinclude`. Root cause: GCC's system `stddef.h` defines `NULL` as `((void *)0)`, making `fp == NULL` a `FILE * == void *` comparison; the stub headers define `NULL` as `0` (an integer constant), which hit a different code path and worked. The fix is one line in `src/codegen.c`: the pointer comparison validation changes from `pointer_types_equal` (requiring exact type match) to `pointer_types_assignable` (which already allows `void *` on either side per C99 §6.5.9). Two new integration tests: `test_void_ptr_cmp` (portable, directly tests `void *` vs typed pointer) and `test_null_file_cmp` (tests the exact `FILE * == NULL` scenario from the spec). All 2065 portable tests pass (165 unit, 1286 valid, 261 invalid, 182 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 182 pass. Optional-library: 1 pass (test_sdl2_init). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -819,7 +823,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 160 all 2063 portable tests pass (1286 valid, 261 invalid, 180 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 180/180; the optional-library suite passes 1/1 (test_sdl2_init).
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 162 all 2065 portable tests pass (1286 valid, 261 invalid, 182 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 182/182; the optional-library suite passes 2/2 (test_sdl2_init, test_zlib_compress).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
@@ -830,12 +834,12 @@ system libraries.  Tests for missing libraries are automatically skipped
 (reported as `SKIP`, not `FAIL`).  The `.require` companion file in each test
 directory names the prerequisite check command.
 
-| Library | Debian/Ubuntu install     | Prerequisite check | Test(s)           |
-|---------|---------------------------|--------------------|-------------------|
-| SDL2    | `apt install libsdl2-dev` | `sdl2-config`      | `test_sdl2_init`  |
+| Library | Debian/Ubuntu install     | Prerequisite check         | Test(s)                |
+|---------|---------------------------|----------------------------|------------------------|
+| SDL2    | `apt install libsdl2-dev` | `sdl2-config`              | `test_sdl2_init`       |
+| zlib    | `apt install zlib1g-dev`  | `pkg-config --exists zlib` | `test_zlib_compress`   |
 
-Future stages that add tests for other libraries (zlib, OpenGL, etc.) append
-rows to this table.
+Future stages that add tests for other libraries (OpenGL, etc.) append rows to this table.
 
 Tests in `test/valid/` use the naming convention
 `test_<description>__<expected_exit_code>.c` so the runner can extract

@@ -2310,6 +2310,16 @@ TODO items completed this stage:
 - [x] Test results: 2065 portable (2063 + 2) + 182 system-include (180 + 2) pass
 - [x] Self-host C0→C1→C2 verified (Stage 161)
 
+## Stage 162 - Add zlib Integration Test
+
+- [x] New optional-library integration test: `test/integration_sysinclude/test_zlib_compress/`
+	- [x] Compiles/links/runs zlib compress program from stage 158 spec (`compress()` on "Hello From ClaudeC99")
+	- [x] Auto-skipped when zlib not installed (`pkg-config --exists zlib` check)
+	- [x] Links with `-lz`; expects exit status 0
+- [x] Version update: `src/version.c` incremented to `01620000`
+- [x] Test results: 2065 portable + 182 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 162)
+
 ---
 
 ## Stage 158 - Compile Failure with External Library
