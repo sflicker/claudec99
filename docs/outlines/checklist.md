@@ -2251,6 +2251,29 @@ TODO items completed this stage: none (pure bug fix)
 TODO items completed this stage:
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (Stage 157)
 
+## Stage 159 - SDL2 Compile Failure: GCC Extension Parsing Fixes
+
+- [x] Array-parameter adjustment in function-pointer typedef param lists (C99 §6.7.5.3p7)
+	- [x] Three inline fp parameter-type loops in `parse_declarator` now consume `[]` suffixes and adjust the pointer count so `char *argv[]` parameters parse correctly
+- [x] `__attribute__((x))` as preprocessor no-op macro (added to `builtin_preamble`)
+- [x] `__extension__` as preprocessor no-op predefined macro
+- [x] `__asm__`/`__asm`/`asm` statement parsing and discarding in `parse_statement`
+- [x] Anonymous struct/union member skip (no declarator after inner struct/union type) in both `parse_struct_specifier` and `parse_union_specifier`
+- [x] Trailing type qualifier after base type in parameters (`void const *`) — consume trailing `const`/`volatile`/`restrict` after `parse_type_specifier` in `parse_parameter_declaration` and all three inline fp param loops
+- [x] Version update: `src/version.c` incremented to `01590000`
+- [x] 5 new integration tests: `test_fp_array_param`, `test_gcc_attribute_noop`, `test_gcc_asm_skip`, `test_gcc_anon_union_skip`, `test_trailing_qualifier`
+- [x] Test results: 2239/2239 total (2061 portable + 178 system-include) pass
+- [x] Self-host C0→C1→C2 verified (Stage 159)
+
+TODO items completed this stage:
+- [x] GCC extension: `__attribute__((x))` as no-op (Stage 159)
+- [x] GCC extension: `__extension__` as no-op (Stage 159)
+- [x] GCC extension: `__asm__`/`asm` statement skipping (Stage 159)
+- [x] GCC extension: anonymous struct/union member in struct/union bodies (Stage 159)
+- [x] C99 §6.7.5.3p7: array-parameter adjustment in function-pointer typedef param lists (Stage 159)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
