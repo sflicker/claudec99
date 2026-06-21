@@ -1,5 +1,34 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 159 self-hosting test
+
+One bootstrap issue fixed: the `builtin_preamble` string in `src/preprocessor.c`
+was originally written as two adjacent string literals (the existing preamble
+plus the new `#define __attribute__(x)` and `#define __declspec(x)` lines).
+ClaudeC99's char-array initializer path reads exactly one string literal and
+does not concatenate adjacent ones, so C0 failed with
+`error: expected ';', got string literal`. Fixed by merging all preamble
+content into a single long string literal. All other Stage 159 changes
+(array-parameter adjustment in function-pointer typedef param lists,
+`__extension__` predefined macro, anonymous struct/union member skip in
+struct/union bodies, `__asm__`/`asm` statement skip, trailing qualifier
+consumption in `parse_parameter_declaration`) compiled cleanly under C0.
+All 2239 tests (2061 portable + 178 system-include) passed at C0, C1, and C2
+with no further source changes needed during bootstrap.
+
+## Result (stage 159)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01590000.01181` | 2239/2239 |
+| C1 | `build/ccompiler-c1` | `00.03.01590000.01182` | 2239/2239 |
+| C2 | `build/ccompiler-c2` | `00.03.01590000.01183` | 2239/2239 |
+
+---
+
 ## Issues found during stage 158 self-hosting test
 
 None. The changes are confined to `src/preprocessor.c` (comment stripping in
