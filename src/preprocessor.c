@@ -2401,6 +2401,8 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_define(&macros, "__volatile__",  strlen("__volatile__"),  NULL, -1, 0, "volatile", strlen("volatile"));
     macro_define(&macros, "__const__",     strlen("__const__"),     NULL, -1, 0, "const",    strlen("const"));
     macro_define(&macros, "__inline__",    strlen("__inline__"),    NULL, -1, 0, "",          0);
+    /* GCC extension keyword silenced so system headers parse without errors. */
+    macro_define(&macros, "__extension__", strlen("__extension__"), NULL, -1, 0, "", 0);
 
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
@@ -2420,7 +2422,11 @@ char *preprocess_with_defines_and_includes(const char *source,
          * stdarg.h's "typedef __builtin_va_list __gnuc_va_list;" resolves
          * to the same struct our codegen uses for va_start/va_arg. */
         static const char builtin_preamble[] =
-            "struct __claudec00_va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void *overflow_arg_area; void *reg_save_area; };\ntypedef struct __claudec00_va_list_tag __builtin_va_list[1];\n";
+            "struct __claudec00_va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void *overflow_arg_area; void *reg_save_area; };\ntypedef struct __claudec00_va_list_tag __builtin_va_list[1];\n"
+            /* GCC extension macros: __attribute__ and __declspec consume and discard
+             * their argument so system headers that use them parse cleanly. */
+            "#define __attribute__(x)\n"
+            "#define __declspec(x)\n";
 
         size_t preamble_len = sizeof(builtin_preamble) - 1;
         size_t src_len      = strlen(source);

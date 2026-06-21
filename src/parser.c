@@ -502,6 +502,16 @@ static Type *parse_struct_specifier(Parser *parser) {
             /* Parse field type specifier. */
             Type *field_base = parse_type_specifier(parser, NULL);
 
+            /* Stage 159: GCC/C11 anonymous struct/union member — struct or union
+             * type specifier with no following declarator (e.g. 'union { ... };'
+             * embedded in another struct).  Skip it silently: members are not
+             * added to the outer type, but the type itself is already parsed. */
+            if (parser->current.type == TOKEN_SEMICOLON &&
+                (field_base->kind == TYPE_STRUCT || field_base->kind == TYPE_UNION)) {
+                parser->current = lexer_next_token(parser->lexer); /* consume ';' */
+                continue;
+            }
+
             /* Parse one or more declarators: each names a field.
              * Stage 134: anonymous bit-fields have no declarator — detect ':' early. */
             int first_in_list = 1;
@@ -816,6 +826,13 @@ static Type *parse_union_specifier(Parser *parser) {
                 parser->current = lexer_next_token(parser->lexer);
             }
             Type *field_base = parse_type_specifier(parser, NULL);
+
+            /* Stage 159: anonymous union/struct member — no declarator follows. */
+            if (parser->current.type == TOKEN_SEMICOLON &&
+                (field_base->kind == TYPE_STRUCT || field_base->kind == TYPE_UNION)) {
+                parser->current = lexer_next_token(parser->lexer);
+                continue;
+            }
 
             do {
                 if (parser->current.type == TOKEN_COMMA)
@@ -1463,6 +1480,11 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                            parser->current.type == TOKEN_RESTRICT)
                         parser->current = lexer_next_token(parser->lexer);
                     Type *pt = parse_type_specifier(parser, NULL);
+                    /* Stage 159: trailing qualifiers after base type (e.g. 'void const *'). */
+                    while (parser->current.type == TOKEN_CONST   ||
+                           parser->current.type == TOKEN_VOLATILE ||
+                           parser->current.type == TOKEN_RESTRICT)
+                        parser->current = lexer_next_token(parser->lexer);
                     int stars = 0;
                     while (parser->current.type == TOKEN_STAR) {
                         stars++;
@@ -1470,6 +1492,16 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                     }
                     if (parser->current.type == TOKEN_IDENTIFIER)
                         parser->current = lexer_next_token(parser->lexer);
+                    /* C99 §6.7.5.3p7: array param adjusted to pointer (e.g. char *argv[]). */
+                    while (parser->current.type == TOKEN_LBRACKET) {
+                        parser->current = lexer_next_token(parser->lexer);
+                        while (parser->current.type != TOKEN_RBRACKET &&
+                               parser->current.type != TOKEN_EOF)
+                            parser->current = lexer_next_token(parser->lexer);
+                        if (parser->current.type == TOKEN_RBRACKET)
+                            parser->current = lexer_next_token(parser->lexer);
+                        stars++;
+                    }
                     int j;
                     for (j = 0; j < stars; j++) pt = type_pointer(pt);
                     d.own_param_types[own_count++] = pt;
@@ -1504,6 +1536,11 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                            parser->current.type == TOKEN_RESTRICT)
                         parser->current = lexer_next_token(parser->lexer);
                     Type *pt = parse_type_specifier(parser, NULL);
+                    /* Stage 159: trailing qualifiers after base type. */
+                    while (parser->current.type == TOKEN_CONST   ||
+                           parser->current.type == TOKEN_VOLATILE ||
+                           parser->current.type == TOKEN_RESTRICT)
+                        parser->current = lexer_next_token(parser->lexer);
                     int stars = 0;
                     while (parser->current.type == TOKEN_STAR) {
                         stars++;
@@ -1511,6 +1548,16 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                     }
                     if (parser->current.type == TOKEN_IDENTIFIER)
                         parser->current = lexer_next_token(parser->lexer);
+                    /* C99 §6.7.5.3p7: array param adjusted to pointer (e.g. char *argv[]). */
+                    while (parser->current.type == TOKEN_LBRACKET) {
+                        parser->current = lexer_next_token(parser->lexer);
+                        while (parser->current.type != TOKEN_RBRACKET &&
+                               parser->current.type != TOKEN_EOF)
+                            parser->current = lexer_next_token(parser->lexer);
+                        if (parser->current.type == TOKEN_RBRACKET)
+                            parser->current = lexer_next_token(parser->lexer);
+                        stars++;
+                    }
                     int j;
                     for (j = 0; j < stars; j++) pt = type_pointer(pt);
                     d.fp_param_types[fp_count++] = pt;
@@ -1595,6 +1642,11 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                                parser->current.type == TOKEN_RESTRICT)
                             parser->current = lexer_next_token(parser->lexer);
                         Type *pt = parse_type_specifier(parser, NULL);
+                        /* Stage 159: trailing qualifiers after base type. */
+                        while (parser->current.type == TOKEN_CONST   ||
+                               parser->current.type == TOKEN_VOLATILE ||
+                               parser->current.type == TOKEN_RESTRICT)
+                            parser->current = lexer_next_token(parser->lexer);
                         int stars = 0;
                         while (parser->current.type == TOKEN_STAR) {
                             stars++;
@@ -1603,6 +1655,16 @@ static ParsedDeclarator parse_declarator(Parser *parser) {
                         /* Optional parameter name — consume and discard. */
                         if (parser->current.type == TOKEN_IDENTIFIER)
                             parser->current = lexer_next_token(parser->lexer);
+                        /* C99 §6.7.5.3p7: array param adjusted to pointer (e.g. char *argv[]). */
+                        while (parser->current.type == TOKEN_LBRACKET) {
+                            parser->current = lexer_next_token(parser->lexer);
+                            while (parser->current.type != TOKEN_RBRACKET &&
+                                   parser->current.type != TOKEN_EOF)
+                                parser->current = lexer_next_token(parser->lexer);
+                            if (parser->current.type == TOKEN_RBRACKET)
+                                parser->current = lexer_next_token(parser->lexer);
+                            stars++;
+                        }
                         for (int i = 0; i < stars; i++)
                             pt = type_pointer(pt);
                         d.fp_param_types[count++] = pt;
@@ -3440,6 +3502,36 @@ static ASTNode *parse_statement(Parser *parser) {
         parser_register_typedef(parser, d.name, typedef_kind, reg_full_type);
         return parser_node(parser, AST_TYPEDEF_DECL, d.name);
     }
+    /* Stage 159: GCC inline assembly — consume and discard the asm statement.
+     * Handles:  __asm__("template" : output : input : clobbers);
+     *           __asm__ volatile ("template" : ...);
+     *           asm("template");
+     * The entire parenthesised argument is skipped; the resulting AST node is
+     * an empty block (a no-op) so codegen produces no instructions for it. */
+    if (parser->current.type == TOKEN_IDENTIFIER &&
+        (strcmp(parser->current.value, "__asm__") == 0 ||
+         strcmp(parser->current.value, "__asm")   == 0 ||
+         strcmp(parser->current.value, "asm")     == 0)) {
+        parser->current = lexer_next_token(parser->lexer); /* consume keyword */
+        /* optional 'volatile' qualifier */
+        if (parser->current.type == TOKEN_VOLATILE)
+            parser->current = lexer_next_token(parser->lexer);
+        /* consume balanced '(...)' */
+        if (parser->current.type == TOKEN_LPAREN) {
+            int depth = 1;
+            parser->current = lexer_next_token(parser->lexer);
+            while (depth > 0 && parser->current.type != TOKEN_EOF) {
+                if      (parser->current.type == TOKEN_LPAREN) depth++;
+                else if (parser->current.type == TOKEN_RPAREN) depth--;
+                if (depth > 0)
+                    parser->current = lexer_next_token(parser->lexer);
+            }
+            if (parser->current.type == TOKEN_RPAREN)
+                parser->current = lexer_next_token(parser->lexer);
+        }
+        parser_expect(parser, TOKEN_SEMICOLON);
+        return parser_node(parser, AST_BLOCK, NULL); /* empty no-op */
+    }
     /* labeled_statement: <identifier> ":" <statement> */
     if (parser->current.type == TOKEN_IDENTIFIER) {
         int saved_pos = parser->lexer->pos;
@@ -3830,6 +3922,14 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
         parser->current = lexer_next_token(parser->lexer);
     TypeKind base_kind;
     Type *base_type = parse_type_specifier(parser, &base_kind);
+    /* Stage 159: C99 §6.7 allows qualifiers and type-specifiers to intermix,
+     * so 'void const *p' and 'int volatile x' are valid (qualifier after base).
+     * Consume any trailing qualifiers silently (they are already represented
+     * in the type; re-applying them here would duplicate, not add, semantics). */
+    while (parser->current.type == TOKEN_CONST   ||
+           parser->current.type == TOKEN_VOLATILE ||
+           parser->current.type == TOKEN_RESTRICT)
+        parser->current = lexer_next_token(parser->lexer);
 
     /* Optional declarator: absent when next token is "," or ")". */
     if (parser->current.type == TOKEN_COMMA ||
