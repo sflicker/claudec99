@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 162 self-hosting test
+
+None. The new test directory and companion files (`test_zlib_compress.c`,
+`.require`, `.libs`, `.status`) and the version bump in `src/version.c`
+compile cleanly under C0. All 2065 portable tests + 182 system-include tests
++ 2 optional-library tests (test_sdl2_init, test_zlib_compress) passed at
+C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 162)
+
+**Date:** 2026-06-21
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01620000.01200` | 2065 portable + 182 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01620000.01201` | 2065 portable + 182 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01620000.01202` | 2065 portable + 182 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 161 self-hosting test
 
 None. The one-line change in `src/codegen.c` (replacing `pointer_types_equal`
