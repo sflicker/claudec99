@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 160 self-hosting test
+
+None. All stage 160 changes (eval_const_primary sizeof(expr) path extension in
+`src/parser.c`, cast-base arrow-access sizeof in `src/codegen.c`, new test
+infrastructure in `test/integration_sysinclude/`, and `.require` check in
+`test/integration/run_tests_sysinclude.sh`) compile cleanly under C0.
+The new SDL2 integration test passes end-to-end (compile, assemble, link, run).
+All 2063 portable tests + 180 system-include tests + 1 optional-library test
+(test_sdl2_init) passed at C0, C1, and C2 with no source changes needed during
+bootstrap.
+
+## Result (stage 160)
+
+**Date:** 2026-06-20
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01600000.01188` | 2063 portable + 180 sysinclude + 1 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01600000.01189` | 2063 portable + 180 sysinclude + 1 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01600000.01190` | 2063 portable + 180 sysinclude + 1 optional |
+
+---
+
 ## Issues found during stage 159 self-hosting test
 
 One bootstrap issue fixed: the `builtin_preamble` string in `src/preprocessor.c`
