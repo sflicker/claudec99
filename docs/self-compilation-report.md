@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 163 self-hosting test
+
+None. The parser validator extension (allowing `AST_CAST` with integer-0
+operand for pointer globals) and the new codegen case in `codegen_add_global`
+compile cleanly under C0. All 2066 portable tests + 183 system-include tests
++ 2 optional-library tests (test_sdl2_init, test_zlib_compress) passed at
+C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 163)
+
+**Date:** 2026-06-21
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01630000.01207` | 2066 portable + 183 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01630000.01208` | 2066 portable + 183 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01630000.01209` | 2066 portable + 183 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 162 self-hosting test
 
 None. The new test directory and companion files (`test_zlib_compress.c`,
