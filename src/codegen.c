@@ -4805,7 +4805,10 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             int is_relcmp = (strcmp(op, "<")  == 0 || strcmp(op, "<=") == 0 ||
                              strcmp(op, ">")  == 0 || strcmp(op, ">=") == 0);
             if (lhs_ptr && rhs_ptr) {
-                if (!pointer_types_equal(lhs->full_type, rhs->full_type)) {
+                /* Stage 161: void * is comparable with any object pointer per
+                 * C99 §6.5.9; use pointer_types_assignable (which allows
+                 * void* on either side) instead of pointer_types_equal. */
+                if (!pointer_types_assignable(lhs->full_type, rhs->full_type)) {
                     compile_error(
                             "error: incompatible pointer types in comparison\n");
                 }
