@@ -2298,6 +2298,18 @@ TODO items completed this stage:
 - [x] Test results: 2063 portable + 180 system-include + 1 optional-library pass
 - [x] Self-host C0→C1→C2 verified (Stage 160)
 
+## Stage 161 - void * Comparison with Typed Pointers
+
+- [x] C99 §6.5.9: equality operators permit `void *` on either side of pointer comparison
+	- [x] `pointer_types_assignable()` already permits void-pointer compatibility (stage 38)
+	- [x] Changed comparison validation in `src/codegen.c` from `pointer_types_equal()` to `pointer_types_assignable()`
+	- [x] Fixes bug: `FILE *fp = NULL; if (fp == NULL)` with system headers where NULL = `((void *)0)`
+- [x] 2 new portable integration tests: `test_void_ptr_cmp` (void* vs typed pointer), `test_null_file_cmp` (exact bug scenario from spec)
+- [x] Both new tests pass with portable stub headers and system-include headers
+- [x] Version update: `src/version.c` incremented to `01610000`
+- [x] Test results: 2065 portable (2063 + 2) + 182 system-include (180 + 2) pass
+- [x] Self-host C0→C1→C2 verified (Stage 161)
+
 ---
 
 ## Stage 158 - Compile Failure with External Library

@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 161 (void * comparison with typed pointers):
+
+> Stage 161 fixes a C99 compatibility bug where comparing a typed pointer (e.g., `FILE *fp`) to `NULL` was rejected with "incompatible pointer types in comparison" when using `--sysinclude`. Root cause: GCC's system `stddef.h` defines `NULL` as `((void *)0)`, making `fp == NULL` a `FILE * == void *` comparison; the stub headers define `NULL` as `0` (an integer constant), which hit a different code path and worked. The fix is one line in `src/codegen.c`: the pointer comparison validation changes from `pointer_types_equal` (requiring exact type match) to `pointer_types_assignable` (which already allows `void *` on either side per C99 §6.5.9). Two new integration tests: `test_void_ptr_cmp` (portable, directly tests `void *` vs typed pointer) and `test_null_file_cmp` (tests the exact `FILE * == NULL` scenario from the spec). All 2065 portable tests pass (165 unit, 1286 valid, 261 invalid, 182 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 182 pass. Optional-library: 1 pass (test_sdl2_init). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 160 (sizeof(expr) in constant expressions and SDL2 integration test):
 
 > Stage 160 fixes `sizeof(expr)` in compile-time constant expression contexts (array dimensions, `case` labels, enum values, `typedef` definitions): `eval_const_primary` in `src/parser.c` now parses the operand expression, resolves struct fields from the base pointer type, and returns the correct byte size for member-access expressions like `sizeof(((SDL_Event *)NULL)->padding)`. A parallel fix in `src/codegen.c` handles the same pattern in runtime sizeof contexts (e.g., `int a = sizeof(((struct Box *)0)->label)`). New optional-library test infrastructure: `test/integration_sysinclude/` with a `run_tests.sh` runner that checks `.require` companion files and reports `SKIP` instead of `FAIL` when a prerequisite library is absent. First optional test: `test_sdl2_init` compiles and links a real SDL2 program; auto-skipped when SDL2 is not installed. Two new portable integration tests (`test_sizeof_expr_ptr`, `test_sizeof_expr_array_dim`). All 2063 portable tests pass (165 unit, 1286 valid, 261 invalid, 180 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 180 pass. Optional-library: 1 pass (test_sdl2_init). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -621,6 +625,8 @@ Through stage 91 (address-of member lvalues):
   Equality comparisons accept non-zero integer constant operands as a
   GCC/Clang extension (e.g., `p == 1`); null pointer constant (`p == 0`)
   and pointer-to-pointer equality continue to work per C99.
+  Equality comparisons between `void *` and any typed object pointer are
+  accepted per C99 §6.5.9 (e.g., `fp == NULL` when `NULL` is `((void *)0)`).
 - **void type**: `void` return type for functions; void functions may use bare `return;`
   or fall off the end without an explicit return. `void *` generic object pointer with
   implicit conversion to/from any non-function pointer type. `f(void)` parameter list
