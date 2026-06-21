@@ -3553,20 +3553,51 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
                 }
             }
         }
-        TypeKind kind = sizeof_type_of_expr(cg, child);
-        int sz;
-        switch (kind) {
-        case TYPE_CHAR:               sz = 1; break;
-        case TYPE_SHORT:              sz = 2; break;
-        case TYPE_LONG:               sz = 8; break;
-        case TYPE_LONG_LONG:          sz = 8; break;
-        case TYPE_UNSIGNED_LONG_LONG: sz = 8; break;
-        case TYPE_POINTER:            sz = 8; break;
-        default:                      sz = 4; break; /* TYPE_INT */
+        /* Stage 160: sizeof(((T*)expr)->field) where base has a cast full_type. */
+        if (child->type == AST_ARROW_ACCESS && child->child_count > 0 &&
+            child->children[0]->full_type != NULL &&
+            child->children[0]->full_type->kind == TYPE_POINTER &&
+            child->children[0]->full_type->base != NULL) {
+            StructField *sf = find_struct_field(
+                child->children[0]->full_type->base, child->value);
+            if (sf) {
+                int fsz;
+                if (sf->full_type) {
+                    fsz = sf->full_type->size;
+                } else {
+                    TypeKind fk = sf->kind;
+                    if (fk == TYPE_POINTER || fk == TYPE_LONG ||
+                        fk == TYPE_LONG_LONG || fk == TYPE_UNSIGNED_LONG_LONG ||
+                        fk == TYPE_DOUBLE)
+                        fsz = 8;
+                    else if (fk == TYPE_SHORT)
+                        fsz = 2;
+                    else if (fk == TYPE_CHAR || fk == TYPE_BOOL)
+                        fsz = 1;
+                    else
+                        fsz = 4;
+                }
+                fprintf(cg->output, "    mov rax, %d\n", fsz);
+                node->result_type = TYPE_LONG;
+                return;
+            }
         }
-        fprintf(cg->output, "    mov rax, %d\n", sz);
-        node->result_type = TYPE_LONG;
-        return;
+        {
+            TypeKind kind = sizeof_type_of_expr(cg, child);
+            int sz;
+            switch (kind) {
+            case TYPE_CHAR:               sz = 1; break;
+            case TYPE_SHORT:              sz = 2; break;
+            case TYPE_LONG:               sz = 8; break;
+            case TYPE_LONG_LONG:          sz = 8; break;
+            case TYPE_UNSIGNED_LONG_LONG: sz = 8; break;
+            case TYPE_POINTER:            sz = 8; break;
+            default:                      sz = 4; break; /* TYPE_INT */
+            }
+            fprintf(cg->output, "    mov rax, %d\n", sz);
+            node->result_type = TYPE_LONG;
+            return;
+        }
     }
     if (node->type == AST_UNARY_OP) {
         codegen_expression(cg, node->children[0]);

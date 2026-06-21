@@ -87,6 +87,36 @@ if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     else
         echo "SKIP  system include suite (runner not found at $sysinclude_runner)"
     fi
+
+    sysinclude_opt_runner="$SCRIPT_DIR/integration_sysinclude/run_tests.sh"
+    if [ -x "$sysinclude_opt_runner" ]; then
+        echo ""
+        echo "===================================================="
+        echo "Running suite: optional-library sysinclude (Linux x86_64)"
+        echo "===================================================="
+        opt_output=$("$sysinclude_opt_runner" 2>&1)
+        opt_rc=$?
+        echo "$opt_output"
+        opt_summary=$(echo "$opt_output" | tail -n 1)
+        if [[ "$opt_summary" =~ Results:\ ([0-9]+)\ passed,\ ([0-9]+)\ failed,\ ([0-9]+)\ skipped,\ ([0-9]+)\ total ]]; then
+            op="${BASH_REMATCH[1]}"
+            of="${BASH_REMATCH[2]}"
+            osk="${BASH_REMATCH[3]}"
+            ot="${BASH_REMATCH[4]}"
+        else
+            op=0; of=0; osk=0; ot=0
+            echo "WARN  could not parse summary line for optional-library suite"
+        fi
+        echo ""
+        echo "===================================================="
+        echo "Optional-library sysinclude: $op passed, $of failed, $osk skipped, $ot total"
+        echo "===================================================="
+        if [ "$opt_rc" -ne 0 ]; then
+            overall_rc=1
+        fi
+    else
+        echo "SKIP  optional-library suite (runner not found at $sysinclude_opt_runner)"
+    fi
 fi
 
 exit $overall_rc

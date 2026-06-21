@@ -1,21 +1,18 @@
 #!/bin/bash
 #
-# System-header integration test runner.  Identical to run_tests.sh but uses
-# GCC system include paths instead of the project's test/include stubs.
-# Not part of the standard build.sh CI run — use manually to validate that
-# tests whose only obstacle was a preprocessor expression gap now pass with
-# real system headers.
+# Optional-library integration test runner.
+# Like run_tests_sysinclude.sh but for tests that require optional third-party
+# libraries (SDL2, zlib, etc.).  Tests with a .require companion file are
+# skipped if the prerequisite check command exits non-zero.
 #
-# Expected results after stage 139:
-#   ~90+ tests pass; the ~7 remaining failures are unrelated to the preprocessor
-#   expression evaluator (angle-include, recursive-include, intentional errors,
-#   const-discard interaction with real FILE* typedef, one signature mismatch).
+# Results line format (consumed by run_all_tests.sh):
+#   Results: P passed, F failed, S skipped, T total
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPILER="$PROJECT_DIR/build/ccompiler"
-WORK_DIR="$PROJECT_DIR/build/test_tmp_integration_sysinclude"
+WORK_DIR="$PROJECT_DIR/build/test_tmp_integration_sysinclude_opt"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 DEFAULT_IFLAGS=(
     "-I/usr/lib/gcc/x86_64-linux-gnu/13/include"
@@ -28,34 +25,37 @@ mkdir -p "$WORK_DIR"
 
 pass=0
 fail=0
+skip=0
 total=0
 
 for test_dir in "$SCRIPT_DIR"/*/; do
     [ -d "$test_dir" ] || continue
     name=$(basename "$test_dir")
+    total=$((total + 1))
 
     require_file="$test_dir/${name}.require"
     if [ -f "$require_file" ]; then
         req_cmd="$(cat "$require_file")"
         if ! eval "$req_cmd" >/dev/null 2>&1; then
             echo "SKIP  $name  (requires: $req_cmd)"
+            skip=$((skip + 1))
             continue
         fi
     fi
 
     if [ ! -f "$test_dir/${name}.c" ]; then
         if [ -f "$test_dir/run_test.sh" ]; then
-            total=$((total + 1))
             if bash "$test_dir/run_test.sh" >/dev/null 2>&1; then
                 pass=$((pass + 1))
             else
                 echo "FAIL  $name"
                 fail=$((fail + 1))
             fi
+        else
+            skip=$((skip + 1))
         fi
         continue
     fi
-    total=$((total + 1))
 
     test_work="$WORK_DIR/$name"
     mkdir -p "$test_work"
@@ -174,4 +174,4 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 done
 
 echo ""
-echo "Results: $pass passed, $fail failed, $total total"
+echo "Results: $pass passed, $fail failed, $skip skipped, $total total"

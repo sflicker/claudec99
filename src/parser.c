@@ -3130,8 +3130,63 @@ static long eval_const_primary(Parser *parser, const char *context) {
             parser_expect(parser, TOKEN_RPAREN);
             return (long)type_size(t);
         }
-        PARSER_ERROR(parser,
-            "error: sizeof requires a type name in a constant expression context\n");
+        /* sizeof(expr): parse the expression, derive size from the node's type. */
+        {
+            ASTNode *expr_node;
+            Type *base_st;
+            long sz;
+            int k;
+            int fi;
+            sz = 4;
+            k = TYPE_INT;
+            fi = 0;
+            base_st = NULL;
+            expr_node = parse_expression(parser);
+            if (expr_node != NULL && expr_node->full_type != NULL) {
+                sz = (long)type_size(expr_node->full_type);
+            } else if (expr_node != NULL &&
+                       expr_node->type == AST_ARROW_ACCESS &&
+                       expr_node->child_count > 0 &&
+                       expr_node->children[0]->full_type != NULL &&
+                       expr_node->children[0]->full_type->kind == TYPE_POINTER &&
+                       expr_node->children[0]->full_type->base != NULL) {
+                base_st = expr_node->children[0]->full_type->base;
+                for (fi = 0; fi < base_st->field_count; fi++) {
+                    if (strcmp(base_st->fields[fi].name, expr_node->value) == 0) {
+                        if (base_st->fields[fi].full_type != NULL) {
+                            sz = (long)base_st->fields[fi].full_type->size;
+                        } else {
+                            k = (int)base_st->fields[fi].kind;
+                            if (k == TYPE_POINTER || k == TYPE_LONG ||
+                                k == TYPE_LONG_LONG || k == TYPE_UNSIGNED_LONG_LONG ||
+                                k == TYPE_DOUBLE)
+                                sz = 8;
+                            else if (k == TYPE_SHORT)
+                                sz = 2;
+                            else if (k == TYPE_CHAR || k == TYPE_BOOL)
+                                sz = 1;
+                            else
+                                sz = 4;
+                        }
+                        break;
+                    }
+                }
+            } else {
+                k = (expr_node != NULL) ? (int)expr_node->decl_type : TYPE_INT;
+                if (k == TYPE_POINTER || k == TYPE_LONG || k == TYPE_LONG_LONG ||
+                    k == TYPE_UNSIGNED_LONG_LONG || k == TYPE_DOUBLE)
+                    sz = 8;
+                else if (k == TYPE_SHORT)
+                    sz = 2;
+                else if (k == TYPE_CHAR || k == TYPE_BOOL)
+                    sz = 1;
+                else
+                    sz = 4;
+            }
+            if (expr_node != NULL) ast_free(expr_node);
+            parser_expect(parser, TOKEN_RPAREN);
+            return sz;
+        }
     }
     PARSER_ERROR(parser,
         "error: %s is not an integer constant expression\n", context);
