@@ -1,5 +1,26 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 161 self-hosting test
+
+None. The one-line change in `src/codegen.c` (replacing `pointer_types_equal`
+with `pointer_types_assignable` in the pointer comparison check) and the new
+integration tests compile cleanly under C0. All 2065 portable tests + 182
+system-include tests + 1 optional-library test (test_sdl2_init) passed at
+C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 161)
+
+**Date:** 2026-06-21
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01610000.01194` | 2065 portable + 182 sysinclude + 1 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01610000.01195` | 2065 portable + 182 sysinclude + 1 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01610000.01196` | 2065 portable + 182 sysinclude + 1 optional |
+
+---
+
 ## Issues found during stage 160 self-hosting test
 
 None. All stage 160 changes (eval_const_primary sizeof(expr) path extension in
