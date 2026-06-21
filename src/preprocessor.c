@@ -2421,12 +2421,11 @@ char *preprocess_with_defines_and_includes(const char *source,
         /* Compiler built-in preamble: defines __builtin_va_list so system
          * stdarg.h's "typedef __builtin_va_list __gnuc_va_list;" resolves
          * to the same struct our codegen uses for va_start/va_arg. */
+        /* GCC extension macros appended so system headers that use __attribute__
+         * or __declspec parse cleanly.  Single literal: cc99 char-array init
+         * does not support adjacent-literal concatenation. */
         static const char builtin_preamble[] =
-            "struct __claudec00_va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void *overflow_arg_area; void *reg_save_area; };\ntypedef struct __claudec00_va_list_tag __builtin_va_list[1];\n"
-            /* GCC extension macros: __attribute__ and __declspec consume and discard
-             * their argument so system headers that use them parse cleanly. */
-            "#define __attribute__(x)\n"
-            "#define __declspec(x)\n";
+            "struct __claudec00_va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void *overflow_arg_area; void *reg_save_area; };\ntypedef struct __claudec00_va_list_tag __builtin_va_list[1];\n#define __attribute__(x)\n#define __declspec(x)\n";
 
         size_t preamble_len = sizeof(builtin_preamble) - 1;
         size_t src_len      = strlen(source);
