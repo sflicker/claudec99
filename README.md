@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 160 (sizeof(expr) in constant expressions and SDL2 integration test):
+
+> Stage 160 fixes `sizeof(expr)` in compile-time constant expression contexts (array dimensions, `case` labels, enum values, `typedef` definitions): `eval_const_primary` in `src/parser.c` now parses the operand expression, resolves struct fields from the base pointer type, and returns the correct byte size for member-access expressions like `sizeof(((SDL_Event *)NULL)->padding)`. A parallel fix in `src/codegen.c` handles the same pattern in runtime sizeof contexts (e.g., `int a = sizeof(((struct Box *)0)->label)`). New optional-library test infrastructure: `test/integration_sysinclude/` with a `run_tests.sh` runner that checks `.require` companion files and reports `SKIP` instead of `FAIL` when a prerequisite library is absent. First optional test: `test_sdl2_init` compiles and links a real SDL2 program; auto-skipped when SDL2 is not installed. Two new portable integration tests (`test_sizeof_expr_ptr`, `test_sizeof_expr_array_dim`). All 2063 portable tests pass (165 unit, 1286 valid, 261 invalid, 180 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 180 pass. Optional-library: 1 pass (test_sdl2_init). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 159 (SDL2 compile failure: GCC extension parsing fixes):
 
 > Stage 159 fixes the SDL_main.h parse error (`expected ')', got '['`) caused by array parameters in function-pointer typedef param lists (`typedef int (*fn_t)(int argc, char *argv[]);`). Three inline parameter-type parsing loops in `parse_declarator` now handle `[]` suffixes per C99 §6.7.5.3p7, adjusting array parameters to their pointer equivalents. Five additional GCC-extension fixes allow SDL2 and other system headers to advance further through the include chain: `__attribute__((x))` and `__extension__` are predefined as empty-expansion macros; `__asm__`/`asm` statements are parsed and discarded as no-ops; anonymous struct/union members (no declarator after an inner type) are silently skipped; trailing qualifiers after the base type in function parameters (`void const *`) are consumed. One bootstrap fix: the new preamble content was merged into the existing single `builtin_preamble` string literal (cc99's char-array initializer does not support adjacent string literal concatenation). Five new integration tests. All 2239 total tests pass (2061 portable + 178 system-include). Self-host C0→C1→C2 verified with all tests passing at every stage.
@@ -809,9 +813,23 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` and reports a separate `System include: P passed, F failed, T total` line. As of stage 154 all 2042 portable tests pass (1286 valid, 261 invalid, 159 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system include suite passes 159/159.
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 160 all 2063 portable tests pass (1286 valid, 261 invalid, 180 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 180/180; the optional-library suite passes 1/1 (test_sdl2_init).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
+
+## Optional library tests
+
+Integration tests under `test/integration_sysinclude/` may require optional
+system libraries.  Tests for missing libraries are automatically skipped
+(reported as `SKIP`, not `FAIL`).  The `.require` companion file in each test
+directory names the prerequisite check command.
+
+| Library | Debian/Ubuntu install     | Prerequisite check | Test(s)           |
+|---------|---------------------------|--------------------|-------------------|
+| SDL2    | `apt install libsdl2-dev` | `sdl2-config`      | `test_sdl2_init`  |
+
+Future stages that add tests for other libraries (zlib, OpenGL, etc.) append
+rows to this table.
 
 Tests in `test/valid/` use the naming convention
 `test_<description>__<expected_exit_code>.c` so the runner can extract

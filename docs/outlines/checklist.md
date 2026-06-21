@@ -2274,6 +2274,32 @@ TODO items completed this stage:
 
 ---
 
+## Stage 160 - sizeof(expr) in Constant Expressions and SDL2 Integration Test
+
+- [x] `sizeof(expr)` in constant expression context (`eval_const_primary` in `src/parser.c`)
+	- [x] Calls `parse_expression` to parse the operand
+	- [x] If `expr_node->full_type` is set, uses `type_size(full_type)` directly
+	- [x] If node is `AST_ARROW_ACCESS` with typed base, walks struct field table to resolve size
+	- [x] Scalar fallback uses `decl_type` for simple expressions
+- [x] `sizeof(((T*)expr)->field)` in runtime context (`codegen.c` `AST_SIZEOF_EXPR` handler)
+	- [x] New case: base has cast `full_type` (TYPE_POINTER to struct) — resolves field size directly
+	- [x] Fixes `sizeof(((struct Box *)0)->label)` returning correct array size (20) instead of 4
+- [x] Optional-library test infrastructure (`test/integration_sysinclude/`)
+	- [x] New `run_tests.sh` with `.require` companion-file check (SKIP on non-zero exit)
+	- [x] Reports `Results: P passed, F failed, S skipped, T total`
+	- [x] `.require` check added to `test/integration/run_tests_sysinclude.sh`
+	- [x] `test/run_all_tests.sh` invokes new runner on Linux x86_64
+- [x] SDL2 integration test (`test/integration_sysinclude/test_sdl2_init/`)
+	- [x] Compiles/links/runs minimal SDL2 program (SDL_Init, SDL_GetVersion, SDL_Quit)
+	- [x] Workarounds: `-DSDL_DISABLE_IMMINTRIN_H -D__FLT_EPSILON__=1.1920928955078125e-07F`
+	- [x] Auto-skipped when SDL2 not installed (`sdl2-config --version` check)
+- [x] 2 new portable integration tests: `test_sizeof_expr_ptr`, `test_sizeof_expr_array_dim`
+- [x] Version update: `src/version.c` incremented to `01600000`
+- [x] Test results: 2063 portable + 180 system-include + 1 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 160)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
