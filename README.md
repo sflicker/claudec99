@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 163 (non-constant initializer for global):
+
+> Stage 163 fixes a bug where `T *p = NULL;` at file scope was incorrectly rejected with "non-constant initializer for global" when `NULL` is defined (per GCC system stddef.h) as `((void *)0)`. The parser's pointer-global initializer validator now recognizes null pointer constant casts (`AST_CAST` from `TYPE_POINTER` containing `AST_INT_LITERAL("0")`) as valid initializers, and codegen emits `dq 0` in the data section for such globals. The fix enables proper compilation of programs using system headers where `NULL` is a cast expression rather than a bare integer literal. All 2066 portable tests pass (165 unit, 1286 valid, 261 invalid, 183 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 183 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 162 (zlib integration test):
 
 > Stage 162 adds a zlib optional-library integration test (`test_zlib_compress`) to the `test/integration_sysinclude/` suite. The test compiles and runs the zlib compression program from the stage 158 spec: it compresses "Hello From ClaudeC99" using `compress()` from zlib and prints the original and compressed byte counts. The test is auto-skipped when zlib is not installed (`pkg-config --exists zlib` prerequisite check); it links with `-lz` and expects exit status 0. README updated to list zlib as a supported optional library. All 2065 portable tests pass (165 unit, 1286 valid, 261 invalid, 182 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 182 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.

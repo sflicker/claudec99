@@ -2320,6 +2320,19 @@ TODO items completed this stage:
 - [x] Test results: 2065 portable + 182 system-include + 2 optional-library pass
 - [x] Self-host C0→C1→C2 verified (Stage 162)
 
+## Stage 163 - Non-Constant Initializer for Global
+
+- [x] Parser: Extended pointer-global initializer validator in `src/parser.c` (~line 4639)
+	- [x] Added acceptance for `AST_CAST` nodes where `decl_type == TYPE_POINTER` and child is `AST_INT_LITERAL("0")`
+	- [x] Fixes bug: `T *p = NULL;` rejected when `NULL` is `((void *)0)` (GCC system stddef.h)
+- [x] Codegen: New branch in `codegen_add_global` for `TYPE_POINTER` globals with `AST_CAST` null pointer constant
+	- [x] Sets `init_value = 0`, `is_initialized = 1`
+	- [x] Emits `dq 0` in the data section
+- [x] Version update: `src/version.c` incremented to `01630000`
+- [x] Integration test: `test_null_cast_global` verifying NULL-cast globals
+- [x] Test results: 2066 portable (165 unit, 1286 valid, 261 invalid, 183 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 183 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 163)
+
 ---
 
 ## Stage 158 - Compile Failure with External Library
