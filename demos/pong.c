@@ -60,6 +60,27 @@ void teardown(int returnCode) {
     exit(returnCode);
 }
 
+void drawWalls() {
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+    int width = 10;
+    int x1 = width;
+    int x2 = WINDOW_WIDTH - width;
+    int y1 = width;
+    int y2 = WINDOW_HEIGHT - width;
+
+    SDL_Rect rect1 = { x1, y1, width, WINDOW_HEIGHT };
+    SDL_Rect rect2 = { x1, y2, WINDOW_WIDTH, width};
+    SDL_Rect rect3 = { x2, y1, width, WINDOW_HEIGHT };
+    SDL_Rect rect4 = { x1, y1, WINDOW_WIDTH, width };
+
+    SDL_RenderFillRect(renderer, &rect1);
+    SDL_RenderFillRect(renderer, &rect2);
+    SDL_RenderFillRect(renderer, &rect3);
+    SDL_RenderFillRect(renderer, &rect4);
+
+}
+
 int main(void) {
     // SDL Setup
     if (!setup()) {
@@ -67,6 +88,8 @@ int main(void) {
     }
 
     // body
+
+
     bool running = true;
     while(running) {
         SDL_Event event;
@@ -82,33 +105,9 @@ int main(void) {
                 }
             }
 
-            /* Dark blud backgroupd */
-            SDL_SetRenderDrawColor(renderer, 20, 30, 60, 255);
-            SDL_RenderClear(renderer);
+            drawWalls();
 
-            SDL_Rect red_rectangle = {
-                .x = 100,
-                .y = 100,
-                .w = 250,
-                .h = 150
-            };
 
-            SDL_SetRenderDrawColor(renderer, 220, 60, 60, 255);
-            SDL_RenderFillRect(renderer, &red_rectangle);
-
-            SDL_Rect green_rectangle = {
-                .x = 450,
-                .y = 300,
-                .w = 200,
-                .h = 200
-            };
-
-            SDL_SetRenderDrawColor(renderer, 60, 200, 100, 255);
-            SDL_RenderFillRect(renderer, &green_rectangle);
-
-            /* Draw a while diagonal line. */
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            SDL_RenderDrawLine(renderer, 50, 550, 750, 50);
 
             SDL_RenderPresent(renderer);
         }
