@@ -8,6 +8,8 @@
  * Stage 157: zero-register idiom -- `mov REG, 0` -> `xor REG32, REG32`
  *            for all 64-bit and 32-bit GP registers; single-line window.
  *
+ * Stage 164: no-op move elimination -- `mov REG, REG` (same src/dst) -> remove.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -184,9 +186,47 @@ static void replace_zero_reg(const char **win, int n,
     *out_count = 1;
 }
 
+/* -----------------------------------------------------------------------
+ * No-op move elimination: mov REG, REG (same src and dst) -> remove.
+ *
+ * Matches any register width: 64-bit (rax), 32-bit (eax), 16-bit (ax),
+ * 8-bit (al), and extended registers (r8-r15 in all widths).
+ * The entire line is deleted (out_count = 0).
+ * ----------------------------------------------------------------------- */
+
+static int match_nop_move(const char **win, int n) {
+    const char *p;
+    const char *dst_start;
+    size_t dst_len;
+
+    (void)n;
+    p = win[0];
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "mov ", 4) != 0) return 0;
+    p += 4;
+
+    dst_start = p;
+    while (*p != '\0' && *p != ',') p++;
+    if (*p != ',') return 0;
+    dst_len = (size_t)(p - dst_start);
+    p++; /* skip ',' */
+    if (*p != ' ') return 0;
+    p++; /* skip ' ' */
+
+    return (strncmp(p, dst_start, dst_len) == 0 && p[dst_len] == '\0');
+}
+
+static void replace_nop_move(const char **win, int n,
+                              char **out, int *out_count) {
+    (void)win;
+    (void)n;
+    (void)out;
+    *out_count = 0;
+}
+
 /* Built-in pattern table -- initialized at first call because C0 does not
    support function-pointer initializers in struct aggregate literals. */
-static PeepholePattern g_builtin_patterns[1];
+static PeepholePattern g_builtin_patterns[2];
 static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
@@ -194,9 +234,12 @@ const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
         g_builtin_patterns[0].window_size = 1;
         g_builtin_patterns[0].matcher     = match_zero_reg;
         g_builtin_patterns[0].replacer    = replace_zero_reg;
+        g_builtin_patterns[1].window_size = 1;
+        g_builtin_patterns[1].matcher     = match_nop_move;
+        g_builtin_patterns[1].replacer    = replace_nop_move;
         g_builtin_patterns_ready          = 1;
     }
-    *n_pats = 1;
+    *n_pats = 2;
     return g_builtin_patterns;
 }
 
