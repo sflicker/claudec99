@@ -10,6 +10,8 @@
  *
  * Stage 164: no-op move elimination -- `mov REG, REG` (same src/dst) -> remove.
  *
+ * Stage 165: push/pop pair collapse -- `push rX` / `pop rY` -> `mov rY, rX`.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -224,9 +226,89 @@ static void replace_nop_move(const char **win, int n,
     *out_count = 0;
 }
 
+/* -----------------------------------------------------------------------
+ * Push/pop pair collapse: push rX / pop rY (adjacent) -> mov rY, rX.
+ *
+ * If both registers are the same (push rX / pop rX), the pair is a
+ * no-op and both lines are deleted (out_count = 0).
+ * ----------------------------------------------------------------------- */
+
+/*
+ * pp_extract_reg -- extract the register name from a "push REG" or "pop REG"
+ * line.  mnemonic is the expected prefix ("push " or "pop ").
+ * Returns 1 on success, 0 on parse failure.
+ */
+static int pp_extract_reg(const char *line, const char *mnemonic,
+                           char *dst, size_t dst_size) {
+    const char *p;
+    const char *reg;
+    size_t mlen;
+    size_t rlen;
+
+    p    = line;
+    mlen = strlen(mnemonic);
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, mnemonic, mlen) != 0) return 0;
+    p += mlen;
+
+    reg  = p;
+    rlen = 0;
+    while (*p != '\0') { p++; rlen++; }
+    if (rlen == 0 || rlen >= dst_size) return 0;
+
+    strncpy(dst, reg, rlen);
+    dst[rlen] = '\0';
+    return 1;
+}
+
+static int match_push_pop(const char **win, int n) {
+    char r0[32];
+    char r1[32];
+    (void)n;
+    if (!pp_extract_reg(win[0], "push ", r0, sizeof(r0))) return 0;
+    if (!pp_extract_reg(win[1], "pop ",  r1, sizeof(r1))) return 0;
+    return 1;
+}
+
+static void replace_push_pop(const char **win, int n,
+                              char **out, int *out_count) {
+    char        r0[32];
+    char        r1[32];
+    char        buf[80];
+    const char *p;
+    size_t      prefix_len;
+
+    (void)n;
+
+    pp_extract_reg(win[0], "push ", r0, sizeof(r0));
+    pp_extract_reg(win[1], "pop ",  r1, sizeof(r1));
+
+    /* Measure leading whitespace from the push line. */
+    p = win[0];
+    while (*p == ' ' || *p == '\t') p++;
+    prefix_len = (size_t)(p - win[0]);
+    if (prefix_len >= sizeof(buf) - 1) prefix_len = sizeof(buf) - 2;
+
+    /* Same register: the pair is a no-op; delete both lines. */
+    if (strcmp(r0, r1) == 0) {
+        *out_count = 0;
+        return;
+    }
+
+    strncpy(buf, win[0], prefix_len);
+    buf[prefix_len] = '\0';
+    strncat(buf, "mov ", sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, r1,    sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, ", ",  sizeof(buf) - strlen(buf) - 1);
+    strncat(buf, r0,    sizeof(buf) - strlen(buf) - 1);
+
+    out[0]     = util_strdup(buf);
+    *out_count = 1;
+}
+
 /* Built-in pattern table -- initialized at first call because C0 does not
    support function-pointer initializers in struct aggregate literals. */
-static PeepholePattern g_builtin_patterns[2];
+static PeepholePattern g_builtin_patterns[3];
 static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
@@ -237,9 +319,12 @@ const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
         g_builtin_patterns[1].window_size = 1;
         g_builtin_patterns[1].matcher     = match_nop_move;
         g_builtin_patterns[1].replacer    = replace_nop_move;
+        g_builtin_patterns[2].window_size = 2;
+        g_builtin_patterns[2].matcher     = match_push_pop;
+        g_builtin_patterns[2].replacer    = replace_push_pop;
         g_builtin_patterns_ready          = 1;
     }
-    *n_pats = 2;
+    *n_pats = 3;
     return g_builtin_patterns;
 }
 
