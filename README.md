@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 165 (peephole push/pop pair collapse):
+
+> Stage 165 adds the third built-in peephole optimization pattern: push/pop pair collapse. When a `push rX` instruction is immediately followed by a `pop rY` instruction (adjacent lines, no intervening branch or label), the pair is collapsed to a single `mov rY, rX`, eliminating a stack memory round-trip. The special case where both registers are identical (`push rX` / `pop rX`) deletes both lines as a no-op. This is the first 2-line window pattern in the peephole optimizer (patterns 0 and 1 used single-line windows). Implementation: `pp_extract_reg` helper parses push/pop lines; `match_push_pop` verifies both lines match; `replace_push_pop` handles same-register deletion and cross-register `mov` emission with leading whitespace preserved. `g_builtin_patterns` expanded from 2 to 3 entries. Pattern fires at `-O2`. One new integration test (`test_peephole_push_pop`). All 2068 portable tests pass (165 unit, 1286 valid, 261 invalid, 185 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 185 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 164 (peephole no-op move elimination):
 
 > Stage 164 adds the second built-in peephole optimization pattern: no-op move elimination. When a `mov REG, REG` instruction has the same register on both source and destination sides (e.g. `mov rax, rax`), the instruction is deleted entirely. The pattern fires at `-O2`, handles all register widths (64-bit `rax`, 32-bit `eax`, 16-bit `ax`, 8-bit `al`, and extended `r8`–`r15` in all widths), and uses a generic string-comparison matcher — no register lookup table needed. One new integration test (`test_peephole_nop_move`). All 2067 portable tests pass (165 unit, 1286 valid, 261 invalid, 184 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 184 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.

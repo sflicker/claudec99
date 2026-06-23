@@ -2350,6 +2350,22 @@ TODO items completed this stage:
 
 ---
 
+## Stage 165 - Peephole Push/Pop Pair Collapse
+
+- [x] `src/peephole.c`: add `pp_extract_reg` helper — parses `push REG` or `pop REG` line, extracts register name into caller-supplied buffer
+- [x] `src/peephole.c`: add `match_push_pop` matcher — uses `pp_extract_reg` to verify both lines are well-formed; 2-line window
+- [x] `src/peephole.c`: add `replace_push_pop` replacer — same-register pair → `out_count = 0`; different registers → single `mov rY, rX` line preserving leading whitespace
+- [x] `src/peephole.c`: expand `g_builtin_patterns[2]` → `[3]`; register new pattern at index [2] with `window_size = 2`; update `*n_pats` 2 → 3
+- [x] Version update: `src/version.c` incremented to `01650000`
+- [x] 1 new integration test: `test_peephole_push_pop` (add function called twice, compiled at `-O2`, returns 42)
+- [x] Test results: 2068 portable (165 unit, 1286 valid, 261 invalid, 185 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 185 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 165)
+
+TODO items completed this stage:
+- [x] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX` (Stage 165)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
@@ -2528,7 +2544,7 @@ Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches
 - [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits) (Stage 157)
 - [x] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove (Stage 164)
-- [ ] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX`
+- [x] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX` (Stage 165)
 - [ ] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload
 - [ ] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store
 - [ ] Dead-jump removal: `jmp Lxx` immediately followed by `Lxx:` → remove the jump
