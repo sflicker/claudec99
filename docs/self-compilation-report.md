@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 164 self-hosting test
+
+None. The new `match_nop_move`/`replace_nop_move` functions in `src/peephole.c`
+(pure string-comparison logic, no new includes) and the expanded
+`g_builtin_patterns[2]` array compile cleanly under C0. All 2067 portable
+tests + 184 system-include tests + 2 optional-library tests (test_sdl2_init,
+test_zlib_compress) passed at C0, C1, and C2 with no source changes needed
+during bootstrap.
+
+## Result (stage 164)
+
+**Date:** 2026-06-22
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01640000.01213` | 2067 portable + 184 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01640000.01214` | 2067 portable + 184 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01640000.01215` | 2067 portable + 184 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 163 self-hosting test
 
 None. The parser validator extension (allowing `AST_CAST` with integer-0
