@@ -224,6 +224,10 @@ int main() {
 
 ## What the compiler currently supports
 
+Through Stage 164 (peephole no-op move elimination):
+
+> Stage 164 adds the second built-in peephole optimization pattern: no-op move elimination. When a `mov REG, REG` instruction has the same register on both source and destination sides (e.g. `mov rax, rax`), the instruction is deleted entirely. The pattern fires at `-O2`, handles all register widths (64-bit `rax`, 32-bit `eax`, 16-bit `ax`, 8-bit `al`, and extended `r8`–`r15` in all widths), and uses a generic string-comparison matcher — no register lookup table needed. One new integration test (`test_peephole_nop_move`). All 2067 portable tests pass (165 unit, 1286 valid, 261 invalid, 184 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 184 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
+
 Through Stage 163 (non-constant initializer for global):
 
 > Stage 163 fixes a bug where `T *p = NULL;` at file scope was incorrectly rejected with "non-constant initializer for global" when `NULL` is defined (per GCC system stddef.h) as `((void *)0)`. The parser's pointer-global initializer validator now recognizes null pointer constant casts (`AST_CAST` from `TYPE_POINTER` containing `AST_INT_LITERAL("0")`) as valid initializers, and codegen emits `dq 0` in the data section for such globals. The fix enables proper compilation of programs using system headers where `NULL` is a cast expression rather than a bare integer literal. All 2066 portable tests pass (165 unit, 1286 valid, 261 invalid, 183 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 183 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.

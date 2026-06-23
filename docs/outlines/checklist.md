@@ -2335,6 +2335,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 164 - Peephole No-op Move Elimination
+
+- [x] `src/peephole.c`: add `match_nop_move` matcher — parses `mov DST, SRC`, extracts DST token, checks SRC == DST by string comparison; fires for all register widths
+- [x] `src/peephole.c`: add `replace_nop_move` replacer — sets `*out_count = 0` to delete the line
+- [x] `src/peephole.c`: expand `g_builtin_patterns[1]` → `[2]`; register new pattern at index [1]; update `*n_pats` 1 → 2
+- [x] Version update: `src/version.c` incremented to `01640000`
+- [x] 1 new integration test: `test_peephole_nop_move` (identity function compiled at `-O2`, returns 42)
+- [x] Test results: 2067 portable (165 unit, 1286 valid, 261 invalid, 184 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 184 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 164)
+
+TODO items completed this stage:
+- [x] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove (Stage 164)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
@@ -2512,7 +2527,7 @@ Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches
 
 - [x] Infrastructure: `peephole.c` / `include/peephole.h`; sliding window (2–4 lines) over the output buffer; patterns expressed as matcher + replacer functions (Stage 155)
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits) (Stage 157)
-- [ ] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove
+- [x] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove (Stage 164)
 - [ ] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX`
 - [ ] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload
 - [ ] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store
