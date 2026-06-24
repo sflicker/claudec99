@@ -15,6 +15,9 @@
  * Stage 166: redundant reload elimination -- `mov [rbp-N], REG` /
  *            `mov REG, [rbp-N]` -> keep store, drop reload.
  *
+ * Stage 167: redundant store elimination -- two consecutive `mov [rbp-N], REG`
+ *            to the same offset -> delete the first store.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -409,9 +412,38 @@ static void replace_redundant_reload(const char **win, int n,
     *out_count = 1;
 }
 
+/* -----------------------------------------------------------------------
+ * Redundant store elimination:
+ *   mov [rbp - N], REG0   (first store -- dead, overwritten before any read)
+ *   mov [rbp - N], REG1   (second store -- kept)
+ *
+ * Both lines must be stores to the same stack offset.  The register names
+ * need not match.  The first store is deleted; the second is kept unchanged.
+ * Reuses pp_parse_store_rbp from Stage 166.
+ * ----------------------------------------------------------------------- */
+
+static int match_redundant_store(const char **win, int n) {
+    char r0[32];
+    char o0[16];
+    char r1[32];
+    char o1[16];
+
+    (void)n;
+    if (!pp_parse_store_rbp(win[0], r0, sizeof(r0), o0, sizeof(o0))) return 0;
+    if (!pp_parse_store_rbp(win[1], r1, sizeof(r1), o1, sizeof(o1))) return 0;
+    return (strcmp(o0, o1) == 0);
+}
+
+static void replace_redundant_store(const char **win, int n,
+                                    char **out, int *out_count) {
+    (void)n;
+    out[0]     = util_strdup(win[1]);
+    *out_count = 1;
+}
+
 /* Built-in pattern table -- initialized at first call because C0 does not
    support function-pointer initializers in struct aggregate literals. */
-static PeepholePattern g_builtin_patterns[4];
+static PeepholePattern g_builtin_patterns[5];
 static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
@@ -428,9 +460,12 @@ const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
         g_builtin_patterns[3].window_size = 2;
         g_builtin_patterns[3].matcher     = match_redundant_reload;
         g_builtin_patterns[3].replacer    = replace_redundant_reload;
+        g_builtin_patterns[4].window_size = 2;
+        g_builtin_patterns[4].matcher     = match_redundant_store;
+        g_builtin_patterns[4].replacer    = replace_redundant_store;
         g_builtin_patterns_ready          = 1;
     }
-    *n_pats = 4;
+    *n_pats = 5;
     return g_builtin_patterns;
 }
 
