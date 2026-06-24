@@ -12,6 +12,9 @@
  *
  * Stage 165: push/pop pair collapse -- `push rX` / `pop rY` -> `mov rY, rX`.
  *
+ * Stage 166: redundant reload elimination -- `mov [rbp-N], REG` /
+ *            `mov REG, [rbp-N]` -> keep store, drop reload.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -306,9 +309,109 @@ static void replace_push_pop(const char **win, int n,
     *out_count = 1;
 }
 
+/* -----------------------------------------------------------------------
+ * Redundant reload elimination:
+ *   mov [rbp - N], REG   (store)
+ *   mov REG, [rbp - N]   (reload -- redundant, REG already holds the value)
+ *
+ * The reload line is deleted; the store line is kept unchanged.
+ * Both helpers match the exact NASM format emitted by the code generator:
+ * "mov [rbp - N], REG" and "mov REG, [rbp - N]" with spaces around '-'.
+ * ----------------------------------------------------------------------- */
+
+/*
+ * pp_parse_store_rbp -- parse "mov [rbp - N], REG" (leading whitespace ok).
+ * Writes the decimal offset into off and the register name into reg.
+ * Returns 1 on success, 0 on any parse failure.
+ */
+static int pp_parse_store_rbp(const char *line, char *reg, size_t reg_sz,
+                               char *off, size_t off_sz) {
+    const char *p;
+    const char *ostart;
+    const char *rstart;
+    size_t      olen;
+    size_t      rlen;
+
+    p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "mov ", 4) != 0) return 0;
+    p += 4;
+    if (strncmp(p, "[rbp - ", 7) != 0) return 0;
+    p += 7;
+    ostart = p;
+    while (*p >= '0' && *p <= '9') p++;
+    olen = (size_t)(p - ostart);
+    if (olen == 0 || olen >= off_sz) return 0;
+    strncpy(off, ostart, olen);
+    off[olen] = '\0';
+    if (strncmp(p, "], ", 3) != 0) return 0;
+    p += 3;
+    rstart = p;
+    while (*p != '\0') p++;
+    rlen = (size_t)(p - rstart);
+    if (rlen == 0 || rlen >= reg_sz) return 0;
+    strncpy(reg, rstart, rlen);
+    reg[rlen] = '\0';
+    return 1;
+}
+
+/*
+ * pp_parse_reload_rbp -- parse "mov REG, [rbp - N]" (leading whitespace ok).
+ * Writes the register name into reg and the decimal offset into off.
+ * Returns 1 on success, 0 on any parse failure.
+ */
+static int pp_parse_reload_rbp(const char *line, char *reg, size_t reg_sz,
+                                char *off, size_t off_sz) {
+    const char *p;
+    const char *rstart;
+    const char *ostart;
+    size_t      rlen;
+    size_t      olen;
+
+    p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "mov ", 4) != 0) return 0;
+    p += 4;
+    rstart = p;
+    while (*p != '\0' && *p != ',') p++;
+    rlen = (size_t)(p - rstart);
+    if (rlen == 0 || rlen >= reg_sz) return 0;
+    strncpy(reg, rstart, rlen);
+    reg[rlen] = '\0';
+    if (strncmp(p, ", [rbp - ", 9) != 0) return 0;
+    p += 9;
+    ostart = p;
+    while (*p >= '0' && *p <= '9') p++;
+    olen = (size_t)(p - ostart);
+    if (olen == 0 || olen >= off_sz) return 0;
+    strncpy(off, ostart, olen);
+    off[olen] = '\0';
+    if (*p != ']' || *(p + 1) != '\0') return 0;
+    return 1;
+}
+
+static int match_redundant_reload(const char **win, int n) {
+    char r0[32];
+    char o0[16];
+    char r1[32];
+    char o1[16];
+
+    (void)n;
+    if (!pp_parse_store_rbp(win[0],  r0, sizeof(r0), o0, sizeof(o0))) return 0;
+    if (!pp_parse_reload_rbp(win[1], r1, sizeof(r1), o1, sizeof(o1))) return 0;
+    return (strcmp(r0, r1) == 0 && strcmp(o0, o1) == 0);
+}
+
+static void replace_redundant_reload(const char **win, int n,
+                                     char **out, int *out_count) {
+    (void)n;
+    out[0]     = util_strdup(win[0]);
+    *out_count = 1;
+}
+
 /* Built-in pattern table -- initialized at first call because C0 does not
    support function-pointer initializers in struct aggregate literals. */
-static PeepholePattern g_builtin_patterns[3];
+static PeepholePattern g_builtin_patterns[4];
 static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
@@ -322,9 +425,12 @@ const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
         g_builtin_patterns[2].window_size = 2;
         g_builtin_patterns[2].matcher     = match_push_pop;
         g_builtin_patterns[2].replacer    = replace_push_pop;
+        g_builtin_patterns[3].window_size = 2;
+        g_builtin_patterns[3].matcher     = match_redundant_reload;
+        g_builtin_patterns[3].replacer    = replace_redundant_reload;
         g_builtin_patterns_ready          = 1;
     }
-    *n_pats = 3;
+    *n_pats = 4;
     return g_builtin_patterns;
 }
 
