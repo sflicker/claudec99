@@ -2398,6 +2398,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 168 - Peephole Dead-Jump Removal
+
+- [x] `src/peephole.c`: add `pp_parse_jmp_label` helper — parses `jmp LABEL` lines (leading whitespace ok), extracts target label name, strips trailing whitespace; returns 1 on success
+- [x] `src/peephole.c`: add `pp_parse_label_def` helper — parses `LABEL:` lines (no leading whitespace); extracts label name without colon; returns 1 on success
+- [x] `src/peephole.c`: add `match_dead_jump` matcher — calls both helpers on `win[0]` and `win[1]`; fires when jmp target equals label name; window size 2
+- [x] `src/peephole.c`: add `replace_dead_jump` replacer — deletes jump (`win[0]`), keeps label (`win[1]`); sets `out_count = 1`
+- [x] `src/peephole.c`: expand `g_builtin_patterns[5]` → `[6]`; register new pattern at index [5] with `window_size = 2`; update `*n_pats` 5 → 6
+- [x] Version update: `src/version.c` incremented to `01680000`
+- [x] 1 new integration test: `test_peephole_dead_jump` (`goto` to immediately following label, compiled at `-O2`, returns 42; dead jump verified removed at O2)
+- [x] Test results: 2071 portable (165 unit, 1286 valid, 261 invalid, 188 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 188 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 168)
+
+TODO items completed this stage:
+- [x] Dead-jump removal: `jmp Lxx` immediately followed by `Lxx:` → remove the jump (Stage 168)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support

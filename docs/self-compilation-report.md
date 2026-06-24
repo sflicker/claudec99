@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 168 self-hosting test
+
+None. The new `pp_parse_jmp_label`, `pp_parse_label_def`, `match_dead_jump`,
+and `replace_dead_jump` functions in `src/peephole.c` (pure string-parsing
+logic, no new headers, C89-style variable declarations with `int len` declared
+before use) and the expanded `g_builtin_patterns[6]` array compile cleanly
+under C0. All 2071 portable tests + 188 system-include tests + 2
+optional-library tests (test_sdl2_init, test_zlib_compress) passed at C0, C1,
+and C2 with no source changes needed during bootstrap.
+
+## Result (stage 168)
+
+**Date:** 2026-06-24
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01680000.01236` | 2071 portable + 188 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01680000.01237` | 2071 portable + 188 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01680000.01238` | 2071 portable + 188 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 167 self-hosting test
 
 None. The new `match_redundant_store` and `replace_redundant_store` functions
