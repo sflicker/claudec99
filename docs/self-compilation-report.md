@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 166 self-hosting test
+
+None. The new `pp_parse_store_rbp`, `pp_parse_reload_rbp`,
+`match_redundant_reload`, and `replace_redundant_reload` functions in
+`src/peephole.c` (pure string-parsing logic, no new headers, C89-style
+variable declarations) and the expanded `g_builtin_patterns[4]` array compile
+cleanly under C0. All 2069 portable tests + 186 system-include tests + 2
+optional-library tests (test_sdl2_init, test_zlib_compress) passed at C0, C1,
+and C2 with no source changes needed during bootstrap.
+
+## Result (stage 166)
+
+**Date:** 2026-06-23
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01660000.01224` | 2069 portable + 186 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01660000.01225` | 2069 portable + 186 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01660000.01226` | 2069 portable + 186 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 165 self-hosting test
 
 None. The new `pp_extract_reg`, `match_push_pop`, and `replace_push_pop`
