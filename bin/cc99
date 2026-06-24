@@ -30,7 +30,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-COMPILER="$PROJECT_DIR/build/ccompiler"
+COMPILER="$SCRIPT_DIR/ccompiler"
 # Stub system headers (stdio.h, stddef.h, etc.) — appended after user -I flags
 # so user-supplied paths take precedence, matching the test harness convention.
 DEFAULT_IFLAGS=("-I$PROJECT_DIR/test/include")
@@ -75,7 +75,7 @@ fi
 
 if [[ ! -x "$COMPILER" ]]; then
     echo "cc99: compiler not found at $COMPILER" >&2
-    echo "cc99: build first with: cmake --build build" >&2
+    echo "cc99: copy build/ccompiler to $(dirname "$0")/" >&2
     exit 1
 fi
 
