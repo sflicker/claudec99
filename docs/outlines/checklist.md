@@ -2366,6 +2366,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 166 - Peephole Redundant Reload Elimination
+
+- [x] `src/peephole.c`: add `pp_parse_store_rbp` helper — parses `mov [rbp - N], REG` line, extracts register name and decimal offset into caller-supplied buffers
+- [x] `src/peephole.c`: add `pp_parse_reload_rbp` helper — parses `mov REG, [rbp - N]` line, extracts register name and decimal offset into caller-supplied buffers
+- [x] `src/peephole.c`: add `match_redundant_reload` matcher — uses both parse helpers to verify both lines are well-formed; 2-line window; compares register names and offsets for exact match
+- [x] `src/peephole.c`: add `replace_redundant_reload` replacer — outputs store line; deletes reload line by setting `out_count = 1`
+- [x] `src/peephole.c`: expand `g_builtin_patterns[3]` → `[4]`; register new pattern at index [3] with `window_size = 2`; update `*n_pats` 3 → 4
+- [x] Version update: `src/version.c` incremented to `01660000`
+- [x] 1 new integration test: `test_peephole_redundant_reload` (pass-through function with store-then-reload, compiled at `-O2`, returns 42)
+- [x] Test results: 2069 portable (165 unit, 1286 valid, 261 invalid, 186 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 186 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 166)
+
+TODO items completed this stage:
+- [x] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload (Stage 166)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
@@ -2545,7 +2562,7 @@ Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (shorter encoding, zeroes upper 32 bits) (Stage 157)
 - [x] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove (Stage 164)
 - [x] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX` (Stage 165)
-- [ ] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload
+- [x] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload (Stage 166)
 - [ ] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store
 - [ ] Dead-jump removal: `jmp Lxx` immediately followed by `Lxx:` → remove the jump
 - [ ] Unreachable instruction removal: instructions after an unconditional `jmp` / `ret` with no intervening label → strip until next label
