@@ -2383,6 +2383,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 167 - Peephole Redundant Store Elimination
+
+- [x] `src/peephole.c`: add `match_redundant_store` matcher — uses `pp_parse_store_rbp` on both window lines; fires when both stores target same `[rbp - N]` offset; register names need not match
+- [x] `src/peephole.c`: add `replace_redundant_store` replacer — deletes first store, keeps second by outputting `win[1]`; sets `out_count = 1`
+- [x] `src/peephole.c`: expand `g_builtin_patterns[4]` → `[5]`; register new pattern at index [4] with `window_size = 2`; update `*n_pats` 4 → 5
+- [x] Version update: `src/version.c` incremented to `01670000`
+- [x] 1 new integration test: `test_peephole_redundant_store` (function overwrites local var init, compiled at `-O2`, returns 42)
+- [x] Test results: 2070 portable (165 unit, 1286 valid, 261 invalid, 187 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 187 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 167)
+
+TODO items completed this stage:
+- [x] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store (Stage 167)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
@@ -2563,7 +2578,7 @@ Post-codegen pass that reads the emitted NASM text line-by-line, pattern-matches
 - [x] No-op move elimination: `mov rax, rax` (same src/dst register, same size) → remove (Stage 164)
 - [x] Push/pop pair collapse: `push rX` immediately followed by `pop rY` (no intervening branch/label) → `mov rY, rX` (Stage 165)
 - [x] Redundant load elimination: `mov [rbp-N], rax` followed by `mov rax, [rbp-N]` with no intervening store → remove the reload (Stage 166)
-- [ ] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store
+- [x] Redundant store elimination: two consecutive `mov [rbp-N], rax` with no intervening load → remove first store (Stage 167)
 - [ ] Dead-jump removal: `jmp Lxx` immediately followed by `Lxx:` → remove the jump
 - [ ] Unreachable instruction removal: instructions after an unconditional `jmp` / `ret` with no intervening label → strip until next label
 - [ ] Dead-label removal: labels that have no `jmp`/`jne`/`je`/… or `call` referencing them → remove (requires a reference-count pass over all labels first)
