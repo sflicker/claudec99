@@ -18,6 +18,9 @@
  * Stage 167: redundant store elimination -- two consecutive `mov [rbp-N], REG`
  *            to the same offset -> delete the first store.
  *
+ * Stage 168: dead-jump removal -- `jmp Lxx` immediately followed by `Lxx:`
+ *            -> remove the jump.
+ *
  * Activated at -O2 (implies -O1: AST optimizer also runs).
  */
 
@@ -413,6 +416,72 @@ static void replace_redundant_reload(const char **win, int n,
 }
 
 /* -----------------------------------------------------------------------
+ * Dead-jump removal: jmp .Lxx immediately followed by .Lxx: -> remove jump.
+ * ----------------------------------------------------------------------- */
+
+/*
+ * pp_parse_jmp_label -- parse "    jmp  LABEL" (leading whitespace optional).
+ * Copies the target label name into buf.  Returns 1 on success, 0 otherwise.
+ */
+static int pp_parse_jmp_label(const char *line, char *buf, int bufsz) {
+    const char *p;
+    int len;
+
+    p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "jmp", 3) != 0) return 0;
+    p += 3;
+    if (*p != ' ' && *p != '\t') return 0;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0') return 0;
+    strncpy(buf, p, bufsz - 1);
+    buf[bufsz - 1] = '\0';
+    len = (int)strlen(buf);
+    while (len > 0 && (buf[len-1] == ' ' || buf[len-1] == '\t'
+                       || buf[len-1] == '\r' || buf[len-1] == '\n'))
+        buf[--len] = '\0';
+    return (buf[0] != '\0');
+}
+
+/*
+ * pp_parse_label_def -- parse "LABEL:" (no leading whitespace; colon is
+ * terminator).  Copies the label name without the colon into buf.
+ * Returns 1 on success, 0 otherwise.
+ */
+static int pp_parse_label_def(const char *line, char *buf, int bufsz) {
+    const char *p;
+    const char *colon;
+    int len;
+
+    p = line;
+    if (*p == ' ' || *p == '\t') return 0;
+    colon = strchr(p, ':');
+    if (colon == NULL) return 0;
+    len = (int)(colon - p);
+    if (len <= 0 || len >= bufsz) return 0;
+    strncpy(buf, p, len);
+    buf[len] = '\0';
+    return 1;
+}
+
+static int match_dead_jump(const char **win, int n) {
+    char jmp_target[64];
+    char label_name[64];
+
+    (void)n;
+    if (!pp_parse_jmp_label(win[0], jmp_target, (int)sizeof(jmp_target))) return 0;
+    if (!pp_parse_label_def(win[1], label_name, (int)sizeof(label_name))) return 0;
+    return (strcmp(jmp_target, label_name) == 0);
+}
+
+static void replace_dead_jump(const char **win, int n,
+                              char **out, int *out_count) {
+    (void)n;
+    out[0]     = util_strdup(win[1]);
+    *out_count = 1;
+}
+
+/* -----------------------------------------------------------------------
  * Redundant store elimination:
  *   mov [rbp - N], REG0   (first store -- dead, overwritten before any read)
  *   mov [rbp - N], REG1   (second store -- kept)
@@ -443,7 +512,7 @@ static void replace_redundant_store(const char **win, int n,
 
 /* Built-in pattern table -- initialized at first call because C0 does not
    support function-pointer initializers in struct aggregate literals. */
-static PeepholePattern g_builtin_patterns[5];
+static PeepholePattern g_builtin_patterns[6];
 static int             g_builtin_patterns_ready = 0;
 
 const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
@@ -463,9 +532,12 @@ const PeepholePattern *peephole_builtin_patterns(int *n_pats) {
         g_builtin_patterns[4].window_size = 2;
         g_builtin_patterns[4].matcher     = match_redundant_store;
         g_builtin_patterns[4].replacer    = replace_redundant_store;
+        g_builtin_patterns[5].window_size = 2;
+        g_builtin_patterns[5].matcher     = match_dead_jump;
+        g_builtin_patterns[5].replacer    = replace_dead_jump;
         g_builtin_patterns_ready          = 1;
     }
-    *n_pats = 5;
+    *n_pats = 6;
     return g_builtin_patterns;
 }
 
