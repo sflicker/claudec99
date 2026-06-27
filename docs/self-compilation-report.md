@@ -1,5 +1,27 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 170 self-hosting test
+
+None. The two new flag branches (`-Wall`, `-Wextra`) in `src/compiler.c`
+and the `g_warn_level` global in `src/util.c` / `include/util.h` use only
+`strcmp`, integer comparison, and `extern int` — all valid under the C89/C99
+subset handled by C0. No new headers, no VLAs, no `//` comments. All 2072
+portable tests + 189 system-include tests + 2 optional-library tests passed
+at C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 170)
+
+**Date:** 2026-06-27
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01700000.01249` | 2072 portable + 189 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01700000.01250` | 2072 portable + 189 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01700000.01251` | 2072 portable + 189 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 169 self-hosting test
 
 None. The new `emit_debug_line` helper and the three `emit_debug` /

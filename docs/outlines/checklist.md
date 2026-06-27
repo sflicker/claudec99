@@ -2415,6 +2415,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 170 - Warning Level Flags (-Wall, -Wextra)
+
+- [x] `include/util.h`: add `extern int g_warn_level;` declaration alongside `g_warnings_are_errors`
+- [x] `src/util.c`: add `int g_warn_level = 0;` definition
+- [x] `src/compiler.c`: add `int warn_level = 0;` local variable; add `-Wall` branch (sets level ≥ 1) and `-Wextra` branch (sets level ≥ 2) in argument loop; update usage string to include `[-Wall] [-Wextra]`
+- [x] `bin/cc99`: add `-Wall|-Wextra)` case to argument parser (forwarded as compiler flags); update usage block and file header comment
+- [x] Version update: `src/version.c` incremented to `01700000`
+- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 170)
+
+TODO items completed this stage:
+- [x] Warning level support (-Wall, -Wextra) — infrastructure only; per-diagnostic implementations deferred (Stage 170)
+
+---
+
 ## Stage 169 - Debug Information (DWARF)
 
 - [x] `include/codegen.h`: add `emit_debug` (int), `debug_last_file` (const char *), `debug_last_line` (int) to `CodeGen` struct
@@ -2651,7 +2666,15 @@ Major refactor: introduce an explicit IR layer between the AST and NASM codegen.
 - [x] Line and column numbers on parser error messages (Stage 70-03; codegen errors still lack position)
 - [x] Structured error output (file:line:col: error: message) (Stage 70-03)
 - [x] `-Werror` (warnings as errors) (Stage 66 / 70-03)
-- [ ] Warning level support (-Wall, -Wextra)
+- [x] Warning level support (-Wall, -Wextra) (Stage 170)
+	- [ ] `-Wunused-variable`: warn when a declared local variable is never read after its last assignment (liveness analysis or use-flag in symbol table; -Wall)
+	- [ ] `-Wunused-function`: warn when a `static` function is defined but never called within the translation unit (-Wall)
+	- [ ] `-Wunused-parameter`: warn when a function parameter is never referenced in the body (-Wextra)
+	- [ ] `-Wimplicit-function-declaration`: downgrade implicit-call error to warning under -Wall, error only under -Werror (-Wall)
+	- [ ] `-Wreturn-type`: warn when a non-void function may reach end-of-body without `return`; warn when void function has `return <expr>` (-Wall)
+	- [ ] `-Wsign-compare`: warn when signed integer is compared to unsigned in a relational or equality expression (-Wextra)
+	- [ ] `-Wmissing-field-initializers`: warn when struct/union initializer omits one or more named members (-Wextra)
+	- [ ] `-Wformat`: validate printf/scanf format-string arguments against format specifiers (deferred; requires type propagation through varargs)
 - [x] Multiple errors before aborting (`--max-errors=N`) (Stage 70-01)
 - [ ] Pedantic C99 conformance checks
 - [ ] Signed integer overflow detection mode
