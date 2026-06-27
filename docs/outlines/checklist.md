@@ -2415,6 +2415,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 169 - Debug Information (DWARF)
+
+- [x] `include/codegen.h`: add `emit_debug` (int), `debug_last_file` (const char *), `debug_last_line` (int) to `CodeGen` struct
+- [x] `src/codegen.c`: add `emit_debug_line()` helper — guards on `emit_debug`, skips invalid positions, deduplicates by file+line; emit before function labels in `codegen_function()`; emit after `cg_mark(node)` in `codegen_statement()`; zero-initialize new fields in `codegen_init()`
+- [x] `src/compiler.c`: add `emit_debug` local variable, `-g` arg branch, `emit_debug` parameter to `compile_one_file`, set `cg.emit_debug` before `codegen_translation_unit`; update usage string to include `[-g]`
+- [x] `bin/cc99`: add `-g)` case to argument parser; post-loop `emit_debug` detection; pass `-g -F dwarf` to NASM when debug enabled; update usage block
+- [x] `test/integration/run_tests.sh`: detect `-g` in cflags, pass `nasm_debug_flags=(-g -F dwarf)` to NASM invocation
+- [x] Version update: `src/version.c` incremented to `01690000`
+- [x] 1 new integration test: `test_dwarf_debug` (compiled with `-g`, static add/mul functions, exits 42; exercises full `-g -F dwarf` NASM pipeline)
+- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 169)
+
+TODO items completed this stage:
+- [x] Debug information (DWARF) (Stage 169)
+
+---
+
 ## Stage 158 - Compile Failure with External Library
 
 - [x] Preprocessor bug fixes for external library support
@@ -2532,7 +2549,7 @@ TODO items completed this stage:
   - [x] Multiple source files accepted in a single `ccompiler` invocation — each compiled independently to its own `.asm` with full per-file teardown (Stage 96)
 - [ ] Object file emission (.o / ELF)
 - [ ] Linker invocation
-- [ ] Debug information (DWARF)
+- [x] Debug information (DWARF) (Stage 169)
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
 - [x] Stack-passing for more than 6 arguments (SysV; caller and callee side) (Stage 68)
 - [x] Calling convention for struct arguments and return values (SysV: register-class ≤16 bytes, memory-class via hidden pointer; enabled self-hosting) (Stage 91-01)

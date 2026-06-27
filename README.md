@@ -177,6 +177,7 @@ bin/cc99 [options] file.c [file2.c ...]
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
 | `--sysinclude` | Use system include paths instead of `test/include` stubs (Linux x86_64 only) |
+| `-g` | Emit DWARF debug information (passed to `ccompiler`; enables `-g -F dwarf` in NASM) |
 | `--max-errors=N` | Stop after N errors; `0` = unlimited (passed to `ccompiler`) |
 | `-l <lib>` / `-llib` | Link with library (passed to `gcc`) |
 | `-L <dir>` / `-Ldir` | Library search path (passed to `gcc`) |
@@ -223,6 +224,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 169 (DWARF debug information):
+
+> Stage 169 adds DWARF debug information support via the `-g` flag. When compiled with `cc99 -g`, the compiler emits NASM `%line N+0 "file.c"` directives into the generated assembly before each function label and at each statement. NASM (assembled with `-g -F dwarf`) reads these directives and produces `.debug_line`, `.debug_abbrev`, and `.debug_info` ELF sections. GDB can then set breakpoints by source line, step through C source, and show correct `file:line` in backtraces. The `bin/cc99` wrapper and integration test runner both automatically pass `-g -F dwarf` to NASM when `-g` is in the compiler flags. One new integration test (`test_dwarf_debug`). All 2072 portable tests pass (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 189 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through Stage 168 (peephole dead-jump removal):
 
