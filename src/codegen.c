@@ -490,6 +490,9 @@ void codegen_init(CodeGen *cg, FILE *output) {
     cg->struct_ret_scratch_cursor = 0;
     cg->compound_literal_count = 0;
     vec_init(&cg->owned_strings, sizeof(char *));
+    cg->emit_debug      = 0;
+    cg->debug_last_file = NULL;
+    cg->debug_last_line = 0;
 }
 
 /* Stage 96: strdup `s` into codegen-owned storage and return it.
@@ -865,6 +868,19 @@ static void cg_mark(const ASTNode *node) {
         g_error_src_line = node->src_line;
         g_error_src_col  = node->src_col;
     }
+}
+
+/* Stage 169: emit a NASM %line directive when debug mode is active.
+ * Deduplicates consecutive identical positions. */
+static void emit_debug_line(CodeGen *cg, const char *src_file, int src_line) {
+    if (!cg->emit_debug) return;
+    if (src_line <= 0 || src_file == NULL) return;
+    if (src_line == cg->debug_last_line &&
+        cg->debug_last_file != NULL &&
+        strcmp(src_file, cg->debug_last_file) == 0) return;
+    fprintf(cg->output, "%%line %d+0 \"%s\"\n", src_line, src_file);
+    cg->debug_last_line = src_line;
+    cg->debug_last_file = src_file;
 }
 
 /* Stage 78: forward declarations needed because emit_array_index_addr calls
@@ -5711,6 +5727,7 @@ static long eval_const_init(ASTNode *node, const char *varname) {
 
 static void codegen_statement(CodeGen *cg, ASTNode *node, int is_main) {
     cg_mark(node);
+    emit_debug_line(cg, node->src_file, node->src_line);
     if (node->type == AST_DECLARATION) {
         /* Duplicate check limited to the current scope only — shadowing is allowed. */
         for (int i = cg->scope_start; i < (int)cg->locals.len; i++) {
@@ -6600,6 +6617,7 @@ static void codegen_function(CodeGen *cg, ASTNode *node) {
          * such as `puts` that use SSE-aligned loads). The
          * `sub rsp, N` is still elided when there are no locals. */
         /* Stage 23: static functions have internal linkage — omit `global`. */
+        emit_debug_line(cg, node->src_file, node->src_line);
         if (node->storage_class != SC_STATIC)
             fprintf(cg->output, "global %s\n", node->value);
         fprintf(cg->output, "%s:\n", node->value);

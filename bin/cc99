@@ -61,6 +61,7 @@ Options:
                    (Linux x86_64 only)
   -O0              Disable optimization (default)
   -O1              Enable AST-level optimization
+  -g               Emit DWARF debug information
   -Werror          Treat warnings as errors
   --max-errors=N   Stop after N errors (0 = unlimited)
   -l <lib>         Link with library
@@ -105,7 +106,7 @@ while [[ $# -gt 0 ]]; do
             mode="print"; compiler_flags+=("$1"); shift ;;
         -Werror)
             compiler_flags+=("$1"); shift ;;
-        -O0|-O1)
+        -O0|-O1|-g)
             compiler_flags+=("$1"); shift ;;
         --max-errors=*)
             compiler_flags+=("$1"); shift ;;
@@ -161,6 +162,12 @@ if [[ ${#input_files[@]} -gt 1 && "$mode" != "link" && "$output" != "a.out" ]]; 
     output="a.out"
 fi
 
+# ── debug flag detection ──────────────────────────────────────────────────────
+emit_debug=0
+for cflag in "${compiler_flags[@]}"; do
+    if [[ "$cflag" == "-g" ]]; then emit_debug=1; break; fi
+done
+
 # ── compilation loop ──────────────────────────────────────────────────────────
 
 tmpdir=$(mktemp -d)
@@ -202,7 +209,9 @@ for src in "${input_files[@]}"; do
     fi
 
     # ── assemble: .asm → .o ──────────────────────────────────────────────────
-    if ! nasm -f elf64 "$asm_out" -o "$obj_out"; then
+    nasm_debug_flags=()
+    [[ "$emit_debug" -eq 1 ]] && nasm_debug_flags=(-g -F dwarf)
+    if ! nasm -f elf64 "${nasm_debug_flags[@]}" "$asm_out" -o "$obj_out"; then
         echo "cc99: assembly failed for $src" >&2
         exit 1
     fi

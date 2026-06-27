@@ -262,6 +262,7 @@ static int compile_one_file(const char *source_file,
                             int print_ast, int print_tokens,
                             int warnings_are_errors,
                             int opt_level,
+                            int emit_debug,
                             const char **defines, int n_defines,
                             const char **include_dirs, int n_include_dirs) {
     /* Read source and preprocess.
@@ -328,6 +329,7 @@ static int compile_one_file(const char *source_file,
     CodeGen cg;
     codegen_init(&cg, out);
     cg.warnings_are_errors = warnings_are_errors;
+    cg.emit_debug = emit_debug;
     codegen_translation_unit(&cg, ast);
     codegen_free(&cg);
 
@@ -359,6 +361,7 @@ int main(int argc, char **argv) {
     int print_tokens = 0;
     int warnings_are_errors = 0;
     int opt_level = 0;
+    int emit_debug = 0;
     const char *sysroot = NULL;
     const char **defines = NULL;
     int n_defines = 0;
@@ -416,6 +419,8 @@ int main(int argc, char **argv) {
             opt_level = 1;
         } else if (strcmp(argv[i], "-O2") == 0) {
             opt_level = 2;
+        } else if (strcmp(argv[i], "-g") == 0) {
+            emit_debug = 1;
         } else if (strncmp(argv[i], "-I", 2) == 0) {
             const char *ipath;
             if (argv[i][2] != '\0') {
@@ -456,7 +461,7 @@ int main(int argc, char **argv) {
     }
 
     if (n_source_files == 0) {
-        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
+        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
         free(defines); free(include_dirs); free(source_files);
         return 1;
     }
@@ -501,6 +506,7 @@ int main(int argc, char **argv) {
         if (compile_one_file(source_files[f], print_ast, print_tokens,
                              warnings_are_errors,
                              opt_level,
+                             emit_debug,
                              defines, n_defines,
                              include_dirs, n_include_dirs) != 0)
             overall_status = 1;

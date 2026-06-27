@@ -77,6 +77,13 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     else
         compiler_flags=()
     fi
+    nasm_debug_flags=()
+    for cflag in "${compiler_flags[@]}"; do
+        if [ "$cflag" = "-g" ]; then
+            nasm_debug_flags=(-g -F dwarf)
+            break
+        fi
+    done
     if [ -f "$status_file" ]; then
         expected_status="$(cat "$status_file")"
     else
@@ -127,7 +134,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
             break
         fi
 
-        if ! nasm -f elf64 "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
+        if ! nasm -f elf64 "${nasm_debug_flags[@]}" "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
             echo "FAIL  $name  (nasm error: $src_name)"
             fail=$((fail + 1))
             compile_failed=1

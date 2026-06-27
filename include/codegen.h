@@ -210,6 +210,11 @@ typedef struct {
     /* Stage 124: counter for anonymous compound literal labels at file scope
      * (Lcompound_0, Lcompound_1, ...). */
     int compound_literal_count;
+    /* Stage 169: when non-zero, emit %line directives for DWARF debug info. */
+    int emit_debug;
+    /* Last emitted %line position — used to suppress duplicate directives. */
+    const char *debug_last_file;
+    int         debug_last_line;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);
