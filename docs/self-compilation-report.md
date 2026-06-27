@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 169 self-hosting test
+
+None. The new `emit_debug_line` helper and the three `emit_debug` /
+`debug_last_file` / `debug_last_line` fields on `CodeGen` use only
+`fprintf`, `strcmp`, and integer comparisons — all available in the C89
+subset handled by C0. Variable declarations appear at the top of their
+enclosing blocks; no VLAs; no `//` comments. All 2072 portable tests +
+189 system-include tests + 2 optional-library tests (test_sdl2_init,
+test_zlib_compress) passed at C0, C1, and C2 with no source changes
+needed during bootstrap.
+
+## Result (stage 169)
+
+**Date:** 2026-06-27
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01690000.01243` | 2072 portable + 189 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01690000.01244` | 2072 portable + 189 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01690000.01245` | 2072 portable + 189 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 168 self-hosting test
 
 None. The new `pp_parse_jmp_label`, `pp_parse_label_def`, `match_dead_jump`,
