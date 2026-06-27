@@ -34,6 +34,10 @@ extern int    g_error_jmp_valid;
 /* Stage 70-03: global flag set by -Werror; used by compile_warning_at. */
 extern int g_warnings_are_errors;
 
+/* Stage 170: warning group level selected by -Wall / -Wextra.
+ * 0 = no warning groups; 1 = -Wall; 2 = -Wall -Wextra. */
+extern int g_warn_level;
+
 /* Stage 86: source position for the construct currently being compiled,
  * stamped onto AST nodes at parse time and tracked by codegen as it
  * descends. Plain compile_error() prefixes its message with

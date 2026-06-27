@@ -360,6 +360,7 @@ int main(int argc, char **argv) {
     int print_ast = 0;
     int print_tokens = 0;
     int warnings_are_errors = 0;
+    int warn_level = 0;
     int opt_level = 0;
     int emit_debug = 0;
     const char *sysroot = NULL;
@@ -385,6 +386,12 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-Werror") == 0) {
             warnings_are_errors = 1;
             g_warnings_are_errors = 1;
+        } else if (strcmp(argv[i], "-Wall") == 0) {
+            if (warn_level < 1) warn_level = 1;
+            g_warn_level = warn_level;
+        } else if (strcmp(argv[i], "-Wextra") == 0) {
+            if (warn_level < 2) warn_level = 2;
+            g_warn_level = warn_level;
         } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
             const char *val = argv[i] + 13;
             char *end;
@@ -461,7 +468,7 @@ int main(int argc, char **argv) {
     }
 
     if (n_source_files == 0) {
-        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
+        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [-Wall] [-Wextra] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
         free(defines); free(include_dirs); free(source_files);
         return 1;
     }

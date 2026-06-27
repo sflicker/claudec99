@@ -19,6 +19,8 @@
 #   -I <dir>         Add directory to include search path
 #   -I<dir>          (same, one-argument form)
 #   --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
+#   -Wall            Enable common warning diagnostics
+#   -Wextra          Enable additional warning diagnostics (implies -Wall)
 #   -Werror          Treat warnings as errors
 #   --max-errors=N   Stop after N errors (0 = unlimited)
 #   -l <lib>         Link with library (passed to gcc)
@@ -62,6 +64,8 @@ Options:
   -O0              Disable optimization (default)
   -O1              Enable AST-level optimization
   -g               Emit DWARF debug information
+  -Wall            Enable common warning diagnostics
+  -Wextra          Enable additional warning diagnostics (implies -Wall)
   -Werror          Treat warnings as errors
   --max-errors=N   Stop after N errors (0 = unlimited)
   -l <lib>         Link with library
@@ -104,7 +108,7 @@ while [[ $# -gt 0 ]]; do
             mode="asm-only"; shift ;;
         --print-ast|--print-tokens)
             mode="print"; compiler_flags+=("$1"); shift ;;
-        -Werror)
+        -Werror|-Wall|-Wextra)
             compiler_flags+=("$1"); shift ;;
         -O0|-O1|-g)
             compiler_flags+=("$1"); shift ;;
