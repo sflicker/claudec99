@@ -125,12 +125,13 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
+ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
 ```
 
-- Default: writes `<name>.asm` for each source file next to the invocation directory and
-  prints `compiled: <source> -> <name>.asm`.
+- Default: writes `<name>.asm` for each source file next to the invocation directory.
+- `--help`: prints full option list and exits.
 - `--version`: prints the compiler version string and exits.
+- `-v` / `--verbose`: prints `compiled: <source> -> <name>.asm` for each file processed.
 - `--print-tokens`: dumps the token stream and exits.
 - `--print-ast`: dumps the AST and exits.
 - `--max-errors=N`: stop after N compilation errors; `0` collects all errors
@@ -164,15 +165,21 @@ ensures stdio buffers are flushed at exit.
 familiar compiler-frontend conventions:
 
 ```
-bin/cc99 [options] file.c [file2.c ...]
+bin/cc99 [options] <input> [input2 ...]
 ```
+
+Accepted input file types: `.c` (compile+assemble+link), `.s`/`.asm`
+(assemble+link, NASM syntax), `.o` (link directly), `.a`/`.so` (pass
+directly to linker).
 
 | Option | Effect |
 |--------|--------|
+| `--help` | Print full option list and exit |
 | `--version` | Print compiler version and exit |
+| `-v` / `--verbose` | Print each tool invocation (ccompiler, nasm, gcc) before running it |
 | `-o <file>` | Output file name (default: `a.out`) |
 | `-c` | Compile and assemble only; produce `.o` per source file |
-| `-S` | Compile only; produce `.asm` per source file |
+| `-S` | Compile only; produce `.asm` per source file (C inputs only) |
 | `-D NAME[=VAL]` | Preprocessor define (passed to `ccompiler`) |
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
@@ -224,6 +231,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 171 (--help, verbose mode, and mixed input file types):
+
+> Stage 171 adds three CLI surface improvements. Both `ccompiler` and `bin/cc99` gain a `--help` flag that prints a formatted option listing to stdout and exits 0. Both gain `-v`/`--verbose`: in `ccompiler` this gates the `compiled: X -> Y` progress line behind a new `g_verbose` global; in `bin/cc99` a `run_cmd` helper prints each tool invocation (ccompiler, nasm, gcc) to stderr before executing it and forwards `-v` to `ccompiler`. `bin/cc99` now accepts pre-assembled `.s`/`.asm` files (NASM syntax; skips the compile step), pre-compiled `.o` object files (routed directly to the linker), and `.a`/`.so` library files (passed as positional arguments to the linker). Mixed builds such as `cc99 main.c helper.o libutil.a -o prog` work without wrapping. No tokenizer, parser, AST, or codegen changes. All 2072 portable tests pass (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 189 pass. Optional-library: 2 pass (test_sdl2_init, test_zlib_compress). Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through Stage 170 (warning level flags):
 

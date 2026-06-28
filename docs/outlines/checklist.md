@@ -2415,6 +2415,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 171 - --help, Verbose Mode, and Mixed Input File Types
+
+- [x] `include/util.h`: add `extern int g_verbose;` declaration after `g_warn_level`
+- [x] `src/util.c`: add `int g_verbose = 0;` definition
+- [x] `src/compiler.c`: add `--help` branch (formatted help to stdout, exit 0); add `-v`/`--verbose` branch (sets `g_verbose = 1`); wrap `compiled: X -> Y` progress line in `if (g_verbose)`; simplify error-path usage to redirect to `--help`
+- [x] `bin/cc99`: add `--help` case (formatted help to stdout, exit 0); add `-v|--verbose` case (sets `verbose=1`, appends `-v` to `compiler_flags`); add `run_cmd` helper (prints invocation to stderr when verbose); accept `.s`/`.asm` (skips compile, assembles with nasm), `.o` (routes directly to linker), `.a`/`.so` (added to `link_flags` at parse time); refactor compilation loop with extension dispatch
+- [x] Version update: `src/version.c` incremented to `01710000`
+- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 171)
+
+TODO items completed this stage:
+- No existing TODO items completed (new tooling features)
+
+---
+
 ## Stage 170 - Warning Level Flags (-Wall, -Wextra)
 
 - [x] `include/util.h`: add `extern int g_warn_level;` declaration alongside `g_warnings_are_errors`
@@ -2682,6 +2697,9 @@ Major refactor: introduce an explicit IR layer between the AST and NASM codegen.
 ### Tooling and Infrastructure
 - [ ] Multi-file / split compilation mode
   - [x] `ccompiler` now accepts one or more source files per invocation, compiling each independently (Stage 96)
+  - [x] `cc99` accepts pre-compiled `.o`, `.s`/`.asm`, `.a`/`.so` inputs in addition to `.c` (Stage 171)
+- [x] `--help` flag for both `ccompiler` and `cc99` (Stage 171)
+- [x] `-v`/`--verbose` verbose mode for both `ccompiler` and `cc99` (Stage 171)
 - [ ] -o output file option
 - [ ] -c compile-only (emit object file) option
 - [ ] -S assembly output option (currently the only mode)
