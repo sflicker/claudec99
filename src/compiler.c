@@ -400,6 +400,9 @@ int main(int argc, char **argv) {
                 "  -O1                Enable AST-level optimization\n"
                 "  -O2                Enable peephole optimization\n"
                 "  -g                 Emit DWARF debug information\n"
+                "  -std=<std>         Language standard (accepted; always compiled as C99)\n"
+                "  -isystem <dir>     System include path (treated as -I)\n"
+                "  -w                 Suppress all warnings\n"
                 "  -DNAME[=VAL]       Define a preprocessor macro\n"
                 "  -I<dir>            Add directory to include search path\n"
                 "  -I <dir>           (two-argument form)\n"
@@ -456,6 +459,30 @@ int main(int argc, char **argv) {
             opt_level = 1;
         } else if (strcmp(argv[i], "-O2") == 0) {
             opt_level = 2;
+        } else if (strncmp(argv[i], "-std=", 5) == 0 ||
+                   strcmp(argv[i], "-ansi") == 0) {
+            /* accepted, ignored — we always target C99 semantics */
+        } else if (strcmp(argv[i], "-isystem") == 0) {
+            const char *ipath;
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: -isystem requires an argument\n");
+                free(defines); free(include_dirs); free(source_files);
+                return 1;
+            }
+            ipath = argv[++i];
+            if (n_include_dirs == include_dirs_cap) {
+                include_dirs_cap = include_dirs_cap * 2 + 8;
+                include_dirs = realloc(include_dirs,
+                                       (size_t)include_dirs_cap * sizeof(const char *));
+                if (!include_dirs) {
+                    fprintf(stderr, "error: out of memory\n");
+                    free(defines); free(source_files);
+                    return 1;
+                }
+            }
+            include_dirs[n_include_dirs++] = ipath;
+        } else if (strcmp(argv[i], "-w") == 0) {
+            /* suppress all warnings — no-op until warning diagnostics land */
         } else if (strcmp(argv[i], "-g") == 0) {
             emit_debug = 1;
         } else if (strncmp(argv[i], "-I", 2) == 0) {

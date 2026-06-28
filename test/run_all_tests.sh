@@ -117,6 +117,36 @@ if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     else
         echo "SKIP  optional-library suite (runner not found at $sysinclude_opt_runner)"
     fi
+
+    build_tool_runner="$SCRIPT_DIR/build_tool/run_tests.sh"
+    if [ -x "$build_tool_runner" ]; then
+        echo ""
+        echo "===================================================="
+        echo "Running suite: build tool compatibility (Linux x86_64)"
+        echo "===================================================="
+        bt_output=$("$build_tool_runner" 2>&1)
+        bt_rc=$?
+        echo "$bt_output"
+        bt_summary=$(echo "$bt_output" | tail -n 1)
+        if [[ "$bt_summary" =~ Results:\ ([0-9]+)\ passed,\ ([0-9]+)\ failed,\ ([0-9]+)\ skipped,\ ([0-9]+)\ total ]]; then
+            btp="${BASH_REMATCH[1]}"
+            btf="${BASH_REMATCH[2]}"
+            btsk="${BASH_REMATCH[3]}"
+            btt="${BASH_REMATCH[4]}"
+        else
+            btp=0; btf=0; btsk=0; btt=0
+            echo "WARN  could not parse summary line for build tool suite"
+        fi
+        echo ""
+        echo "===================================================="
+        echo "Build tool: $btp passed, $btf failed, $btsk skipped, $btt total"
+        echo "===================================================="
+        if [ "$bt_rc" -ne 0 ]; then
+            overall_rc=1
+        fi
+    else
+        echo "SKIP  build tool suite (runner not found at $build_tool_runner)"
+    fi
 fi
 
 exit $overall_rc

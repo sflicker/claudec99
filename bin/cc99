@@ -114,7 +114,15 @@ Options:
   -Wall             Enable common warning diagnostics
   -Wextra           Enable additional diagnostics (implies -Wall)
   -Werror           Treat warnings as errors
+  -w                Suppress all warnings
+  -Wno-<name>       Suppress specific warning (accepted; no-op)
   --max-errors=N    Stop after N errors (0 = unlimited)
+  -std=<std>        Language standard (accepted; always compiled as C99)
+  -fPIC, -fPIE      Position-independent flags (accepted; no-op)
+  -MD, -MF, -MT …  Dependency tracking (accepted; no .d file written)
+  -march=…, -m64    Machine-tuning flags (accepted; no-op)
+  -isystem <dir>    System include path (forwarded as -I to ccompiler)
+  -pthread          Link with pthreads (-lpthread added to linker flags)
   -l <lib>          Link with library
   -l<lib>           (same, one-argument form)
   -L <dir>          Add library search path
@@ -138,8 +146,45 @@ EOF
             verbose=1; compiler_flags+=("-v"); shift ;;
         -Werror|-Wall|-Wextra)
             compiler_flags+=("$1"); shift ;;
-        -O0|-O1|-g)
+        -std=*|-ansi)
             compiler_flags+=("$1"); shift ;;
+        -w)
+            compiler_flags+=("$1"); shift ;;
+        -Wno-*)
+            # Individual warning suppressions — silently discard.
+            shift ;;
+        -fPIC|-fPIE|-fpic|-fpie|-fno-pie|-fno-PIC|-fno-pic|-fno-PIE)
+            # Our output is position-independent by construction; discard.
+            shift ;;
+        -fstack-protector|-fstack-protector-all|-fstack-protector-strong|-fno-stack-protector)
+            shift ;;
+        -fvisibility=*|-fomit-frame-pointer|-fno-omit-frame-pointer)
+            shift ;;
+        -fstrict-aliasing|-fno-strict-aliasing|-ffunction-sections|-fdata-sections)
+            shift ;;
+        -pipe)
+            shift ;;
+        -march=*|-mtune=*|-m64|-m32)
+            shift ;;
+        -isystem)
+            [[ $# -lt 2 ]] && { echo "cc99: -isystem requires an argument" >&2; exit 1; }
+            dir="$2"
+            [[ "$dir" != /* ]] && dir="$(pwd)/$dir"
+            compiler_flags+=("-isystem" "$dir"); shift 2 ;;
+        -MD|-MP)
+            # Dependency generation — silently discard (no .d file emitted).
+            shift ;;
+        -MF|-MT|-MQ)
+            # Two-argument dependency flags — discard flag and its argument.
+            [[ $# -lt 2 ]] && { echo "cc99: $1 requires an argument" >&2; exit 1; }
+            shift 2 ;;
+        -pthread)
+            link_flags+=("-lpthread"); shift ;;
+        -O0|-O1|-O2|-g)
+            compiler_flags+=("$1"); shift ;;
+        -O3|-Os|-Og|-Ofast)
+            # Higher/alternative optimisation levels — silently drop; our max is -O2.
+            shift ;;
         --max-errors=*)
             compiler_flags+=("$1"); shift ;;
         -D*)
