@@ -10,6 +10,7 @@ jmp_buf g_error_jmp;
 int     g_error_jmp_valid = 0;
 int     g_warnings_are_errors = 0;
 int     g_warn_level          = 0;
+int     g_verbose             = 0;
 
 /* Stage 86: position of the construct currently being compiled (see util.h). */
 const char *g_error_src_file = NULL;

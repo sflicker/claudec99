@@ -352,7 +352,7 @@ static int compile_one_file(const char *source_file,
     ast_free(ast);
     free(preprocessed);
 
-    printf("compiled: %s -> %s\n", source_file, output_path);
+    if (g_verbose) printf("compiled: %s -> %s\n", source_file, output_path);
     return 0;
 }
 
@@ -361,6 +361,7 @@ int main(int argc, char **argv) {
     int print_tokens = 0;
     int warnings_are_errors = 0;
     int warn_level = 0;
+    int verbose = 0;
     int opt_level = 0;
     int emit_debug = 0;
     const char *sysroot = NULL;
@@ -379,6 +380,33 @@ int main(int argc, char **argv) {
             printf("%s\n", get_version_string());
             free(defines); free(include_dirs); free(source_files);
             return 0;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            printf(
+                "ccompiler -- ClaudeC99 C compiler\n"
+                "\n"
+                "Usage: ccompiler [options] <source.c> [source2.c ...]\n"
+                "\n"
+                "Options:\n"
+                "  --version          Print version and exit\n"
+                "  --help             Print this help and exit\n"
+                "  --print-ast        Print AST to stdout and exit\n"
+                "  --print-tokens     Print token stream to stdout and exit\n"
+                "  -v, --verbose      Show compilation progress (compiled: X -> Y)\n"
+                "  -Werror            Treat warnings as errors\n"
+                "  -Wall              Enable common warning diagnostics\n"
+                "  -Wextra            Enable additional diagnostics (implies -Wall)\n"
+                "  --max-errors=N     Stop after N errors (0 = unlimited)\n"
+                "  --sysroot=<dir>    Virtual filesystem root for absolute -I paths\n"
+                "  -O0                Disable optimization (default)\n"
+                "  -O1                Enable AST-level optimization\n"
+                "  -O2                Enable peephole optimization\n"
+                "  -g                 Emit DWARF debug information\n"
+                "  -DNAME[=VAL]       Define a preprocessor macro\n"
+                "  -I<dir>            Add directory to include search path\n"
+                "  -I <dir>           (two-argument form)\n"
+            );
+            free(defines); free(include_dirs); free(source_files);
+            return 0;
         } else if (strcmp(argv[i], "--print-ast") == 0) {
             print_ast = 1;
         } else if (strcmp(argv[i], "--print-tokens") == 0) {
@@ -392,6 +420,10 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-Wextra") == 0) {
             if (warn_level < 2) warn_level = 2;
             g_warn_level = warn_level;
+        } else if (strcmp(argv[i], "-v") == 0 ||
+                   strcmp(argv[i], "--verbose") == 0) {
+            verbose = 1;
+            g_verbose = 1;
         } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
             const char *val = argv[i] + 13;
             char *end;
@@ -468,7 +500,7 @@ int main(int argc, char **argv) {
     }
 
     if (n_source_files == 0) {
-        fprintf(stderr, "usage: ccompiler [--version] [--print-ast | --print-tokens] [-Werror] [-Wall] [-Wextra] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [source2.c ...]\n");
+        fprintf(stderr, "ccompiler: no input files. Run 'ccompiler --help' for usage.\n");
         free(defines); free(include_dirs); free(source_files);
         return 1;
     }

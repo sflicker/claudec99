@@ -38,6 +38,10 @@ extern int g_warnings_are_errors;
  * 0 = no warning groups; 1 = -Wall; 2 = -Wall -Wextra. */
 extern int g_warn_level;
 
+/* Stage 171: verbose mode enabled by -v / --verbose.
+ * 1 = print progress messages (compiled: X -> Y). */
+extern int g_verbose;
+
 /* Stage 86: source position for the construct currently being compiled,
  * stamped onto AST nodes at parse time and tracked by codegen as it
  * descends. Plain compile_error() prefixes its message with

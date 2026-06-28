@@ -47,30 +47,15 @@ SYSINCLUDE_IFLAGS=(
 
 usage() {
     cat >&2 <<'EOF'
-Usage: cc99 [options] file.c [file2.c ...]
-
-Options:
-  --version        Print compiler version and exit
-  -o <file>        Output file name (default: a.out)
-  -c               Compile and assemble only; produce .o files
-  -S               Compile only; produce .asm files
-  --print-ast      Print AST to stdout and exit (no output file)
-  --print-tokens   Print token stream to stdout and exit (no output file)
-  -D NAME[=VAL]    Define a preprocessor macro
-  -I <dir>         Add directory to include search path
-  --sysroot=<dir>  Set virtual filesystem root for absolute -I paths
-  --sysinclude     Use system include paths instead of test/include stubs
-                   (Linux x86_64 only)
-  -O0              Disable optimization (default)
-  -O1              Enable AST-level optimization
-  -g               Emit DWARF debug information
-  -Wall            Enable common warning diagnostics
-  -Wextra          Enable additional warning diagnostics (implies -Wall)
-  -Werror          Treat warnings as errors
-  --max-errors=N   Stop after N errors (0 = unlimited)
-  -l <lib>         Link with library
-  -L <dir>         Add library search path
+Usage: cc99 [options] <input> [input2 ...]
+Run 'cc99 --help' for full option list.
 EOF
+}
+
+# Print the command to stderr when verbose, then execute it.
+run_cmd() {
+    [[ "$verbose" -eq 1 ]] && echo "cc99:" "$@" >&2
+    "$@"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -92,9 +77,50 @@ compiler_flags=()
 link_flags=()
 input_files=()
 use_sysinclude=0
+verbose=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --help)
+            cat <<'EOF'
+cc99 -- ClaudeC99 compiler frontend
+
+Usage: cc99 [options] <input> [input2 ...]
+
+Input file types:
+  file.c            C source file     (compile -> assemble -> link)
+  file.s, file.asm  Assembly file     (assemble -> link; NASM syntax)
+  file.o            Object file       (link directly)
+  file.a            Static library    (link directly)
+  file.so           Shared library    (link directly)
+
+Options:
+  --version         Print compiler version and exit
+  --help            Print this help and exit
+  -v, --verbose     Print each tool invocation before running it
+  -o <file>         Output file name (default: a.out)
+  -c                Compile/assemble only; produce .o files
+  -S                Compile only; produce .asm files (C inputs only)
+  --print-ast       Print AST to stdout and exit (C inputs only)
+  --print-tokens    Print token stream to stdout and exit (C inputs only)
+  -D NAME[=VAL]     Define a preprocessor macro
+  -I <dir>          Add directory to include search path
+  -I<dir>           (same, one-argument form)
+  --sysroot=<dir>   Set virtual filesystem root for absolute -I paths
+  --sysinclude      Use system include paths (Linux x86_64 only)
+  -O0               Disable optimization (default)
+  -O1               Enable AST-level optimization
+  -g                Emit DWARF debug information
+  -Wall             Enable common warning diagnostics
+  -Wextra           Enable additional diagnostics (implies -Wall)
+  -Werror           Treat warnings as errors
+  --max-errors=N    Stop after N errors (0 = unlimited)
+  -l <lib>          Link with library
+  -l<lib>           (same, one-argument form)
+  -L <dir>          Add library search path
+  -L<dir>           (same, one-argument form)
+EOF
+            exit 0 ;;
         --version)
             exec "$COMPILER" --version ;;
         -o)
@@ -108,6 +134,8 @@ while [[ $# -gt 0 ]]; do
             mode="asm-only"; shift ;;
         --print-ast|--print-tokens)
             mode="print"; compiler_flags+=("$1"); shift ;;
+        -v|--verbose)
+            verbose=1; compiler_flags+=("-v"); shift ;;
         -Werror|-Wall|-Wextra)
             compiler_flags+=("$1"); shift ;;
         -O0|-O1|-g)
@@ -150,6 +178,12 @@ while [[ $# -gt 0 ]]; do
             echo "cc99: unrecognized option: $1" >&2; exit 1 ;;
         *.c)
             input_files+=("$1"); shift ;;
+        *.s|*.asm)
+            input_files+=("$1"); shift ;;
+        *.o)
+            input_files+=("$1"); shift ;;
+        *.a|*.so)
+            link_flags+=("$1"); shift ;;
         *)
             echo "cc99: unrecognized input: $1" >&2; exit 1 ;;
     esac
@@ -186,19 +220,42 @@ for src in "${input_files[@]}"; do
         exit 1
     fi
 
-    base="$(basename "$src" .c)"
+    # Determine pipeline entry point from file extension.
+    case "$src" in
+        *.c)       needs_compile=1 ;;
+        *.s|*.asm) needs_compile=0 ;;
+        *.o)
+            # Already an object file — route directly to link list or skip.
+            if [[ "$mode" == "asm-only" ]]; then
+                echo "cc99: $src: skipping object file in -S mode" >&2
+            else
+                obj_files+=("$abs_src")
+            fi
+            continue ;;
+    esac
+
+    # Derive base name without source extension for intermediate files.
+    base="$(basename "$src")"
+    base="${base%.*}"
+
     asm_out="$tmpdir/${base}.asm"
     obj_out="$tmpdir/${base}.o"
 
     # ── compile: .c → .asm ───────────────────────────────────────────────────
-    # Run compiler from tmpdir so the .asm output lands there
-    if [[ "$use_sysinclude" -eq 1 ]]; then
-        active_iflags=("${SYSINCLUDE_IFLAGS[@]}")
+    # Run compiler from tmpdir so the .asm output lands there.
+    if [[ "$needs_compile" -eq 1 ]]; then
+        if [[ "$use_sysinclude" -eq 1 ]]; then
+            active_iflags=("${SYSINCLUDE_IFLAGS[@]}")
+        else
+            active_iflags=("${DEFAULT_IFLAGS[@]}")
+        fi
+        if ! (cd "$tmpdir" && run_cmd "$COMPILER" "${compiler_flags[@]}" \
+                "${active_iflags[@]}" "$abs_src"); then
+            exit 1
+        fi
     else
-        active_iflags=("${DEFAULT_IFLAGS[@]}")
-    fi
-    if ! (cd "$tmpdir" && "$COMPILER" "${compiler_flags[@]}" "${active_iflags[@]}" "$abs_src"); then
-        exit 1
+        # .s / .asm: copy into tmpdir so the assemble step can use $asm_out.
+        cp "$abs_src" "$asm_out"
     fi
 
     if [[ "$mode" == "print" ]]; then
@@ -215,7 +272,7 @@ for src in "${input_files[@]}"; do
     # ── assemble: .asm → .o ──────────────────────────────────────────────────
     nasm_debug_flags=()
     [[ "$emit_debug" -eq 1 ]] && nasm_debug_flags=(-g -F dwarf)
-    if ! nasm -f elf64 "${nasm_debug_flags[@]}" "$asm_out" -o "$obj_out"; then
+    if ! run_cmd nasm -f elf64 "${nasm_debug_flags[@]}" "$asm_out" -o "$obj_out"; then
         echo "cc99: assembly failed for $src" >&2
         exit 1
     fi
@@ -232,7 +289,7 @@ done
 
 # ── link ──────────────────────────────────────────────────────────────────────
 if [[ "$mode" == "link" ]]; then
-    if ! gcc -no-pie "${obj_files[@]}" "${link_flags[@]}" -o "$output"; then
+    if ! run_cmd gcc -no-pie "${obj_files[@]}" "${link_flags[@]}" -o "$output"; then
         echo "cc99: link failed" >&2
         exit 1
     fi
