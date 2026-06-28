@@ -1,5 +1,31 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 171 self-hosting test
+
+None. The new `g_verbose` global in `src/util.c` / `include/util.h`, the
+`--help` branch and `-v`/`--verbose` branch in `src/compiler.c`, and the
+conditional `if (g_verbose)` guard use only `strcmp`, `printf`, `free`,
+and `extern int` — all valid under the C89/C99 subset handled by C0.
+`bin/cc99` changes are pure shell and do not affect the C compilation
+bootstrap. GCC emitted a `-Wunused-but-set-variable` warning for the
+interim `int verbose = 0;` local variable; this was removed before the
+self-host run. All 2072 portable tests + 189 system-include tests +
+2 optional-library tests passed at C0, C1, and C2 with no source changes
+needed during bootstrap.
+
+## Result (stage 171)
+
+**Date:** 2026-06-28
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01710000.01255` | 2072 portable + 189 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01710000.01256` | 2072 portable + 189 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01710000.01257` | 2072 portable + 189 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 170 self-hosting test
 
 None. The two new flag branches (`-Wall`, `-Wextra`) in `src/compiler.c`

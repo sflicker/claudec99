@@ -361,7 +361,6 @@ int main(int argc, char **argv) {
     int print_tokens = 0;
     int warnings_are_errors = 0;
     int warn_level = 0;
-    int verbose = 0;
     int opt_level = 0;
     int emit_debug = 0;
     const char *sysroot = NULL;
@@ -422,7 +421,6 @@ int main(int argc, char **argv) {
             g_warn_level = warn_level;
         } else if (strcmp(argv[i], "-v") == 0 ||
                    strcmp(argv[i], "--verbose") == 0) {
-            verbose = 1;
             g_verbose = 1;
         } else if (strncmp(argv[i], "--max-errors=", 13) == 0) {
             const char *val = argv[i] + 13;
