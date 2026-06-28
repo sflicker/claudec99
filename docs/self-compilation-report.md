@@ -1,5 +1,28 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 172 self-hosting test
+
+None. The new flag branches in `src/compiler.c` (`-std=*`/`-ansi`,
+`-isystem`, `-w`) use only `strncmp`, `strcmp`, `realloc`, and integer
+assignment — all valid under the C89/C99 subset handled by C0. No new
+headers, no VLAs, no `//` comments. `bin/cc99` changes are pure shell
+and do not affect the C compilation bootstrap. All 2072 portable tests +
+189 system-include tests + 2 optional-library tests + 3 build-tool tests
+passed at C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 172)
+
+**Date:** 2026-06-28
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01720000.01260` | 2072 portable + 189 sysinclude + 2 optional + 3 build-tool |
+| C1 | `build/ccompiler-c1` | `00.03.01720000.01261` | 2072 portable + 189 sysinclude + 2 optional + 3 build-tool |
+| C2 | `build/ccompiler-c2` | `00.03.01720000.01262` | 2072 portable + 189 sysinclude + 2 optional + 3 build-tool |
+
+---
+
 ## Issues found during stage 171 self-hosting test
 
 None. The new `g_verbose` global in `src/util.c` / `include/util.h`, the
