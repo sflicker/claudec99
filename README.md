@@ -125,7 +125,7 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [--max-errors=N] [--sysroot=<dir>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] <source.c> [<source2.c> ...]
+ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-Wall] [-Wextra] [-w] [--max-errors=N] [--sysroot=<dir>] [-std=<std>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] [-isystem <dir>] <source.c> [<source2.c> ...]
 ```
 
 - Default: writes `<name>.asm` for each source file next to the invocation directory.
@@ -144,6 +144,9 @@ ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [--
   Using `--sysroot=.` makes the current working directory the virtual
   root, which is useful for portable test setups that need absolute-style
   include paths without hardcoding the checkout location.
+- `-std=<std>` / `-ansi`: accepted and ignored (always compiles as C99).
+- `-isystem <dir>`: treated as `-I<dir>` (system include path).
+- `-w`: suppress all warnings (no-op until warning diagnostics are implemented).
 
 End-to-end build and run:
 
@@ -182,9 +185,21 @@ directly to linker).
 | `-S` | Compile only; produce `.asm` per source file (C inputs only) |
 | `-D NAME[=VAL]` | Preprocessor define (passed to `ccompiler`) |
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
+| `-isystem <dir>` | System include path (forwarded as `-I` to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
 | `--sysinclude` | Use system include paths instead of `test/include` stubs (Linux x86_64 only) |
+| `-std=<std>` / `-ansi` | Language standard (accepted; always compiled as C99) |
+| `-O0` / `-O1` / `-O2` | Optimization level (passed to `ccompiler`) |
+| `-O3` / `-Os` / `-Og` / `-Ofast` | Accepted, silently ignored (our max is `-O2`) |
 | `-g` | Emit DWARF debug information (passed to `ccompiler`; enables `-g -F dwarf` in NASM) |
+| `-w` | Suppress all warnings (forwarded to `ccompiler`) |
+| `-Wno-<name>` | Suppress specific warning (accepted; silently discarded) |
+| `-fPIC` / `-fPIE` (and variants) | Position-independent flags (accepted; silently discarded) |
+| `-fstack-protector` (and variants) | Hardening flags (accepted; silently discarded) |
+| `-march=…` / `-m64` (and variants) | Machine-tuning flags (accepted; silently discarded) |
+| `-MD` / `-MP` | Dependency generation flags (accepted; no `.d` file written) |
+| `-MF` / `-MT` / `-MQ` | Dependency tracking flags (accepted with argument; discarded) |
+| `-pthread` | Link with pthreads (`-lpthread` added to linker flags) |
 | `--max-errors=N` | Stop after N errors; `0` = unlimited (passed to `ccompiler`) |
 | `-l <lib>` / `-llib` | Link with library (passed to `gcc`) |
 | `-L <dir>` / `-Ldir` | Library search path (passed to `gcc`) |
@@ -231,6 +246,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 172 (build tool compatibility — make and cmake):
+
+> Stage 172 adds build tool compatibility by accepting a comprehensive set of compiler flags commonly emitted by GNU make and CMake. `ccompiler` now accepts `-std=c99`/`-std=gnu99`/`-std=c11`/`-std=gnu11`/`-std=c17`/`-std=gnu17`/`-std=c2x`/`-ansi` (ignored; always target C99), `-isystem <dir>` (treated as `-I`), and `-w` (suppress-all-warnings no-op). `bin/cc99` fixes `-O2` forwarding (previously fell through to "unrecognized option"), adds `-O3`/`-Os`/`-Og`/`-Ofast` (silently dropped), `-std=*`/`-ansi` forwarding, PIC/PIE flag discard (`-fPIC`/`-fPIE` family), hardening/codegen flag discard (`-fstack-protector`, `-fvisibility=*`, etc.), machine-tuning discard (`-march=*`, `-m64`), dependency-tracking stubs (`-MD`/`-MF`/`-MT`/`-MP`/`-MQ`; silently discarded, no `.d` file written), and `-pthread` (appends `-lpthread`). New `test/build_tool/` suite (Linux x86_64) with three tests: `test_make_hello`, `test_make_cflags` (exercises `-std=c99 -O2 -Wall`), and `test_cmake_hello` (skipped if cmake absent). All 2072 portable tests pass (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 189 pass. Optional-library: 2 pass. Build-tool: 3 pass. Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through Stage 171 (--help, verbose mode, and mixed input file types):
 

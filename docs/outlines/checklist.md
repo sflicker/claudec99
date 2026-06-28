@@ -2415,6 +2415,21 @@ TODO items completed this stage:
 
 ---
 
+## Stage 172 - Build Tool Compatibility (make and cmake)
+
+- [x] `src/compiler.c`: add `-std=c99/-std=gnu99/-std=c11/-std=gnu11/-std=c17/-std=gnu17/-std=c2x/-ansi` branch (accepted, ignored); add `-isystem <dir>` branch (treated as `-I`); add `-w` branch (accepted, no-op); update `--help` and usage string
+- [x] `bin/cc99`: fix `-O2` forwarding (was falling through to unrecognized-option); add `-O3/-Os/-Og/-Ofast` discard; add `-std=*/-ansi` forwarding; add `-w` forwarding; add `-Wno-*` discard; add PIC/PIE flag discard (`-fPIC/-fPIE/-fpic/-fpie/-fno-pie/-fno-PIC/-fno-pic/-fno-PIE`); add hardening/codegen flag discard (`-fstack-protector` variants, `-fvisibility=*`, `-fomit-frame-pointer`, `-fstrict-aliasing`, `-ffunction-sections`, `-fdata-sections`, `-pipe`); add machine-tuning discard (`-march=*/-mtune=*/-m64/-m32`); add `-isystem` forwarding; add dependency-tracking stubs (`-MD/-MP` discard, `-MF/-MT/-MQ <arg>` discard); add `-pthread` (appends `-lpthread`); update `--help`
+- [x] New `test/build_tool/` suite: `run_tests.sh`, `test_make_hello`, `test_make_cflags`, `test_cmake_hello` (cmake test auto-skipped if cmake absent)
+- [x] `test/run_all_tests.sh`: register `build_tool` suite in Linux x86_64 block
+- [x] Version update: `src/version.c` incremented to `01720000`
+- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library + 3 build-tool pass
+- [x] Self-host C0→C1→C2 verified (Stage 172)
+
+TODO items completed this stage:
+- No existing TODO items completed (new tooling/test-infrastructure features)
+
+---
+
 ## Stage 171 - --help, Verbose Mode, and Mixed Input File Types
 
 - [x] `include/util.h`: add `extern int g_verbose;` declaration after `g_warn_level`
