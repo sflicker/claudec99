@@ -1467,35 +1467,6 @@
 - [x] Tests: 7 valid (designated-init array, designated-init persist, struct array uninit, struct array init, 2D array uninit, 2D array init, 2D array persist), 1 invalid (3D static array → "deeper than 2D"); all 1560 tests pass
 - [x] Self-host C0→C1→C2 passes with no bootstrap issues; compiler source uses no block-scope static aggregates of these new types; 1560 tests pass at all three stages
 
-## Stage 100 - File-Scope Constant Expressions
-
-- [x] Parser: extended `eval_const_expr` with `sizeof(type-name)` support in `eval_const_primary`
-	- [x] Integer-typed file-scope globals now accept full arithmetic/bitwise/shift/unary constant expressions instead of literal-only
-	- [x] `TOKEN_SIZEOF` handling added; consumes `sizeof`, requires `(`, checks type-start condition, calls `parse_type_name`, returns `(long)type_size(t)`
-	- [x] `TOKEN_ENUM` and `TOKEN_VOID` added to type-start detection in `eval_const_primary` and `parse_primary` sizeof arm
-- [x] No AST/codegen changes
-- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01000000"`
-- [x] Tests: 10 valid (arith, bitwise-or, shift, sizeof-void*, sizeof-int*256, sizeof-struct, enum-op, neg, complement, multi-decl), 2 invalid (variable reference, sizeof-no-parens), 1 print-ast; all 1544 tests pass
-- [x] Self-host C0→C1→C2 passes with no bootstrap issues
-
-## Stage 101 - Block-Scope Static Aggregates
-
-- [x] AST: added `init_node` field to `LocalStaticVar` to carry brace-list and string-literal initializers for aggregate types
-- [x] Codegen: SC_STATIC arm in `codegen_statement` handles TYPE_ARRAY/TYPE_STRUCT/TYPE_UNION
-	- [x] Array static registration: validates initializer (AST_INITIALIZER_LIST or string literal for char arrays), generates label, registers with init_node set
-	- [x] Struct/union static registration: validates non-zero size, validates brace-list initializer, same label/registration pattern
-- [x] `codegen_emit_local_statics` extended for aggregate types with RIP-relative addressing
-	- [x] Aggregate statics in `.data` and `.bss` sections
-	- [x] Array-to-pointer decay and member addressing work correctly
-- [x] `is_static` branches in array decay, subscript addressing, struct member addressing
-- [x] `src/version.c`: `VERSION_STAGE` bumped to `"01010000"`
-- [x] Tests: 6 valid (uninitialized array, initialized array, uninitialized struct, initialized struct, char-array from string literal, single-element array counter), 2 invalid; all 1552 tests pass
-- [x] Self-host C0→C1→C2 passes with no bootstrap issues
-
-## Stage 102 (continued) - Complete Static Aggregate Coverage
-
-Additional improvements for designated-init and multidimensional static arrays (see above).
-
 ## Stage 103 - Block-Scope Static Scalar Constant-Expression Initializers
 
 - [x] Codegen only: add `eval_const_init(ASTNode *node, const char *varname)` static helper in `src/codegen.c` before `codegen_statement`
@@ -2251,6 +2222,24 @@ TODO items completed this stage: none (pure bug fix)
 TODO items completed this stage:
 - [x] Zero-register idiom: `mov rax, 0` → `xor eax, eax` (Stage 157)
 
+---
+
+## Stage 158 - Compile Failure with External Library
+
+- [x] Preprocessor bug fixes for external library support
+	- [x] Bug 1: Block comments (`/* ... */`) in `#if`/`#elif` condition text included in expression evaluation string, causing `/*` to be misinterpreted as division operator. Fix: new `strip_cond_comments()` helper in `src/preprocessor.c` strips comments before evaluating condition in both `#if` and `#elif` handlers
+	- [x] Bug 2: `#` characters inside block comments in macro replacement lists incorrectly triggered "hash in object like macro" errors. Fix: `#define` replacement validation loop in `src/preprocessor.c` now skips over `/* */` comment spans
+- [x] Version update: `src/version.c` incremented to `01580000`
+- [x] 3 new integration tests: `test_if_inline_comment`, `test_elif_inline_comment`, `test_macro_comment_hash`
+- [x] Test results: 2056/2056 portable tests pass (165 unit, 1286 valid, 261 invalid, 173 integration, 50 print-AST, 100 print-tokens, 21 print-asm)
+- [x] Self-host C0→C1→C2 verified (Stage 158)
+
+TODO items completed this stage:
+- [x] External library support: fix `#if`/`#elif` expression evaluation when comments present (Stage 158)
+- [x] External library support: fix `#define` validation when hash appears in comment (Stage 158)
+
+---
+
 ## Stage 159 - SDL2 Compile Failure: GCC Extension Parsing Fixes
 
 - [x] Array-parameter adjustment in function-pointer typedef param lists (C99 §6.7.5.3p7)
@@ -2415,33 +2404,20 @@ TODO items completed this stage:
 
 ---
 
-## Stage 172 - Build Tool Compatibility (make and cmake)
+## Stage 169 - Debug Information (DWARF)
 
-- [x] `src/compiler.c`: add `-std=c99/-std=gnu99/-std=c11/-std=gnu11/-std=c17/-std=gnu17/-std=c2x/-ansi` branch (accepted, ignored); add `-isystem <dir>` branch (treated as `-I`); add `-w` branch (accepted, no-op); update `--help` and usage string
-- [x] `bin/cc99`: fix `-O2` forwarding (was falling through to unrecognized-option); add `-O3/-Os/-Og/-Ofast` discard; add `-std=*/-ansi` forwarding; add `-w` forwarding; add `-Wno-*` discard; add PIC/PIE flag discard (`-fPIC/-fPIE/-fpic/-fpie/-fno-pie/-fno-PIC/-fno-pic/-fno-PIE`); add hardening/codegen flag discard (`-fstack-protector` variants, `-fvisibility=*`, `-fomit-frame-pointer`, `-fstrict-aliasing`, `-ffunction-sections`, `-fdata-sections`, `-pipe`); add machine-tuning discard (`-march=*/-mtune=*/-m64/-m32`); add `-isystem` forwarding; add dependency-tracking stubs (`-MD/-MP` discard, `-MF/-MT/-MQ <arg>` discard); add `-pthread` (appends `-lpthread`); update `--help`
-- [x] New `test/build_tool/` suite: `run_tests.sh`, `test_make_hello`, `test_make_cflags`, `test_cmake_hello` (cmake test auto-skipped if cmake absent)
-- [x] `test/run_all_tests.sh`: register `build_tool` suite in Linux x86_64 block
-- [x] Version update: `src/version.c` incremented to `01720000`
-- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library + 3 build-tool pass
-- [x] Self-host C0→C1→C2 verified (Stage 172)
-
-TODO items completed this stage:
-- No existing TODO items completed (new tooling/test-infrastructure features)
-
----
-
-## Stage 171 - --help, Verbose Mode, and Mixed Input File Types
-
-- [x] `include/util.h`: add `extern int g_verbose;` declaration after `g_warn_level`
-- [x] `src/util.c`: add `int g_verbose = 0;` definition
-- [x] `src/compiler.c`: add `--help` branch (formatted help to stdout, exit 0); add `-v`/`--verbose` branch (sets `g_verbose = 1`); wrap `compiled: X -> Y` progress line in `if (g_verbose)`; simplify error-path usage to redirect to `--help`
-- [x] `bin/cc99`: add `--help` case (formatted help to stdout, exit 0); add `-v|--verbose` case (sets `verbose=1`, appends `-v` to `compiler_flags`); add `run_cmd` helper (prints invocation to stderr when verbose); accept `.s`/`.asm` (skips compile, assembles with nasm), `.o` (routes directly to linker), `.a`/`.so` (added to `link_flags` at parse time); refactor compilation loop with extension dispatch
-- [x] Version update: `src/version.c` incremented to `01710000`
+- [x] `include/codegen.h`: add `emit_debug` (int), `debug_last_file` (const char *), `debug_last_line` (int) to `CodeGen` struct
+- [x] `src/codegen.c`: add `emit_debug_line()` helper — guards on `emit_debug`, skips invalid positions, deduplicates by file+line; emit before function labels in `codegen_function()`; emit after `cg_mark(node)` in `codegen_statement()`; zero-initialize new fields in `codegen_init()`
+- [x] `src/compiler.c`: add `emit_debug` local variable, `-g` arg branch, `emit_debug` parameter to `compile_one_file`, set `cg.emit_debug` before `codegen_translation_unit`; update usage string to include `[-g]`
+- [x] `bin/cc99`: add `-g)` case to argument parser; post-loop `emit_debug` detection; pass `-g -F dwarf` to NASM when debug enabled; update usage block
+- [x] `test/integration/run_tests.sh`: detect `-g` in cflags, pass `nasm_debug_flags=(-g -F dwarf)` to NASM invocation
+- [x] Version update: `src/version.c` incremented to `01690000`
+- [x] 1 new integration test: `test_dwarf_debug` (compiled with `-g`, static add/mul functions, exits 42; exercises full `-g -F dwarf` NASM pipeline)
 - [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library pass
-- [x] Self-host C0→C1→C2 verified (Stage 171)
+- [x] Self-host C0→C1→C2 verified (Stage 169)
 
 TODO items completed this stage:
-- No existing TODO items completed (new tooling features)
+- [x] Debug information (DWARF) (Stage 169)
 
 ---
 
@@ -2460,36 +2436,33 @@ TODO items completed this stage:
 
 ---
 
-## Stage 169 - Debug Information (DWARF)
+## Stage 171 - --help, Verbose Mode, and Mixed Input File Types
 
-- [x] `include/codegen.h`: add `emit_debug` (int), `debug_last_file` (const char *), `debug_last_line` (int) to `CodeGen` struct
-- [x] `src/codegen.c`: add `emit_debug_line()` helper — guards on `emit_debug`, skips invalid positions, deduplicates by file+line; emit before function labels in `codegen_function()`; emit after `cg_mark(node)` in `codegen_statement()`; zero-initialize new fields in `codegen_init()`
-- [x] `src/compiler.c`: add `emit_debug` local variable, `-g` arg branch, `emit_debug` parameter to `compile_one_file`, set `cg.emit_debug` before `codegen_translation_unit`; update usage string to include `[-g]`
-- [x] `bin/cc99`: add `-g)` case to argument parser; post-loop `emit_debug` detection; pass `-g -F dwarf` to NASM when debug enabled; update usage block
-- [x] `test/integration/run_tests.sh`: detect `-g` in cflags, pass `nasm_debug_flags=(-g -F dwarf)` to NASM invocation
-- [x] Version update: `src/version.c` incremented to `01690000`
-- [x] 1 new integration test: `test_dwarf_debug` (compiled with `-g`, static add/mul functions, exits 42; exercises full `-g -F dwarf` NASM pipeline)
+- [x] `include/util.h`: add `extern int g_verbose;` declaration after `g_warn_level`
+- [x] `src/util.c`: add `int g_verbose = 0;` definition
+- [x] `src/compiler.c`: add `--help` branch (formatted help to stdout, exit 0); add `-v`/`--verbose` branch (sets `g_verbose = 1`); wrap `compiled: X -> Y` progress line in `if (g_verbose)`; simplify error-path usage to redirect to `--help`
+- [x] `bin/cc99`: add `--help` case (formatted help to stdout, exit 0); add `-v|--verbose` case (sets `verbose=1`, appends `-v` to `compiler_flags`); add `run_cmd` helper (prints invocation to stderr when verbose); accept `.s`/`.asm` (skips compile, assembles with nasm), `.o` (routes directly to linker), `.a`/`.so` (added to `link_flags` at parse time); refactor compilation loop with extension dispatch
+- [x] Version update: `src/version.c` incremented to `01710000`
 - [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library pass
-- [x] Self-host C0→C1→C2 verified (Stage 169)
+- [x] Self-host C0→C1→C2 verified (Stage 171)
 
 TODO items completed this stage:
-- [x] Debug information (DWARF) (Stage 169)
+- No existing TODO items completed (new tooling features)
 
 ---
 
-## Stage 158 - Compile Failure with External Library
+## Stage 172 - Build Tool Compatibility (make and cmake)
 
-- [x] Preprocessor bug fixes for external library support
-	- [x] Bug 1: Block comments (`/* ... */`) in `#if`/`#elif` condition text included in expression evaluation string, causing `/*` to be misinterpreted as division operator. Fix: new `strip_cond_comments()` helper in `src/preprocessor.c` strips comments before evaluating condition in both `#if` and `#elif` handlers
-	- [x] Bug 2: `#` characters inside block comments in macro replacement lists incorrectly triggered "hash in object like macro" errors. Fix: `#define` replacement validation loop in `src/preprocessor.c` now skips over `/* */` comment spans
-- [x] Version update: `src/version.c` incremented to `01580000`
-- [x] 3 new integration tests: `test_if_inline_comment`, `test_elif_inline_comment`, `test_macro_comment_hash`
-- [x] Test results: 2056/2056 portable tests pass (165 unit, 1286 valid, 261 invalid, 173 integration, 50 print-AST, 100 print-tokens, 21 print-asm)
-- [x] Self-host C0→C1→C2 verified (Stage 158)
+- [x] `src/compiler.c`: add `-std=c99/-std=gnu99/-std=c11/-std=gnu11/-std=c17/-std=gnu17/-std=c2x/-ansi` branch (accepted, ignored); add `-isystem <dir>` branch (treated as `-I`); add `-w` branch (accepted, no-op); update `--help` and usage string
+- [x] `bin/cc99`: fix `-O2` forwarding (was falling through to unrecognized-option); add `-O3/-Os/-Og/-Ofast` discard; add `-std=*/-ansi` forwarding; add `-w` forwarding; add `-Wno-*` discard; add PIC/PIE flag discard (`-fPIC/-fPIE/-fpic/-fpie/-fno-pie/-fno-PIC/-fno-pic/-fno-PIE`); add hardening/codegen flag discard (`-fstack-protector` variants, `-fvisibility=*`, `-fomit-frame-pointer`, `-fstrict-aliasing`, `-ffunction-sections`, `-fdata-sections`, `-pipe`); add machine-tuning discard (`-march=*/-mtune=*/-m64/-m32`); add `-isystem` forwarding; add dependency-tracking stubs (`-MD/-MP` discard, `-MF/-MT/-MQ <arg>` discard); add `-pthread` (appends `-lpthread`); update `--help`
+- [x] New `test/build_tool/` suite: `run_tests.sh`, `test_make_hello`, `test_make_cflags`, `test_cmake_hello` (cmake test auto-skipped if cmake absent)
+- [x] `test/run_all_tests.sh`: register `build_tool` suite in Linux x86_64 block
+- [x] Version update: `src/version.c` incremented to `01720000`
+- [x] Test results: 2072 portable (165 unit, 1286 valid, 261 invalid, 189 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 189 system-include + 2 optional-library + 3 build-tool pass
+- [x] Self-host C0→C1→C2 verified (Stage 172)
 
 TODO items completed this stage:
-- [x] External library support: fix `#if`/`#elif` expression evaluation when comments present (Stage 158)
-- [x] External library support: fix `#define` validation when hash appears in comment (Stage 158)
+- No existing TODO items completed (new tooling/test-infrastructure features)
 
 ---
 
