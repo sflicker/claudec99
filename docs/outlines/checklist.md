@@ -2695,6 +2695,50 @@ Major refactor: introduce an explicit IR layer between the AST and NASM codegen.
 - [x] Makefile / build system for the compiler itself (`build.sh`: normal / bootstrap / fallback / self-host modes) (Stage 93, 94)
 - [ ] Comprehensive conformance test suite against C99 standard
 
+## C11 Features
+
+The compiler accepts `-std=c11` (Stage 172) but currently treats it identically to C99. The items below track genuine C11 support.
+
+### C11 Language Features
+
+- [ ] `_Static_assert(expr, "message")` — compile-time assertion; evaluates constant expression during semantic analysis and emits a compile error with the message if zero; `static_assert` convenience macro in `<assert.h>`
+- [ ] `_Generic(controlling-expr, type1: expr1, ..., default: exprN)` — type-based generic selection; the controlling expression's type is matched against the association list at compile time and the selected expression is emitted; remaining associations are discarded without evaluation
+- [ ] `_Alignas(type-or-constant-expr)` declaration specifier — request a minimum alignment for an object; store in symbol table; influence stack slot alignment and `.align` directives in codegen
+- [ ] `_Alignof(type)` expression — produce the alignment requirement of a type as a `size_t` integer constant; same rules as `sizeof`; fold to a literal in the constant-expression pass
+- [ ] `_Noreturn` function specifier — annotate a function that never returns (e.g. `exit`, `abort`); parse and record in the function's type; enable better dead-code elimination after calls to such functions; `noreturn` macro in `<stdnoreturn.h>`
+- [ ] `_Atomic` type qualifier/specifier — mark a variable or type as atomically accessed; initially parse-and-ignore (no hardware fence codegen); full atomic codegen (`lock` prefix / `xchg` / `cmpxchg`) deferred to a threading stage
+- [ ] `_Thread_local` storage-class specifier — declare thread-local storage; initially parse-and-ignore; full codegen targets ELF TLS (`.tdata`/`.tbss` sections with `[rel thread]` addressing and `fs:`-relative access)
+- [ ] VLAs optional — C11 §6.7.6.2 makes variable-length arrays optional; define `__STDC_NO_VLA__` to `1` in the preprocessor if VLAs are not supported; track whether to retain current VLA support or formally disable it
+
+### C11 Standard Library Additions
+
+- [ ] `<stdalign.h>` — `alignas`, `alignof`, `__alignas_is_defined`, `__alignof_is_defined` macros (thin wrappers around `_Alignas`/`_Alignof`)
+- [ ] `<stdnoreturn.h>` — `noreturn` macro (expands to `_Noreturn`)
+- [ ] `<stddef.h>` addition — `max_align_t` typedef (alignment of any scalar type on the target)
+- [ ] `<stdatomic.h>` — atomic integer types (`atomic_int`, `atomic_long`, `atomic_uint`, etc.), `memory_order` enum and constants (`memory_order_relaxed`…`memory_order_seq_cst`), generic macros `atomic_store`, `atomic_load`, `atomic_exchange`, `atomic_compare_exchange_weak/strong`, `atomic_fetch_add/sub/and/or/xor`; stub header sufficient for compilation; lock-free codegen deferred
+- [ ] `<threads.h>` — C11 threading types (`thrd_t`, `mtx_t`, `cnd_t`, `tss_t`, `once_flag`); thread functions (`thrd_create`, `thrd_join`, `thrd_detach`, `thrd_exit`, `thrd_yield`, `thrd_sleep`); mutex functions (`mtx_init`, `mtx_lock`, `mtx_timedlock`, `mtx_trylock`, `mtx_unlock`, `mtx_destroy`); condition-variable functions (`cnd_init`, `cnd_signal`, `cnd_broadcast`, `cnd_wait`, `cnd_timedwait`, `cnd_destroy`); thread-local storage functions (`tss_create`, `tss_get`, `tss_set`, `tss_delete`); stub header mapping to pthreads
+- [ ] `<uchar.h>` — Unicode conversion types `char16_t`, `char32_t`; `mbrtoc16`, `mbrtoc32`, `c16rtomb`, `c32rtomb`; `mbstate_t` if not already in `<wchar.h>`
+- [ ] `<time.h>` additions — `struct timespec` (`tv_sec`, `tv_nsec`) if not already declared; `timespec_get(struct timespec *, int)` function; `TIME_UTC` constant
+- [ ] `<stdlib.h>` additions — `aligned_alloc(size_t alignment, size_t size)`, `quick_exit(int status)`, `at_quick_exit(void (*func)(void))`
+- [ ] `<stdio.h>` exclusive-create mode — `fopen` `"…x"` flag suffix (e.g., `"wx"`, `"ax"`) that causes the open to fail if the file already exists (C11 §7.21.5.3p3)
+
+### C11 Predefined Macros
+
+- [ ] `__STDC_VERSION__` updated to `201112L` when compiling in C11 mode (`-std=c11` or `-std=gnu11`); currently always `199901L`
+- [ ] `__STDC_NO_ATOMICS__` — defined to `1` when `<stdatomic.h>` / `_Atomic` are not supported
+- [ ] `__STDC_NO_COMPLEX__` — defined to `1` when complex arithmetic (`_Complex`) is not supported
+- [ ] `__STDC_NO_THREADS__` — defined to `1` when `<threads.h>` is not supported
+- [ ] `__STDC_NO_VLA__` — defined to `1` when variable-length arrays are not supported (see language feature above)
+
+### C11 Annex K — Bounds-Checking Interfaces (Optional / Not Planned)
+
+Annex K is optional in C11; most implementations do not provide it. Deferred unless explicitly required.
+
+- [ ] `errno_t`, `rsize_t`, `RSIZE_MAX` in `<stddef.h>`
+- [ ] Bounds-checking string functions: `strcpy_s`, `strcat_s`, `strncpy_s`, `strncat_s`, `strlen_s`, `memcpy_s`, `memmove_s`
+- [ ] `gets_s` (replaces the C11-removed `gets`)
+- [ ] Other `_s`-suffixed variants throughout `<stdio.h>` and `<stdlib.h>`
+
 ## Not Planned
 
 - goto across declarations (only legal in C under restrictions)
