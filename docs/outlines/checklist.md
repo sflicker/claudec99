@@ -2481,6 +2481,20 @@ TODO items completed this stage:
 
 ---
 
+## Stage 174 - Make --sysinclude the Default; Add --testinclude
+
+- [x] `bin/cc99`: replace boolean `use_sysinclude` with tri-state `include_mode` (`""`/`sysinclude`/`testinclude`); add `--testinclude` case; after argument parsing, default unset `include_mode` to `sysinclude` on Linux x86_64 (same platform gate as the existing explicit `--sysinclude` flag) and `testinclude` elsewhere; compile loop branches on `include_mode` instead of the old boolean; `--help` text documents `--testinclude` and the new default
+- [x] New `test/build_tool/test_cc99_default_headers` (no include flag; expects real system headers via the absence of the stub `CLAUDEC99_STDIO_H` guard macro) and `test/build_tool/test_cc99_testinclude` (`--testinclude`; expects the stub headers via presence of `CLAUDEC99_STDIO_H`)
+- [x] `README.md`: `bin/cc99` options table documents `--testinclude` and updates `--sysinclude`'s description to note it is now the default on Linux x86_64
+- [x] Version update: `src/version.c` incremented to `01740000`
+- [x] Test results: 2074 portable (165 unit, 1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 191 system-include + 2 optional-library + 5 build-tool pass
+- [x] Self-host C0→C1→C2 verified (Stage 174)
+
+TODO items completed this stage:
+- No existing TODO items completed (frontend default-behavior change)
+
+---
+
 ## TODO
 
 ### Preprocessor

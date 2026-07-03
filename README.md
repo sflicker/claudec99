@@ -187,7 +187,8 @@ directly to linker).
 | `-I <dir>` / `-I<dir>` | Include search path (passed to `ccompiler`) |
 | `-isystem <dir>` | System include path (forwarded as `-I` to `ccompiler`) |
 | `--sysroot=<dir>` | Sysroot (passed to `ccompiler`) |
-| `--sysinclude` | Use system include paths instead of `test/include` stubs (Linux x86_64 only) |
+| `--sysinclude` | Use system include paths instead of `test/include` stubs (default on Linux x86_64) |
+| `--testinclude` | Use `test/include` stubs instead of system include paths (default off Linux x86_64) |
 | `-std=<std>` / `-ansi` | Language standard (accepted; always compiled as C99) |
 | `-O0` / `-O1` / `-O2` | Optimization level (passed to `ccompiler`) |
 | `-O3` / `-Os` / `-Og` / `-Ofast` | Accepted, silently ignored (our max is `-O2`) |
@@ -246,6 +247,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 174 (make --sysinclude the default; add --testinclude):
+
+> Stage 174 flips `bin/cc99`'s default include-path behavior: on Linux x86_64, real system headers under `/usr/include` (the former `--sysinclude` behavior) are now used by default with no flag required. A new `--testinclude` flag explicitly requests the project's `test/include` stub headers instead; it is also the default on any platform that isn't Linux x86_64, preserving the previous behavior there. `--sysinclude` still works as an explicit flag (now a no-op on Linux x86_64, since it matches the default) and still errors on unsupported platforms. This is a pure `bin/cc99` shell-script change — no tokenizer, parser, AST, or codegen changes. Two new `test/build_tool/` tests (`test_cc99_default_headers`, `test_cc99_testinclude`) verify the default and the explicit override by checking which header set's include guard (`CLAUDEC99_STDIO_H`, unique to the stub headers) was actually picked up. All 2074 portable tests pass (165 unit, 1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm). System-include: 191 pass. Optional-library: 2 pass. Build-tool: 5 pass. Self-host C0→C1→C2 verified with all tests passing at every stage.
 
 Through Stage 173 (GNU named variadic macro parameters):
 
@@ -890,7 +895,7 @@ Run everything from the project root after building:
 ./test/run_all_tests.sh
 ```
 
-The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 173 all 2074 portable tests pass (1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 191/191; the optional-library suite passes 2/2 (test_sdl2_init, test_zlib_compress).
+The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 174 all 2074 portable tests pass (1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 191/191; the optional-library suite passes 2/2 (test_sdl2_init, test_zlib_compress).
 
 Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
 
