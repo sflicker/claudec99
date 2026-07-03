@@ -72,6 +72,8 @@ typedef struct {
     char **params;      /* NULL for object-like; owned array of owned strings */
     int    param_count; /* -1 = object-like, >= 0 = function-like           */
     int    is_variadic; /* 1 if last param is ..., 0 otherwise               */
+    char  *va_name;     /* variadic param name ("__VA_ARGS__" or GNU named form);
+                          * NULL when is_variadic == 0                        */
     char  *replacement;
     int    disabled;    /* 1 while being expanded (prevents recursive rescan) */
 } MacroDef;
@@ -98,6 +100,7 @@ static void macro_table_free(MacroTable *t) {
     for (size_t i = 0; i < t->count; i++) {
         free(t->defs[i].name);
         free(t->defs[i].replacement);
+        free(t->defs[i].va_name);
         if (t->defs[i].params) {
             for (int j = 0; j < t->defs[i].param_count; j++)
                 free(t->defs[i].params[j]);
@@ -140,21 +143,27 @@ static MacroDef *macro_find(MacroTable *t, const char *name, size_t len) {
 /* params and param_count describe the parameter list:
  *   param_count == -1, params == NULL  → object-like
  *   param_count >= 0                   → function-like (params owned)
- * is_variadic == 1 means the macro accepts extra arguments via __VA_ARGS__.
- * On compatible redefinition, incoming params are freed. */
+ * is_variadic == 1 means the macro accepts extra arguments, referenced in the
+ * replacement text as va_name (owned; "__VA_ARGS__" for the standard "..."
+ * form, or a caller-supplied identifier for the GNU named form "NAME...").
+ * va_name must be NULL when is_variadic == 0.
+ * On compatible redefinition, incoming params/va_name are freed. */
 static void macro_define(MacroTable *t, const char *name, size_t nlen,
                           char **params, int param_count, int is_variadic,
+                          char *va_name,
                           const char *repl, size_t rlen) {
     MacroDef *existing = macro_find(t, name, nlen);
     if (existing) {
-        /* free any incoming params regardless of outcome */
+        /* free any incoming params/va_name regardless of outcome */
         if (params) {
             for (int i = 0; i < param_count; i++) free(params[i]);
             free(params);
         }
+        free(va_name);
         if (strlen(existing->replacement) == rlen &&
             strncmp(existing->replacement, repl, rlen) == 0 &&
-            existing->is_variadic == is_variadic)
+            existing->is_variadic == is_variadic &&
+            ((existing->va_name == NULL) == (va_name == NULL)))
             return; /* compatible redefinition */
         char tmp[256];
         size_t copy = nlen < sizeof(tmp) - 1 ? nlen : sizeof(tmp) - 1;
@@ -183,6 +192,12 @@ static void macro_define(MacroTable *t, const char *name, size_t nlen,
     t->defs[t->count].params      = params; /* takes ownership */
     t->defs[t->count].param_count = param_count;
     t->defs[t->count].is_variadic = is_variadic;
+    if (is_variadic) {
+        t->defs[t->count].va_name = va_name ? va_name : util_strdup("__VA_ARGS__");
+    } else {
+        free(va_name);
+        t->defs[t->count].va_name = NULL;
+    }
     t->defs[t->count].disabled    = 0;
     t->count++;
 }
@@ -193,6 +208,7 @@ static void macro_undef(MacroTable *t, const char *name, size_t len) {
             strncmp(t->defs[i].name, name, len) == 0) {
             free(t->defs[i].name);
             free(t->defs[i].replacement);
+            free(t->defs[i].va_name);
             if (t->defs[i].params) {
                 for (int j = 0; j < t->defs[i].param_count; j++)
                     free(t->defs[i].params[j]);
@@ -763,7 +779,7 @@ static char *expand_macros_text(const char *text, MacroTable *macros) {
                             ext_raw[i]      = raw_args[i];
                             ext_raw_lens[i] = raw_arg_lens[i];
                         }
-                        ext_params[def->param_count]   = "__VA_ARGS__";
+                        ext_params[def->param_count]   = def->va_name;
                         ext_args[def->param_count]     = va_exp;
                         ext_lens[def->param_count]     = strlen(va_exp);
                         ext_raw[def->param_count]      = va_raw;
@@ -1793,6 +1809,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 char  **params      = NULL;
                 int     param_count = -1; /* -1 = object-like */
                 int     is_variadic = 0;
+                char   *va_name     = NULL; /* GNU named variadic param, e.g. "args" in (fmt, args...) */
 
                 if (s[in] == '(') {
                     in++; /* skip '(' */
@@ -1837,6 +1854,30 @@ static char *preprocess_internal(const char *source, const char *source_path,
                             if (!pname) { fprintf(stderr, "error: out of memory\n"); exit(1); }
                             memcpy(pname, s + pstart, plen);
                             pname[plen] = '\0';
+
+                            /* GNU named variadic parameter: NAME... (no comma
+                             * before the ...) makes NAME the variadic param
+                             * name used in place of __VA_ARGS__, e.g.
+                             * #define __struct_group(TAG, NAME, ATTRS, MEMBERS...) */
+                            {
+                                size_t peek = in;
+                                while (s[peek] == ' ' || s[peek] == '\t') peek++;
+                                if (s[peek] == '.' && s[peek+1] == '.' && s[peek+2] == '.') {
+                                    in = peek + 3;
+                                    is_variadic = 1;
+                                    va_name = pname;
+                                    while (s[in] == ' ' || s[in] == '\t') in++;
+                                    if (s[in] != ')') {
+                                        fprintf(stderr,
+                                                "error: expected ')' after '...' in macro parameter list\n");
+                                        free(va_name);
+                                        for (int i = 0; i < param_count; i++) free(params[i]);
+                                        free(params); free(out.data); free(spliced); exit(1);
+                                    }
+                                    in++;
+                                    break;
+                                }
+                            }
 
                             if ((size_t)param_count == params_cap) {
                                 params_cap *= 2;
@@ -1965,10 +2006,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                 break;
                             }
                         }
-                        /* __VA_ARGS__ is valid in variadic macro replacement */
-                        if (!found_param && is_variadic &&
-                            plen == 11 && strncmp(s + pstart, "__VA_ARGS__", 11) == 0)
-                            found_param = 1;
+                        /* __VA_ARGS__ (or the GNU named variadic parameter) is
+                         * valid in variadic macro replacement. */
+                        if (!found_param && is_variadic) {
+                            const char *van = va_name ? va_name : "__VA_ARGS__";
+                            if (strlen(van) == plen && strncmp(van, s + pstart, plen) == 0)
+                                found_param = 1;
+                        }
                         if (!found_param) {
                             fprintf(stderr,
                                     "error: hash not followed by param '%.*s'\n",
@@ -1984,7 +2028,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                 char *stripped = strip_block_comments(s, repl_start, repl_end);
                 macro_define(macros,
                              s + name_start, name_len,
-                             params, param_count, is_variadic,
+                             params, param_count, is_variadic, va_name,
                              stripped, strlen(stripped));
                 free(stripped);
                 /* Directive line consumed; newline handled on next iteration. */
@@ -2281,7 +2325,7 @@ static char *preprocess_internal(const char *source, const char *source_path,
                                     ext_raw[i]      = raw_args[i];
                                     ext_raw_lens[i] = raw_arg_lens[i];
                                 }
-                                ext_params[def->param_count]   = "__VA_ARGS__";
+                                ext_params[def->param_count]   = def->va_name;
                                 ext_args[def->param_count]     = va_exp;
                                 ext_lens[def->param_count]     = strlen(va_exp);
                                 ext_raw[def->param_count]      = va_raw;
@@ -2359,10 +2403,10 @@ char *preprocess_with_defines_and_includes(const char *source,
     macro_table_init(&macros);
 
     /* Standard predefined macros — inserted before user -D definitions. */
-    macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, 0, "1",      strlen("1"));
-    macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, 0, "199901", strlen("199901"));
-    macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, 0, "1",      strlen("1"));
-    macro_define(&macros, "__STDC_HOSTED__",  strlen("__STDC_HOSTED__"),  NULL, -1, 0, "1",      strlen("1"));
+    macro_define(&macros, "__STDC__",         strlen("__STDC__"),         NULL, -1, 0, NULL, "1",      strlen("1"));
+    macro_define(&macros, "__STDC_VERSION__", strlen("__STDC_VERSION__"), NULL, -1, 0, NULL, "199901", strlen("199901"));
+    macro_define(&macros, "__CLAUDEC99__",    strlen("__CLAUDEC99__"),    NULL, -1, 0, NULL, "1",      strlen("1"));
+    macro_define(&macros, "__STDC_HOSTED__",  strlen("__STDC_HOSTED__"),  NULL, -1, 0, NULL, "1",      strlen("1"));
 
     /* Runtime context predefined macros — computed once at preprocessing start. */
     {
@@ -2372,37 +2416,37 @@ char *preprocess_with_defines_and_includes(const char *source,
         char time_buf[12]; /* "\"HH:MM:SS\"\0"   fits in 12 */
         strftime(date_buf, sizeof(date_buf), "\"%b %e %Y\"", tm);
         strftime(time_buf, sizeof(time_buf), "\"%H:%M:%S\"", tm);
-        macro_define(&macros, "__DATE__", strlen("__DATE__"), NULL, -1, 0, date_buf, strlen(date_buf));
-        macro_define(&macros, "__TIME__", strlen("__TIME__"), NULL, -1, 0, time_buf, strlen(time_buf));
+        macro_define(&macros, "__DATE__", strlen("__DATE__"), NULL, -1, 0, NULL, date_buf, strlen(date_buf));
+        macro_define(&macros, "__TIME__", strlen("__TIME__"), NULL, -1, 0, NULL, time_buf, strlen(time_buf));
     }
 
     /* Target/ABI predefined macros — x86_64 Linux LP64. */
-    macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, "1", 1);
-    macro_define(&macros, "__linux__",           strlen("__linux__"),           NULL, -1, 0, "1", 1);
-    macro_define(&macros, "__unix__",            strlen("__unix__"),            NULL, -1, 0, "1", 1);
-    macro_define(&macros, "__LP64__",            strlen("__LP64__"),            NULL, -1, 0, "1", 1);
-    macro_define(&macros, "_LP64",               strlen("_LP64"),               NULL, -1, 0, "1", 1);
-    macro_define(&macros, "__CHAR_BIT__",        strlen("__CHAR_BIT__"),        NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_CHAR__",     strlen("__SIZEOF_CHAR__"),     NULL, -1, 0, "1", 1);
-    macro_define(&macros, "__SIZEOF_SHORT__",    strlen("__SIZEOF_SHORT__"),    NULL, -1, 0, "2", 1);
-    macro_define(&macros, "__SIZEOF_INT__",      strlen("__SIZEOF_INT__"),      NULL, -1, 0, "4", 1);
-    macro_define(&macros, "__SIZEOF_LONG__",     strlen("__SIZEOF_LONG__"),     NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_POINTER__",   strlen("__SIZEOF_POINTER__"),   NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_SIZE_T__",    strlen("__SIZEOF_SIZE_T__"),    NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_LONG_LONG__", strlen("__SIZEOF_LONG_LONG__"), NULL, -1, 0, "8", 1);
-    macro_define(&macros, "__SIZEOF_WCHAR_T__",   strlen("__SIZEOF_WCHAR_T__"),   NULL, -1, 0, "4", 1);
-    macro_define(&macros, "__WCHAR_TYPE__",        strlen("__WCHAR_TYPE__"),        NULL, -1, 0, "int", 3);
-    macro_define(&macros, "__WCHAR_MAX__",         strlen("__WCHAR_MAX__"),         NULL, -1, 0, "0x7fffffff", 10);
-    macro_define(&macros, "__WCHAR_MIN__",         strlen("__WCHAR_MIN__"),         NULL, -1, 0, "(-__WCHAR_MAX__ - 1)", 20);
+    macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "__linux__",           strlen("__linux__"),           NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "__unix__",            strlen("__unix__"),            NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "__LP64__",            strlen("__LP64__"),            NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "_LP64",               strlen("_LP64"),               NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "__CHAR_BIT__",        strlen("__CHAR_BIT__"),        NULL, -1, 0, NULL, "8", 1);
+    macro_define(&macros, "__SIZEOF_CHAR__",     strlen("__SIZEOF_CHAR__"),     NULL, -1, 0, NULL, "1", 1);
+    macro_define(&macros, "__SIZEOF_SHORT__",    strlen("__SIZEOF_SHORT__"),    NULL, -1, 0, NULL, "2", 1);
+    macro_define(&macros, "__SIZEOF_INT__",      strlen("__SIZEOF_INT__"),      NULL, -1, 0, NULL, "4", 1);
+    macro_define(&macros, "__SIZEOF_LONG__",     strlen("__SIZEOF_LONG__"),     NULL, -1, 0, NULL, "8", 1);
+    macro_define(&macros, "__SIZEOF_POINTER__",   strlen("__SIZEOF_POINTER__"),   NULL, -1, 0, NULL, "8", 1);
+    macro_define(&macros, "__SIZEOF_SIZE_T__",    strlen("__SIZEOF_SIZE_T__"),    NULL, -1, 0, NULL, "8", 1);
+    macro_define(&macros, "__SIZEOF_LONG_LONG__", strlen("__SIZEOF_LONG_LONG__"), NULL, -1, 0, NULL, "8", 1);
+    macro_define(&macros, "__SIZEOF_WCHAR_T__",   strlen("__SIZEOF_WCHAR_T__"),   NULL, -1, 0, NULL, "4", 1);
+    macro_define(&macros, "__WCHAR_TYPE__",        strlen("__WCHAR_TYPE__"),        NULL, -1, 0, NULL, "int", 3);
+    macro_define(&macros, "__WCHAR_MAX__",         strlen("__WCHAR_MAX__"),         NULL, -1, 0, NULL, "0x7fffffff", 10);
+    macro_define(&macros, "__WCHAR_MIN__",         strlen("__WCHAR_MIN__"),         NULL, -1, 0, NULL, "(-__WCHAR_MAX__ - 1)", 20);
 
     /* GCC extension keywords that system headers don't define are silenced
      * here so user code that uses them compiles cleanly. */
-    macro_define(&macros, "__restrict__",  strlen("__restrict__"),  NULL, -1, 0, "restrict", strlen("restrict"));
-    macro_define(&macros, "__volatile__",  strlen("__volatile__"),  NULL, -1, 0, "volatile", strlen("volatile"));
-    macro_define(&macros, "__const__",     strlen("__const__"),     NULL, -1, 0, "const",    strlen("const"));
-    macro_define(&macros, "__inline__",    strlen("__inline__"),    NULL, -1, 0, "",          0);
+    macro_define(&macros, "__restrict__",  strlen("__restrict__"),  NULL, -1, 0, NULL, "restrict", strlen("restrict"));
+    macro_define(&macros, "__volatile__",  strlen("__volatile__"),  NULL, -1, 0, NULL, "volatile", strlen("volatile"));
+    macro_define(&macros, "__const__",     strlen("__const__"),     NULL, -1, 0, NULL, "const",    strlen("const"));
+    macro_define(&macros, "__inline__",    strlen("__inline__"),    NULL, -1, 0, NULL, "",          0);
     /* GCC extension keyword silenced so system headers parse without errors. */
-    macro_define(&macros, "__extension__", strlen("__extension__"), NULL, -1, 0, "", 0);
+    macro_define(&macros, "__extension__", strlen("__extension__"), NULL, -1, 0, NULL, "", 0);
 
     for (int i = 0; i < n_defines; i++) {
         const char *def = defines[i];
@@ -2410,9 +2454,9 @@ char *preprocess_with_defines_and_includes(const char *source,
         if (eq) {
             size_t nlen = (size_t)(eq - def);
             const char *val = eq + 1;
-            macro_define(&macros, def, nlen, NULL, -1, 0, val, strlen(val));
+            macro_define(&macros, def, nlen, NULL, -1, 0, NULL, val, strlen(val));
         } else {
-            macro_define(&macros, def, strlen(def), NULL, -1, 0, "1", 1);
+            macro_define(&macros, def, strlen(def), NULL, -1, 0, NULL, "1", 1);
         }
     }
 

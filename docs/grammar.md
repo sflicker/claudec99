@@ -566,7 +566,9 @@
 #     and stringification (`#param` in function-like macro replacement lists) are supported (stage 57).
 #   - Token pasting (`##`) in function-like macro replacement lists is supported.
 #   - Variadic function-like macros (`#define M(...)`, `#define M(x, ...)`) with
-#     `__VA_ARGS__` expansion are supported.
+#     `__VA_ARGS__` expansion are supported. The GNU named variadic parameter
+#     extension (`#define M(x, args...)`, where `args` — not `__VA_ARGS__` —
+#     is used in the replacement text) is also supported (stage 173).
 #   - `#if`/`#elif` conditions support bitwise (`~`, `&`, `^`, `|`) and shift
 #     (`<<`, `>>`) operators (see the pp-expression grammar above).
 #   - Recursive macro expansion beyond simple guarding and `#elifdef`/`#elifndef`

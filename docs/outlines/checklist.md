@@ -2466,12 +2466,28 @@ TODO items completed this stage:
 
 ---
 
+## Stage 173 - GNU Named Variadic Macro Parameters
+
+- [x] `src/preprocessor.c`: add `va_name` field to `MacroDef` (owned variadic-parameter substitution name; `"__VA_ARGS__"` for the standard forms, or the given identifier for the GNU named form); `#define` parameter-list parser recognizes `NAME...` (identifier immediately followed by `...`, no preceding comma required) as the final variadic parameter; `macro_define()` gains a `va_name` parameter, freed correctly on redefinition/`#undef`/table teardown; the two macro-expansion substitution sites and the `#`/`##` replacement-text validator now use the macro's actual variadic name instead of a hardcoded `"__VA_ARGS__"`; all 30 predefined-macro `macro_define()` call sites updated for the new parameter
+- [x] New `test/integration/test_pp_named_variadic_macro` (bare form: `#define M(MEMBERS...) MEMBERS; MEMBERS`), `test/integration/test_pp_named_variadic_macro_fixed_param` (fixed + variadic form: `#define LOG(fmt, args...) printf(fmt, args)`)
+- [x] `docs/grammar.md`: document GNU named variadic macro parameter support
+- [x] `docs/outlines/checklist.md`: flip named-variadic-args sub-item under the GNU extension TODO entry
+- [x] Version update: `src/version.c` incremented to `01730000`
+- [x] Test results: 2074 portable (165 unit, 1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 191 system-include + 2 optional-library pass
+- [x] Self-host C0→C1→C2 verified (Stage 173)
+
+TODO items completed this stage:
+- GNU extension: named variadic args (partial — `__VA_OPT__` still unimplemented)
+
+---
+
 ## TODO
 
 ### Preprocessor
 - [x] `#pragma` (unknown pragmas silently ignored; `#pragma once` supported) (Stage 105)
 - [x] #elifdef / #elifndef (Stage 108)
 - [ ] GNU extension: `__VA_OPT__` and named variadic args
+  - [x] Named variadic macro parameters (`#define M(fmt, args...)`, replacement text uses `args` instead of `__VA_ARGS__`) (Stage 173)
 
 ### Types
 - [x] float and double types (Stage 109: declaration, initialization, assignment, struct members, globals)
