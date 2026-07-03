@@ -1,5 +1,34 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 174 self-hosting test
+
+None. Stage 174 is a pure `bin/cc99` shell-script change (tri-state
+`include_mode` replacing the boolean `use_sysinclude`, new `--testinclude`
+flag, platform-based default selection) plus a `src/version.c` bump and
+two new `test/build_tool/` fixtures — no C source paths exercised by the
+self-hosted compiler are affected, since `bin/cc99` is not itself part of
+the bootstrap. All 2074 portable tests + 191 system-include tests + 2
+optional-library tests + 5 build-tool tests passed at C0, C1, and C2 with
+no source changes needed during bootstrap. (Fixed one unrelated item found
+along the way: a stale, gitignored `test/build_tool/test_cmake_hello/build/`
+directory left over from a prior local run — referencing an old path in its
+cached `CMakeCache.txt` — was removed so the cmake test could run cleanly;
+this was pre-existing on master before this stage and unrelated to the
+`--sysinclude`/`--testinclude` change.)
+
+## Result (stage 174)
+
+**Date:** 2026-07-03
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01740000.01273` | 2074 portable + 191 sysinclude + 2 optional + 5 build-tool |
+| C1 | `build/ccompiler-c1` | `00.03.01740000.01274` | 2074 portable + 191 sysinclude + 2 optional + 5 build-tool |
+| C2 | `build/ccompiler-c2` | `00.03.01740000.01275` | 2074 portable + 191 sysinclude + 2 optional + 5 build-tool |
+
+---
+
 ## Issues found during stage 173 self-hosting test
 
 None. The `va_name` field added to `MacroDef` in `src/preprocessor.c`, the
