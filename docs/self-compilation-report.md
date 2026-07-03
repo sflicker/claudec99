@@ -1,5 +1,33 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 173 self-hosting test
+
+None. The `va_name` field added to `MacroDef` in `src/preprocessor.c`, the
+new peek-for-`...`-after-identifier parsing branch, and the updated
+`macro_define()` signature (one new `char *va_name` parameter, threaded
+through 30 call sites plus 2 macro-expansion sites) use only `malloc`,
+`free`, `strlen`, `strncmp`, pointer assignment, and ternary expressions —
+all valid under the C89/C99 subset handled by C0. No new headers, no VLAs,
+no `//` comments. All 2074 portable tests + 191 system-include tests +
+2 optional-library tests passed at C0, C1, and C2 with no source changes
+needed during bootstrap. (The pre-existing, unrelated `test_cmake_hello`
+build-tool failure — present on master before this stage — is excluded
+from `build.sh`'s test run, which covers portable + system-include +
+optional-library only.)
+
+## Result (stage 173)
+
+**Date:** 2026-07-03
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01730000.01268` | 2074 portable + 191 sysinclude + 2 optional |
+| C1 | `build/ccompiler-c1` | `00.03.01730000.01269` | 2074 portable + 191 sysinclude + 2 optional |
+| C2 | `build/ccompiler-c2` | `00.03.01730000.01270` | 2074 portable + 191 sysinclude + 2 optional |
+
+---
+
 ## Issues found during stage 172 self-hosting test
 
 None. The new flag branches in `src/compiler.c` (`-std=*`/`-ansi`,
