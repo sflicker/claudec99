@@ -1,5 +1,29 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 175 self-hosting test
+
+None. The fix reorders two existing branches in `parse_parameter_declaration`
+(`src/parser.c`) so the `d.is_array` check runs before the `d.pointer_count > 0`
+check, adding one `type_pointer()` call on top of the already-applied declared
+stars. This uses only pointer assignment and a function call already present
+in the surrounding code — no new headers, no VLAs, no `//` comments, nothing
+outside the C89/C99 subset handled by C0. All 2075 portable tests + 192
+system-include tests + 2 optional-library tests + 5 build-tool tests passed
+at C0, C1, and C2 with no source changes needed during bootstrap.
+
+## Result (stage 175)
+
+**Date:** 2026-07-05
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01750000.01279` | 2075 portable + 192 sysinclude + 2 optional + 5 build-tool |
+| C1 | `build/ccompiler-c1` | `00.03.01750000.01280` | 2075 portable + 192 sysinclude + 2 optional + 5 build-tool |
+| C2 | `build/ccompiler-c2` | `00.03.01750000.01281` | 2075 portable + 192 sysinclude + 2 optional + 5 build-tool |
+
+---
+
 ## Issues found during stage 174 self-hosting test
 
 None. Stage 174 is a pure `bin/cc99` shell-script change (tri-state
