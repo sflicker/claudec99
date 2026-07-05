@@ -2495,6 +2495,19 @@ TODO items completed this stage:
 
 ---
 
+## Stage 175 - Fix `char *argv[]` Parameter Array Decay
+
+- [x] `src/parser.c` (`parse_parameter_declaration`): a `T *name[]`-style parameter (a declared pointer star combined with a trailing array suffix, e.g. `char *argv[]`) built its `full_type` from only the declared stars, dropping the extra pointer level C99 §6.7.5.3p7 requires for the array-to-pointer decay itself; `char *argv[]` was recorded as `char *` instead of `char **`. Reordered the `d.is_array` check ahead of the `d.pointer_count > 0` check so the decay always adds one more `type_pointer()` level on top of any declared stars; the pre-existing pure-array case (`int a[3]`, `d.pointer_count == 0`) is unaffected.
+- [x] New `test/integration/test_array_param_pointer_arg`: a `char *argv[]` parameter is subscripted (`argv[1]`) and the result passed to a function taking a plain `char *`, verifying both the type-check (previously mis-flagged as a pointer/integer mismatch) and runtime correctness (subscript arithmetic on the corrected `char **`).
+- [x] Version update: `src/version.c` incremented to `01750000`
+- [x] Test results: 2075 portable (165 unit, 1286 valid, 261 invalid, 192 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 192 system-include + 2 optional-library + 5 build-tool pass
+- [x] Self-host C0→C1→C2 verified (Stage 175)
+
+TODO items completed this stage:
+- No existing TODO items completed (bugfix in existing array-parameter decay)
+
+---
+
 ## TODO
 
 ### Preprocessor

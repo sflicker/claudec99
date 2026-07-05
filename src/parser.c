@@ -4091,15 +4091,18 @@ static ASTNode *parse_parameter_declaration(Parser *parser) {
     for (int i = 0; i < d.pointer_count; i++) {
         full_type = type_pointer(full_type);
     }
-    if (d.pointer_count > 0) {
+    if (d.is_array) {
+        /* Stage 135/175: C99 6.7.5.3p7 — named array parameter (e.g. int a[3],
+         * int a[], or char *argv[]) is adjusted to pointer-to-element. Any
+         * declared stars (as in char *argv[]) already built the element type
+         * in full_type above; the array decay adds exactly one more pointer
+         * level on top, so int a[3], int a[], and int *a all agree, and
+         * char *argv[] comes out as char ** (not char *). */
+        param->decl_type = TYPE_POINTER;
+        param->full_type = type_pointer(full_type);
+    } else if (d.pointer_count > 0) {
         param->decl_type = TYPE_POINTER;
         param->full_type = full_type;
-    } else if (d.is_array) {
-        /* Stage 135: C99 6.7.5.3p7 — named array parameter (e.g. int a[3] or
-         * int a[]) is adjusted to pointer-to-element so that int a[3], int a[],
-         * and int *a all produce the same adjusted type TYPE_POINTER. */
-        param->decl_type = TYPE_POINTER;
-        param->full_type = type_pointer(base_type);
     } else if (base_kind == TYPE_ARRAY) {
         /* C99 6.7.5.3p7: unnamed array param is adjusted to pointer-to-element. */
         param->decl_type = TYPE_POINTER;
