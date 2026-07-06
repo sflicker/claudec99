@@ -1,5 +1,31 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 176 self-hosting test
+
+None. The fix adds one new branch to `parse_statement` (`src/parser.c`) that
+checks for `TOKEN_SEMICOLON` and returns an empty `AST_BLOCK` — the same
+no-op node already produced by the existing `asm` statement path. This uses
+only a token-type comparison, `lexer_next_token`, and `parser_node`, all
+already exercised throughout the parser; no new headers, no VLAs, no `//`
+comments. The compiler's own source contains no bare `;` null statements, so
+the new branch is reachable via existing test coverage but not exercised
+during self-compilation. All 2077 portable tests + 194 system-include tests
++ 2 optional-library tests + 5 build-tool tests passed at C0, C1, and C2
+with no source changes needed during bootstrap.
+
+## Result (stage 176)
+
+**Date:** 2026-07-06
+**Method:** `./build.sh --mode=self-host`
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler-c0` | `00.03.01760000.01285` | 2077 portable + 194 sysinclude + 2 optional + 5 build-tool |
+| C1 | `build/ccompiler-c1` | `00.03.01760000.01286` | 2077 portable + 194 sysinclude + 2 optional + 5 build-tool |
+| C2 | `build/ccompiler-c2` | `00.03.01760000.01287` | 2077 portable + 194 sysinclude + 2 optional + 5 build-tool |
+
+---
+
 ## Issues found during stage 175 self-hosting test
 
 None. The fix reorders two existing branches in `parse_parameter_declaration`
