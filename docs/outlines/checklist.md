@@ -2508,6 +2508,20 @@ TODO items completed this stage:
 
 ---
 
+## Stage 176 - Fix Semicolon After `while`/`for` (Null Statement)
+
+- [x] `src/parser.c` (`parse_statement`): a bare `;` (C99 §6.8.3 null statement, `expression_statement ::= [expression] ";"`) fell through to the expression-statement fallback, which called `parse_expression` on the `;` token and failed with "expected expression, got ';'"; this broke common idioms like `while (0);`, `for (;;);`, and `if (x);`. Added a check for `TOKEN_SEMICOLON` immediately before the expression-statement fallback that consumes the `;` and returns an empty `AST_BLOCK`, matching the existing no-op convention used for `asm` statements; codegen already emits no instructions for an empty block.
+- [x] `docs/grammar.md`: `<expression_statement>` changed from `<expression> ";"` to `[ <expression> ] ";"`.
+- [x] New `test/integration/test_while_null_stmt` (`while (0);` followed by further statements) and `test/integration/test_for_null_stmt` (bounded `for` loop with a null body) verify the fix end-to-end.
+- [x] Version update: `src/version.c` incremented to `01760000`
+- [x] Test results: 2077 portable (165 unit, 1286 valid, 261 invalid, 194 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 194 system-include + 2 optional-library + 5 build-tool pass
+- [x] Self-host C0→C1→C2 verified (Stage 176)
+
+TODO items completed this stage:
+- No existing TODO items completed (bugfix in existing statement parsing)
+
+---
+
 ## TODO
 
 ### Preprocessor

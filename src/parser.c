@@ -3945,6 +3945,15 @@ static ASTNode *parse_statement(Parser *parser) {
         parser_expect(parser, TOKEN_SEMICOLON);
         return parser_node(parser, AST_GOTO_STATEMENT, name.value);
     }
+    /* Stage 176: null statement — a bare ';' with no expression
+     * (C99 6.8.3: expression_statement ::= [expression] ";"). Common as a
+     * loop body, e.g. "while (0);" or "for (;;);". Represented as an empty
+     * AST_BLOCK, matching the existing no-op convention (see the asm
+     * statement above), which codegen already emits no instructions for. */
+    if (parser->current.type == TOKEN_SEMICOLON) {
+        parser->current = lexer_next_token(parser->lexer);
+        return parser_node(parser, AST_BLOCK, NULL);
+    }
     /* expression_stmt (includes assignments, since assignment is now an expression) */
     ASTNode *expr = parse_expression(parser);
     parser_expect(parser, TOKEN_SEMICOLON);

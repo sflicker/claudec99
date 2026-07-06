@@ -200,7 +200,7 @@
                     | "break" ";"
                     | "goto" <identifier> ";"
 
-<expression_statement> ::= <expression> ";"
+<expression_statement> ::= [ <expression> ] ";"
 
 <expression> ::= <assignment_expression> { "," <assignment_expression> }
 
