@@ -2622,7 +2622,7 @@ TODO items completed this stage:
 ### Code Generation and Optimization
 - [ ] Multi-file compilation (compile multiple .c files to .o files)
   - [x] Multiple source files accepted in a single `ccompiler` invocation — each compiled independently to its own `.asm` with full per-file teardown (Stage 96)
-- [ ] Object file emission (.o / ELF)
+- [ ] Object file emission (.o / ELF) — see "Assembler" section below
 - [ ] Linker invocation
 - [x] Debug information (DWARF) (Stage 169)
 - [ ] Stack frame alignment (currently assumed 16-byte; verify under all ABI conditions)
@@ -2638,6 +2638,28 @@ TODO items completed this stage:
   - [x] rbx preserved in every function prologue (`mov [rbp - 8], rbx`) and all four epilogue paths per SysV AMD64 ABI (Stage 122)
   - [x] r12–r15 preserved in every function prologue and all four epilogue paths (Stage 127)
 - [ ] Red-zone usage or avoidance
+
+### Assembler (NASM-subset → ELF64 object emitter)
+
+Replaces the external `nasm` dependency for object-file generation. Targets only the instruction/directive subset `codegen.c` actually emits, measured against the full self-hosted build output (`build/**/*.asm`, ~259K lines): ~50 mnemonics, four memory-operand forms (`[reg]`, `[rbp±disp]`, `[rsp+disp]`, `[rel symbol]`, no scaled-index/SIB addressing except `rsp` as base), and single-precision-only SSE. Does not need to handle general x86-64 or NASM macros/preprocessing.
+
+- [ ] `include/asm_lexer.h` / `src/asm_lexer.c` — line-oriented tokenizer: labels, directives, mnemonics, registers, immediates, `[`, `]`, `+`, `-`, `,`, `:`
+- [ ] `include/asm_parser.h` / `src/asm_parser.c` — parse each line into an `AsmLine` (label / directive / instruction + operand list)
+- [ ] `include/asm_operand.h` / `src/asm_operand.c` — operand model: `REG`, `IMM`, `MEM(base, disp)`, `MEM_RIP(symbol)`, `SYM`
+- [ ] `include/asm_symtab.h` / `src/asm_symtab.c` — symbol table: name → (section, offset, binding: local/global/extern)
+- [ ] `include/asm_reloc.h` / `src/asm_reloc.c` — pending relocation list per section
+- [ ] `include/asm_encode.h` / `src/asm_encode.c` — instruction encoding table (REX/ModRM/SIB/opcode) covering the observed mnemonic set: `mov movzx movsx movsxd lea xchg push pop`, `add sub imul idiv div neg and or xor not shl shr sar cdq cqo`, `call ret jmp jCC setCC`, `rep movsb`, `movss movaps addss subss ucomiss`
+- [ ] `include/elf_writer.h` / `src/elf_writer.c` — ELF64 relocatable object (`ET_REL`) writer: `.text`/`.data`/`.rodata`/`.bss`/`.note.GNU-stack` section headers, `.symtab`/`.strtab`/`.shstrtab`, `.rela.text`/`.rela.data`
+- [ ] Two-pass driver (`src/casm.c`): Pass 1 lays out sections and resolves symbol offsets (placeholder for forward references); Pass 2 encodes final bytes and emits relocation records
+- [ ] Relocation types: `R_X86_64_PC32` (intra-object `call`/`jmp`/`jCC`/`[rel]` refs), `R_X86_64_PLT32` (`call` to `extern` symbols), `R_X86_64_64` (`dq` symbol references, e.g. jump/dispatch tables)
+- [ ] Milestone 1 — lexer + parser round-trip: parse every file under `build/**/*.asm` without error, dump parsed `AsmLine` structures
+- [ ] Milestone 2 — ELF skeleton: emit a minimal valid empty `.o` that links successfully with `ld`/`gcc`
+- [ ] Milestone 3 — integer core encoding: `mov push pop add sub cmp lea call ret jmp jCC setCC movzx movsx movsxd`, intra-file branch resolution; assemble and run a hand-written hello-world
+- [ ] Milestone 4 — data/BSS/relocations: `db dd dq resb`, `[rel symbol]`, `extern`/`global`, all three relocation types; assemble and link a multi-function module that calls libc
+- [ ] Milestone 5 — remaining integer ops: `imul idiv div neg and or xor not shl shr sar cdq cqo xchg rep movsb`
+- [ ] Milestone 6 — SSE single-precision: `movss movaps addss subss ucomiss`
+- [ ] Differential test harness: assemble every file under `build/**/*.asm` with both `nasm -f elf64` and `casm`; diff `.text`/`.data` bytes and `objdump -dr` output
+- [ ] Self-host swap: replace the `nasm` invocation in `build.sh` with `casm`; full C0→C1→C2 self-host test suite passes unchanged
 
 ### Optimize Level 1 — AST-Level Constant Folding
 
