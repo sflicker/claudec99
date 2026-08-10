@@ -59,6 +59,14 @@ run_unit_test "test_strbuf" \
     "${SCRIPT_DIR}/test_strbuf.c" \
     "${PROJECT_DIR}/src/strbuf.c"
 
+run_unit_test "test_asm_lexer" \
+    "${SCRIPT_DIR}/test_asm_lexer.c" \
+    "${PROJECT_DIR}/src/asm_lexer.c"
+
+run_unit_test "test_asm_parser" \
+    "${SCRIPT_DIR}/test_asm_parser.c" \
+    "${PROJECT_DIR}/src/asm_lexer.c ${PROJECT_DIR}/src/asm_parser.c ${PROJECT_DIR}/src/vec.c"
+
 total=$((total_pass + total_fail))
 echo ""
 echo "Results: ${total_pass} passed, ${total_fail} failed, ${total} total"

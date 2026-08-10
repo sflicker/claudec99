@@ -50,3 +50,16 @@ target_compile_options(ccompiler PRIVATE -Wall -Wextra -pedantic)
 add_custom_command(TARGET ccompiler POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ccompiler> ${CMAKE_SOURCE_DIR}/bin/ccompiler
 )
+
+add_executable(casm
+    src/casm.c
+    src/asm_lexer.c
+    src/asm_parser.c
+    src/vec.c
+)
+target_include_directories(casm PRIVATE include)
+target_compile_options(casm PRIVATE -Wall -Wextra -pedantic)
+
+add_custom_command(TARGET casm POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:casm> ${CMAKE_SOURCE_DIR}/bin/casm
+)

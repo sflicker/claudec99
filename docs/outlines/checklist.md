@@ -2522,6 +2522,26 @@ TODO items completed this stage:
 
 ---
 
+## Stage 177 - Assembler: Lexer and Parser Infrastructure
+
+- [x] `include/asm_lexer.h` / `src/asm_lexer.c`: new standalone lexer for the NASM-subset assembler (`casm`) — `ASM_TOK_IDENT` (labels/mnemonics/directives/registers/symbols, `.`/`_` included so `.L_else_0` and `Lstr3` lex as one token), `ASM_TOK_INT` (decimal and `0x`-hex), `[ ] + - , :`, `ASM_TOK_NEWLINE` as an explicit line terminator, `;`-to-end-of-line comments. Own `asm_strdup`/`asm_read_file` helpers, deliberately not shared with `src/util.c` (whose error machinery is built around `ccompiler`'s global CLI state).
+- [x] `include/asm_parser.h` / `src/asm_parser.c`: recursive-descent parser producing a flat `Vec<AsmLine>` — `ASM_LINE_LABEL` / `ASM_LINE_DIRECTIVE` / `ASM_LINE_INSTRUCTION`, with `AsmOperand` covering `REG`/`IMM`/`MEM`/`SYM` (four memory forms: `[reg]`, `[rbp±disp]`, `[rsp+disp]`, `[rel symbol]`). `db`/`dd`/`dq` take comma-separated value lists; all other directives take space-separated bare-token lists.
+- [x] `src/casm.c`: CLI driver — `casm <file.asm> [--dump]`; dumps normalized `AsmLine` text or reports a line count.
+- [x] `CMakeLists.txt`: new `casm` executable target, built alongside `ccompiler`, copied to `bin/casm`. Not wired into `build.sh`, `bin/cc99`, or the self-hosting chain (unchanged this stage).
+- [x] Three real-corpus grammar gaps found and fixed beyond the spec's literal text (all confirmed via `build/c1_objs`/`build/c2_objs`, the genuine self-hosted output, not test-only artifacts):
+	- Hyphenated identifier: `.note.GNU-stack` (the section-attribute line emitted in every `.asm` file) requires `-` as a valid identifier-continuation character; added to `asm_lexer.c`'s `is_ident_char` (not `is_ident_start` — no identifier is ever observed to start with `-`, so `[rbp - 16]`-style displacement parsing is unaffected).
+	- Label-attached data directives: real codegen output attaches `db`/`dd`/`dq`/`resb`/`resd`/`resq`/`resw` directly to their label on the same source line (e.g. `Lstr0: db 72, 0`, `counter: resd 1`) rather than as a bare label followed by a separate directive line. `asm_parser_parse` now detects this shape and emits two `AsmLine` records (label, then directive) sharing the same `line_no`, via a shared `parse_directive_body` helper.
+	- Missing directive names: `resd`/`resq`/`resw` (analogous to `resb`) are real, observed directives not in the spec's `is_known_directive` list; added.
+- [x] New unit tests `test/unit/test_asm_lexer.c` (28 assertions) and `test/unit/test_asm_parser.c` (56 assertions), registered in `test/unit/run_tests.sh`.
+- [x] New `test/asm/run_casm_smoke.sh`: globs `build/**/*.asm`, runs `casm` on each, reports pass/fail. 100% pass (20/20 files, ~216K lines) on the genuine self-hosted corpus (`build/c1_objs`, `build/c2_objs`); 3 failures observed against stray non-self-host `build/test_tmp_*` artifacts left over from unrelated test runs (a `-g`/DWARF `%line` preprocessor directive, floating-point `dd` constant-pool entries, and a `[rel symbol + disp]` memory form) — all explicitly out of the spec's stated self-hosted-corpus scope.
+- [x] Version update: `src/version.c` incremented to `01770000`
+- [x] Test results: 2161 portable (165+84=249 unit, 1286 valid, 261 invalid, 194 integration, 50 print-AST, 100 print-tokens, 21 print-asm) + 194 system-include + 2 optional-library + 5 build-tool pass. No self-host run required this stage (`casm` is not part of the C0→C1→C2 chain; see spec's Bootstrap caveats).
+
+TODO items completed this stage:
+- Assembler section: lexer, parser, operand model, and Milestone 1 (see above)
+
+---
+
 ## TODO
 
 ### Preprocessor
@@ -2643,16 +2663,16 @@ TODO items completed this stage:
 
 Replaces the external `nasm` dependency for object-file generation. Targets only the instruction/directive subset `codegen.c` actually emits, measured against the full self-hosted build output (`build/**/*.asm`, ~259K lines): ~50 mnemonics, four memory-operand forms (`[reg]`, `[rbp±disp]`, `[rsp+disp]`, `[rel symbol]`, no scaled-index/SIB addressing except `rsp` as base), and single-precision-only SSE. Does not need to handle general x86-64 or NASM macros/preprocessing.
 
-- [ ] `include/asm_lexer.h` / `src/asm_lexer.c` — line-oriented tokenizer: labels, directives, mnemonics, registers, immediates, `[`, `]`, `+`, `-`, `,`, `:`
-- [ ] `include/asm_parser.h` / `src/asm_parser.c` — parse each line into an `AsmLine` (label / directive / instruction + operand list)
-- [ ] `include/asm_operand.h` / `src/asm_operand.c` — operand model: `REG`, `IMM`, `MEM(base, disp)`, `MEM_RIP(symbol)`, `SYM`
+- [x] `include/asm_lexer.h` / `src/asm_lexer.c` — line-oriented tokenizer: labels, directives, mnemonics, registers, immediates, `[`, `]`, `+`, `-`, `,`, `:` (Stage 177)
+- [x] `include/asm_parser.h` / `src/asm_parser.c` — parse each line into an `AsmLine` (label / directive / instruction + operand list) (Stage 177)
+- [x] Operand model: `REG`, `IMM`, `MEM(base, disp)`, `MEM_RIP(symbol)`, `SYM` — implemented inline as `AsmOperand` in `include/asm_parser.h`, not as a separate `asm_operand.h`/`.c` module (Stage 177)
 - [ ] `include/asm_symtab.h` / `src/asm_symtab.c` — symbol table: name → (section, offset, binding: local/global/extern)
 - [ ] `include/asm_reloc.h` / `src/asm_reloc.c` — pending relocation list per section
 - [ ] `include/asm_encode.h` / `src/asm_encode.c` — instruction encoding table (REX/ModRM/SIB/opcode) covering the observed mnemonic set: `mov movzx movsx movsxd lea xchg push pop`, `add sub imul idiv div neg and or xor not shl shr sar cdq cqo`, `call ret jmp jCC setCC`, `rep movsb`, `movss movaps addss subss ucomiss`
 - [ ] `include/elf_writer.h` / `src/elf_writer.c` — ELF64 relocatable object (`ET_REL`) writer: `.text`/`.data`/`.rodata`/`.bss`/`.note.GNU-stack` section headers, `.symtab`/`.strtab`/`.shstrtab`, `.rela.text`/`.rela.data`
 - [ ] Two-pass driver (`src/casm.c`): Pass 1 lays out sections and resolves symbol offsets (placeholder for forward references); Pass 2 encodes final bytes and emits relocation records
 - [ ] Relocation types: `R_X86_64_PC32` (intra-object `call`/`jmp`/`jCC`/`[rel]` refs), `R_X86_64_PLT32` (`call` to `extern` symbols), `R_X86_64_64` (`dq` symbol references, e.g. jump/dispatch tables)
-- [ ] Milestone 1 — lexer + parser round-trip: parse every file under `build/**/*.asm` without error, dump parsed `AsmLine` structures
+- [x] Milestone 1 — lexer + parser round-trip: parse every file under `build/**/*.asm` without error, dump parsed `AsmLine` structures (Stage 177)
 - [ ] Milestone 2 — ELF skeleton: emit a minimal valid empty `.o` that links successfully with `ld`/`gcc`
 - [ ] Milestone 3 — integer core encoding: `mov push pop add sub cmp lea call ret jmp jCC setCC movzx movsx movsxd`, intra-file branch resolution; assemble and run a hand-written hello-world
 - [ ] Milestone 4 — data/BSS/relocations: `db dd dq resb`, `[rel symbol]`, `extern`/`global`, all three relocation types; assemble and link a multi-function module that calls libc
