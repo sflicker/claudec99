@@ -7,3 +7,4 @@ test1
 *.asm
 *.backup
 benchmarks/
+.DS_store
