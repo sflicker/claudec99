@@ -100,6 +100,15 @@ progressive ARM64 test enablement.
   included for ARM64 backend testing — the runner skips categories beyond the current tier
 - Keep the existing Linux path unchanged
 
+**Stage 180 scope (see `docs/stages/ClaudeC99-spec-stage-180-macos-test-infrastructure.md`):**
+- Adds: shared `test/lib/platform.sh` (`TARGET`, `NASM_FMT`, `LINK_CMD`, portable
+  `run_timeout` — macOS has no `timeout`); `print_asm` pinned to `--target=x86_64-linux`;
+  target-dependent predefined macros (`__APPLE__`/`__MACH__` vs `__linux__`/`__unix__`);
+  `__APPLE__` branches in `test/include` `stdio.h`/`errno.h`; macOS self-host via `build.sh`.
+- Defers: `ARM64_TIER` gating to Stage 181 (no ARM64 backend to exercise yet; tier 1
+  "simple `statements/`" does not match the tree — `test/valid/statements/` holds only
+  6 switch tests).
+
 ### Tier-to-category mapping
 
 | Tier | Newly unlocked `test/valid/` categories                              |
@@ -333,8 +342,8 @@ spec and implementation are committed.
 |-------|-------|------------------------------------------------------|-----------------------------------------------|------|
 | 0A    | 178   | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     | [x]  |
 | 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [x]  |
-| 0C    | 180   | macOS-aware test runner with `ARM64_TIER`            | Infrastructure only                           | [ ]  |
-| 1     | 181   | ARM64 skeleton, `return 0` works natively            | Tier 1 — simple return                        | [ ]  |
+| 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [ ]  |
+| 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [ ]  |
 | 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
 | 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
 | 4     | 184   | Functions and calls                                  | Tier 4 — functions                            | [ ]  |
