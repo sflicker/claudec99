@@ -1,5 +1,52 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 180 self-hosting test
+
+First self-host run on a **macOS ARM64** host: C0 is AppleClang-built
+(native arm64); C1 and C2 are x86-64 Mach-O binaries produced by the
+`x86_64-macos` target and run under Rosetta 2. Issues found and fixed
+during the stage (before the self-host run):
+
+- **Shared-library data access (codegen).** Mach-O cannot reach data
+  defined in a dylib (e.g. libSystem's `__stdoutp`/`__stderrp`) with a
+  direct RIP-relative reference; ld fails with "does not have address".
+  On the macOS target, `extern` data objects are now accessed through the
+  GOT (`wrt ..gotpcrel`). The compiler's own sources use `stderr`, so
+  this was required for self-hosting. Linux output is unchanged.
+- **Stub headers / predefined macros.** `__APPLE__`/`__MACH__` are now
+  predefined for `x86_64-macos`, and `test/include` `stdio.h`/`errno.h`
+  map to the macOS libc names. A self-hosted macOS binary therefore
+  auto-detects the `x86_64-macos` target.
+- **No `timeout` on macOS.** `build.sh` and the test runners use a
+  portable `run_timeout` (timeout → gtimeout → perl alarm).
+
+No source changes were needed during the bootstrap itself. Linker
+warnings (not errors) were observed when linking C1/C2:
+`pointer not aligned` in pointer tables in `peephole.o`/`codegen.o` (data
+directives are not 8-byte aligned) and `no platform load command`
+(NASM Mach-O objects carry no `LC_BUILD_VERSION`). Both are harmless on
+x86-64 and are follow-up items.
+
+The Linux x86-64 self-host for stage 180 is **pending** (not runnable
+from this host); Linux-target `.asm` for all test sources was verified
+byte-identical to stage 179.
+
+## Result (stage 180, macOS ARM64 host)
+
+**Date:** 2026-11-15
+**Method:** `./build.sh --mode=self-host` (macOS ARM64; C1/C2 via Rosetta 2)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` (arm64) | `00.03.01800000.01306` | `AppleClang_21_0_0_21000101` | 2163 portable |
+| C1 | `build/ccompiler-c1` (x86_64 Mach-O) | `00.03.01800000.01307` | `ClaudeC99_v00_03_01800000_01306` | 2163 portable |
+| C2 | `build/ccompiler-c2` (x86_64 Mach-O) | `00.03.01800000.01308` | `ClaudeC99_v00_03_01800000_01307` | 2163 portable |
+
+System-include, optional-library, and build-tool suites are Linux-only
+and were not run.
+
+---
+
 ## Stage 179 self-hosting test — deferred
 
 **Date:** 2026-11-15
