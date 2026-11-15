@@ -1,5 +1,39 @@
 # Self-Compilation Diagnostic Report
 
+## Issues found during stage 181 self-hosting test
+
+None. The new ARM64 backend module `src/codegen_arm64.c` (added to
+`build.sh` `SRC_FILES` and `CMakeLists.txt`) uses only constructs already
+exercised by the compiler's own sources — a `switch` over `ASTNodeType`
+returning string literals, `fprintf`, `strtol`, and simple loops — and
+self-compiled on the first attempt. A C1 built by the bootstrap emitted
+ARM64 code for `return 42` that assembled with `clang -arch arm64` and ran
+natively with exit code 42. The self-host exercised the `x86_64-macos`
+target (C1/C2 run under Rosetta 2); no source changes were needed during
+the bootstrap. The same harmless `ld` warnings as stage 180 (`pointer not
+aligned`, `no platform load command`) appear when linking C1/C2.
+
+The Linux x86-64 self-host remains **pending** (not runnable from this
+host); Linux-target `.asm` for all test sources was verified byte-identical
+to stage 180.
+
+## Result (stage 181, macOS ARM64 host)
+
+**Date:** 2026-11-15
+**Method:** `./build.sh --mode=self-host` (macOS ARM64; C1/C2 via Rosetta 2)
+
+| Step | Binary | Version | BuiltBy | Tests |
+|------|--------|---------|---------|-------|
+| C0 | `build/ccompiler-c0` (arm64) | `00.03.01810000.01314` | `AppleClang_21_0_0_21000101` | 2166 portable |
+| C1 | `build/ccompiler-c1` (x86_64 Mach-O) | `00.03.01810000.01315` | `ClaudeC99_v00_03_01810000_01314` | 2166 portable |
+| C2 | `build/ccompiler-c2` (x86_64 Mach-O) | `00.03.01810000.01316` | `ClaudeC99_v00_03_01810000_01315` | 2166 portable |
+
+Native ARM64 tier run (`TARGET=arm64-macos`, `ARM64_TIER=1`): 5/5 pass.
+System-include, optional-library, and build-tool suites are Linux-only
+and were not run.
+
+---
+
 ## Issues found during stage 180 self-hosting test
 
 First self-host run on a **macOS ARM64** host: C0 is AppleClang-built
