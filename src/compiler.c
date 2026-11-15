@@ -45,6 +45,15 @@ static const char *token_type_name(TokenType t) {
         case TOKEN_TYPEDEF:       return "TOKEN_TYPEDEF";
         case TOKEN_ENUM:          return "TOKEN_ENUM";
         case TOKEN_STRUCT:        return "TOKEN_STRUCT";
+        case TOKEN_UNION:         return "TOKEN_UNION";
+        case TOKEN_FLOAT:         return "TOKEN_FLOAT";
+        case TOKEN_DOUBLE:        return "TOKEN_DOUBLE";
+        case TOKEN_RESTRICT:      return "TOKEN_RESTRICT";
+        case TOKEN_INLINE:        return "TOKEN_INLINE";
+        case TOKEN_AUTO:          return "TOKEN_AUTO";
+        case TOKEN_REGISTER:      return "TOKEN_REGISTER";
+        case TOKEN_FLOAT_LITERAL:  return "TOKEN_FLOAT_LITERAL";
+        case TOKEN_DOUBLE_LITERAL: return "TOKEN_DOUBLE_LITERAL";
         case TOKEN_VOID:          return "TOKEN_VOID";
         case TOKEN_CONST:         return "TOKEN_CONST";
         case TOKEN_VOLATILE:      return "TOKEN_VOLATILE";

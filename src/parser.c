@@ -3352,7 +3352,7 @@ static long eval_const_expr(Parser *parser, const char *context) {
 }
 
 /* Stage 128: compile-time floating-point constant expression evaluator.
- * Supports: FP/int literals, unary +/-, binary +/-/* and /, parentheses.
+ * Supports: FP/int literals, unary +/-, binary +/-/div and /, parentheses.
  * Returns a double; caller converts to float if needed. */
 static double eval_fp_const_expr(Parser *parser, const char *context);
 

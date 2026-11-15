@@ -46,6 +46,9 @@ target_compile_definitions(ccompiler PRIVATE
 )
 target_include_directories(ccompiler PRIVATE include)
 target_compile_options(ccompiler PRIVATE -Wall -Wextra -pedantic)
+if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    target_compile_options(ccompiler PRIVATE -Wno-missing-field-initializers)
+endif()
 
 add_custom_command(TARGET ccompiler POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ccompiler> ${CMAKE_SOURCE_DIR}/bin/ccompiler
@@ -59,6 +62,9 @@ add_executable(casm
 )
 target_include_directories(casm PRIVATE include)
 target_compile_options(casm PRIVATE -Wall -Wextra -pedantic)
+if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    target_compile_options(casm PRIVATE -Wno-missing-field-initializers)
+endif()
 
 add_custom_command(TARGET casm POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:casm> ${CMAKE_SOURCE_DIR}/bin/casm
