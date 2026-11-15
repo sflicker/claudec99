@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "codegen_arm64.h"
 #include "util.h"
 
@@ -7,18 +8,30 @@
  * Stage 181: ARM64 (AArch64) backend skeleton for the arm64-macos target
  * (Phase 1 of docs/outlines/arm64-macos-backend-roadmap.md).
  *
- * Supported input: function definitions whose body is a single
- * `return <integer-literal>;` with a value in 0..65535.  Preamble typedefs
- * and bodiless prototypes are ignored.  Every other construct is rejected
- * with "arm64-macos: <construct> not yet supported"; later phases extend
- * this file construct by construct.
+ * Stage 182 (Phase 2): straight-line signed integer code.  Supported:
+ * block-scope int / long / long long locals (with or without an
+ * initializer, nested blocks with shadowing), return and expression
+ * statements, + - * / % & | ^ << >>, unary - ~ +, assignment to a local
+ * (compound assignment arrives lowered by the parser), prefix/postfix
+ * ++/--, the comma operator, and integer literals of any size.  Every
+ * other construct is rejected with "arm64-macos: <construct> not yet
+ * supported"; later phases extend this file construct by construct.
+ *
+ * Value model: every expression leaves its result in w0 (int) or x0
+ * (long); arm64_expr_is_long() gives an expression's width.  Binary
+ * operators use a stack machine: the left operand is pushed with
+ * `str x0, [sp, #-16]!` (keeping sp 16-byte aligned), the right operand
+ * is evaluated and moved to x1, and the left is popped back into x0.
  *
  * Output is Apple/GNU assembler syntax, assembled and linked with
  * `clang -arch arm64`.  Each function gets the full AAPCS64 frame:
  *
  *     stp x29, x30, [sp, #-16]!
  *     mov x29, sp
+ *     sub sp, sp, #<frame>          (omitted when there are no locals)
  *     ...
+ * L<func>_epilogue:
+ *     mov sp, x29
  *     ldp x29, x30, [sp], #16
  *     ret
  */
@@ -79,6 +92,29 @@ static const char *arm64_construct_name(ASTNodeType t) {
     return "construct";
 }
 
+/* Stage 182: readable name of a type kind, used to build "<kind> type"
+ * and "<kind> return type" errors. */
+static const char *arm64_type_name(TypeKind k) {
+    switch (k) {
+    case TYPE_VOID:               return "void";
+    case TYPE_BOOL:               return "_Bool";
+    case TYPE_CHAR:               return "char";
+    case TYPE_SHORT:              return "short";
+    case TYPE_INT:                return "int";
+    case TYPE_LONG:               return "long";
+    case TYPE_LONG_LONG:          return "long long";
+    case TYPE_UNSIGNED_LONG_LONG: return "unsigned";
+    case TYPE_FLOAT:              return "floating-point";
+    case TYPE_DOUBLE:             return "floating-point";
+    case TYPE_POINTER:            return "pointer";
+    case TYPE_ARRAY:              return "array";
+    case TYPE_FUNCTION:           return "function";
+    case TYPE_STRUCT:             return "struct";
+    case TYPE_UNION:              return "union";
+    }
+    return "unknown";
+}
+
 /* Record a node's source position for compile_error() (mirrors cg_mark in
  * codegen.c). */
 static void arm64_mark(const ASTNode *node) {
@@ -94,28 +130,376 @@ static void arm64_unsupported(ASTNode *node, const char *what) {
     compile_error("error: arm64-macos: %s not yet supported\n", what);
 }
 
+/* Stage 182: reject a non-int/long type with "<kind><suffix> not yet
+ * supported" (suffix is " type" or " return type"). */
+static void arm64_unsupported_type(ASTNode *node, TypeKind k, int is_unsigned,
+                                   const char *suffix) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s%s",
+             is_unsigned ? "unsigned" : arm64_type_name(k), suffix);
+    arm64_unsupported(node, buf);
+}
+
+/* Stage 182: 1 if a kind is a 64-bit signed integer type. */
+static int arm64_kind_is_long(TypeKind k) {
+    return k == TYPE_LONG || k == TYPE_LONG_LONG;
+}
+
 void codegen_arm64_init(CodeGenArm64 *cg, FILE *output) {
     cg->output = output;
+    vec_init(&cg->locals, sizeof(Arm64Local));
+    cg->scope_depth = 0;
+    cg->next_offset = 0;
+    cg->frame_size = 0;
+    cg->func_name = NULL;
+    cg->ret_is_long = 0;
 }
 
 void codegen_arm64_free(CodeGenArm64 *cg) {
-    (void)cg;
+    vec_free(&cg->locals);
 }
 
-/* Load an integer literal into w0 (Phase 1: 16-bit immediates only). */
-static void arm64_expr_to_w0(CodeGenArm64 *cg, ASTNode *expr) {
-    long v;
-    if (expr->type != AST_INT_LITERAL) {
-        arm64_unsupported(expr, arm64_construct_name(expr->type));
+/* ------------------------------------------------------------------ */
+/* Locals and scopes                                                   */
+/* ------------------------------------------------------------------ */
+
+/* Innermost-first lookup, so an inner declaration shadows an outer one. */
+static Arm64Local *arm64_find_local(CodeGenArm64 *cg, const char *name) {
+    size_t i = cg->locals.len;
+    while (i > 0) {
+        Arm64Local *l;
+        i--;
+        l = (Arm64Local *)vec_get(&cg->locals, i);
+        if (strcmp(l->name, name) == 0) return l;
     }
-    v = strtol(expr->value, NULL, 0);
-    if (v < 0 || v > 65535) {
-        arm64_mark(expr);
-        compile_error("error: arm64-macos: integer literal %ld out of range "
-                      "for this stage\n", v);
-    }
-    fprintf(cg->output, "\tmov\tw0, #%ld\n", v);
+    return NULL;
 }
+
+/* Look up a variable reference that must name a local. */
+static Arm64Local *arm64_require_local(CodeGenArm64 *cg, ASTNode *node,
+                                       const char *name) {
+    Arm64Local *l = arm64_find_local(cg, name);
+    if (!l) arm64_unsupported(node, "global variable");
+    return l;
+}
+
+/* Leaving a block drops the locals it declared. */
+static void arm64_pop_scope(CodeGenArm64 *cg) {
+    while (cg->locals.len > 0) {
+        Arm64Local *l = (Arm64Local *)vec_get(&cg->locals,
+                                              cg->locals.len - 1);
+        if (l->scope_depth < cg->scope_depth) break;
+        vec_pop(&cg->locals);
+    }
+    cg->scope_depth--;
+}
+
+/* Hand out the next frame slot: 4 bytes at 4-byte alignment for int,
+ * 8 bytes at 8-byte alignment for long.  Returns the slot's offset below
+ * x29.  The pre-scan and the emitter call this in the same order, so they
+ * agree on the layout; slots are never reused. */
+static int arm64_alloc_slot(int *next_offset, int is_long) {
+    int size = is_long ? 8 : 4;
+    *next_offset = (*next_offset + size + size - 1) / size * size;
+    return *next_offset;
+}
+
+/* Pre-scan: size every declaration in a statement tree. */
+static void arm64_prescan(ASTNode *node, int *next_offset) {
+    int i;
+    if (!node) return;
+    if (node->type == AST_DECLARATION) {
+        arm64_alloc_slot(next_offset, arm64_kind_is_long(node->decl_type));
+        return;
+    }
+    if (node->type == AST_BLOCK || node->type == AST_DECL_LIST) {
+        for (i = 0; i < node->child_count; i++)
+            arm64_prescan(node->children[i], next_offset);
+    }
+}
+
+/* Emit a load or store of w0/x0 (or w1/x1) to a frame slot.  ldr/str with
+ * a negative offset assemble as ldur/stur, whose range is -256..255;
+ * deeper slots go through x9. */
+static void arm64_slot_access(CodeGenArm64 *cg, const char *op, int reg,
+                              int is_long, int offset) {
+    char r = is_long ? 'x' : 'w';
+    if (offset <= 256) {
+        fprintf(cg->output, "\t%s\t%c%d, [x29, #-%d]\n", op, r, reg, offset);
+    } else {
+        fprintf(cg->output, "\tsub\tx9, x29, #%d\n", offset);
+        fprintf(cg->output, "\t%s\t%c%d, [x9]\n", op, r, reg);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Expressions                                                         */
+/* ------------------------------------------------------------------ */
+
+/* Name of the assignment target: the parser's identifier form stores it
+ * in node->value (one child, the rhs); the general-lvalue form has
+ * children (lhs, rhs), and only a variable is accepted here. */
+static const char *arm64_assign_target(ASTNode *e, ASTNode **rhs) {
+    if (e->value) {
+        *rhs = e->children[0];
+        return e->value;
+    }
+    *rhs = e->children[1];
+    if (e->children[0]->type != AST_VAR_REF)
+        arm64_unsupported(e->children[0],
+                          arm64_construct_name(e->children[0]->type));
+    return e->children[0]->value;
+}
+
+static int arm64_is_shift(const char *op) {
+    return strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0;
+}
+
+/* Pure width helper: 1 if the expression's value is 64-bit. */
+static int arm64_expr_is_long(CodeGenArm64 *cg, ASTNode *e) {
+    Arm64Local *l;
+    ASTNode *rhs;
+    switch (e->type) {
+    case AST_INT_LITERAL:
+        return arm64_kind_is_long(e->decl_type);
+    case AST_VAR_REF:
+        l = arm64_find_local(cg, e->value);
+        return l ? l->is_long : 0;
+    case AST_BINARY_OP:
+        if (arm64_is_shift(e->value))
+            return arm64_expr_is_long(cg, e->children[0]);
+        return arm64_expr_is_long(cg, e->children[0]) ||
+               arm64_expr_is_long(cg, e->children[1]);
+    case AST_UNARY_OP:
+        return arm64_expr_is_long(cg, e->children[0]);
+    case AST_ASSIGNMENT:
+        if (!e->value && e->children[0]->type != AST_VAR_REF) return 0;
+        l = arm64_find_local(cg, arm64_assign_target(e, &rhs));
+        return l ? l->is_long : 0;
+    case AST_PREFIX_INC_DEC:
+    case AST_POSTFIX_INC_DEC:
+        return arm64_expr_is_long(cg, e->children[0]);
+    case AST_COMMA_EXPR:
+        return arm64_expr_is_long(cg, e->children[e->child_count - 1]);
+    default:
+        return 0;
+    }
+}
+
+/* Load a 64-bit bit pattern into w0 (low 32 bits) or x0: `mov` for
+ * 0..65535, otherwise movz + movk for each further non-zero chunk. */
+static void arm64_emit_load_imm(CodeGenArm64 *cg, unsigned long bits,
+                                int is_long) {
+    char r = is_long ? 'x' : 'w';
+    int top = is_long ? 48 : 16;
+    int shift;
+    if (!is_long) bits &= 0xFFFFFFFFUL;
+    if (bits <= 65535UL) {
+        fprintf(cg->output, "\tmov\t%c0, #%lu\n", r, bits);
+        return;
+    }
+    fprintf(cg->output, "\tmovz\t%c0, #%lu\n", r, bits & 0xFFFFUL);
+    for (shift = 16; shift <= top; shift += 16) {
+        unsigned long chunk = (bits >> shift) & 0xFFFFUL;
+        if (chunk)
+            fprintf(cg->output, "\tmovk\t%c0, #%lu, lsl #%d\n", r, chunk, shift);
+    }
+}
+
+static void arm64_expr(CodeGenArm64 *cg, ASTNode *e);
+
+/* Evaluate e and convert it to the requested width (int -> long is
+ * `sxtw`; long -> int just uses w0). */
+static void arm64_expr_as(CodeGenArm64 *cg, ASTNode *e, int want_long) {
+    arm64_expr(cg, e);
+    if (want_long && !arm64_expr_is_long(cg, e))
+        fprintf(cg->output, "\tsxtw\tx0, w0\n");
+}
+
+static void arm64_binary(CodeGenArm64 *cg, ASTNode *e) {
+    const char *op = e->value;
+    int is_long = arm64_expr_is_long(cg, e);
+    char r = is_long ? 'x' : 'w';
+    const char *insn = NULL;
+
+    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+        strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
+        strcmp(op, ">") == 0 || strcmp(op, ">=") == 0)
+        arm64_unsupported(e, "comparison operator");
+    if (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0)
+        arm64_unsupported(e, "logical operator");
+
+    if      (strcmp(op, "+") == 0)  insn = "add";
+    else if (strcmp(op, "-") == 0)  insn = "sub";
+    else if (strcmp(op, "*") == 0)  insn = "mul";
+    else if (strcmp(op, "/") == 0)  insn = "sdiv";
+    else if (strcmp(op, "&") == 0)  insn = "and";
+    else if (strcmp(op, "|") == 0)  insn = "orr";
+    else if (strcmp(op, "^") == 0)  insn = "eor";
+    else if (strcmp(op, "<<") == 0) insn = "lsl";
+    else if (strcmp(op, ">>") == 0) insn = "asr";
+    else if (strcmp(op, "%") != 0)
+        arm64_unsupported(e, arm64_construct_name(e->type));
+
+    /* Left operand in the operation width, pushed. */
+    arm64_expr_as(cg, e->children[0], is_long);
+    fprintf(cg->output, "\tstr\tx0, [sp, #-16]!\n");
+    /* Right operand: converted to the operation width, except a shift
+     * count, which keeps its own width (only its low bits matter). */
+    if (insn && (strcmp(insn, "lsl") == 0 || strcmp(insn, "asr") == 0))
+        arm64_expr(cg, e->children[1]);
+    else
+        arm64_expr_as(cg, e->children[1], is_long);
+    fprintf(cg->output, "\tmov\tx1, x0\n");
+    fprintf(cg->output, "\tldr\tx0, [sp], #16\n");
+
+    if (insn) {
+        fprintf(cg->output, "\t%s\t%c0, %c0, %c1\n", insn, r, r, r);
+    } else {
+        /* % : r0 - (r0 / r1) * r1 */
+        fprintf(cg->output, "\tsdiv\t%c2, %c0, %c1\n", r, r, r);
+        fprintf(cg->output, "\tmsub\t%c0, %c2, %c1, %c0\n", r, r, r, r);
+    }
+}
+
+static void arm64_unary(CodeGenArm64 *cg, ASTNode *e) {
+    const char *op = e->value;
+    char r;
+    if (strcmp(op, "!") == 0)
+        arm64_unsupported(e, "logical not operator");
+    arm64_expr(cg, e->children[0]);
+    r = arm64_expr_is_long(cg, e) ? 'x' : 'w';
+    if (strcmp(op, "-") == 0)
+        fprintf(cg->output, "\tneg\t%c0, %c0\n", r, r);
+    else if (strcmp(op, "~") == 0)
+        fprintf(cg->output, "\tmvn\t%c0, %c0\n", r, r);
+    /* unary + : no code */
+}
+
+static void arm64_inc_dec(CodeGenArm64 *cg, ASTNode *e) {
+    ASTNode *target = e->children[0];
+    Arm64Local *l;
+    const char *insn = strcmp(e->value, "++") == 0 ? "add" : "sub";
+    char r;
+    if (target->type != AST_VAR_REF)
+        arm64_unsupported(target, arm64_construct_name(target->type));
+    l = arm64_require_local(cg, target, target->value);
+    r = l->is_long ? 'x' : 'w';
+    arm64_slot_access(cg, "ldr", 0, l->is_long, l->offset);
+    if (e->type == AST_PREFIX_INC_DEC) {
+        /* Result is the new value. */
+        fprintf(cg->output, "\t%s\t%c0, %c0, #1\n", insn, r, r);
+        arm64_slot_access(cg, "str", 0, l->is_long, l->offset);
+    } else {
+        /* Result is the old value, left in r0. */
+        fprintf(cg->output, "\t%s\t%c1, %c0, #1\n", insn, r, r);
+        arm64_slot_access(cg, "str", 1, l->is_long, l->offset);
+    }
+}
+
+static void arm64_expr(CodeGenArm64 *cg, ASTNode *e) {
+    Arm64Local *l;
+    ASTNode *rhs;
+    const char *name;
+    arm64_mark(e);
+    switch (e->type) {
+    case AST_INT_LITERAL:
+        if (e->is_unsigned)
+            arm64_unsupported(e, "unsigned integer literal");
+        arm64_emit_load_imm(cg, strtoul(e->value, NULL, 0),
+                            arm64_kind_is_long(e->decl_type));
+        return;
+    case AST_VAR_REF:
+        l = arm64_require_local(cg, e, e->value);
+        arm64_slot_access(cg, "ldr", 0, l->is_long, l->offset);
+        return;
+    case AST_BINARY_OP:
+        arm64_binary(cg, e);
+        return;
+    case AST_UNARY_OP:
+        arm64_unary(cg, e);
+        return;
+    case AST_ASSIGNMENT:
+        name = arm64_assign_target(e, &rhs);
+        l = arm64_require_local(cg, e, name);
+        arm64_expr_as(cg, rhs, l->is_long);
+        arm64_slot_access(cg, "str", 0, l->is_long, l->offset);
+        return;
+    case AST_PREFIX_INC_DEC:
+    case AST_POSTFIX_INC_DEC:
+        arm64_inc_dec(cg, e);
+        return;
+    case AST_COMMA_EXPR:
+        arm64_expr(cg, e->children[0]);
+        arm64_expr(cg, e->children[1]);
+        return;
+    default:
+        arm64_unsupported(e, arm64_construct_name(e->type));
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Statements                                                          */
+/* ------------------------------------------------------------------ */
+
+static void arm64_declaration(CodeGenArm64 *cg, ASTNode *d) {
+    Arm64Local local;
+    arm64_mark(d);
+    if (d->storage_class & SC_STATIC)
+        arm64_unsupported(d, "static local variable");
+    if (d->storage_class & SC_EXTERN)
+        arm64_unsupported(d, "extern declaration");
+    if ((d->decl_type != TYPE_INT && !arm64_kind_is_long(d->decl_type)) ||
+        d->is_unsigned)
+        arm64_unsupported_type(d, d->decl_type, d->is_unsigned, " type");
+
+    local.name = d->value;
+    local.is_long = arm64_kind_is_long(d->decl_type);
+    local.offset = arm64_alloc_slot(&cg->next_offset, local.is_long);
+    local.scope_depth = cg->scope_depth;
+    /* The declarator is in scope from the end of the declarator, so it
+     * is visible in its own initializer (C99 6.2.1p7). */
+    vec_push(&cg->locals, &local);
+    if (d->child_count > 0) {
+        arm64_expr_as(cg, d->children[0], local.is_long);
+        arm64_slot_access(cg, "str", 0, local.is_long, local.offset);
+    }
+}
+
+static void arm64_statement(CodeGenArm64 *cg, ASTNode *s) {
+    int i;
+    arm64_mark(s);
+    switch (s->type) {
+    case AST_BLOCK:
+        cg->scope_depth++;
+        for (i = 0; i < s->child_count; i++)
+            arm64_statement(cg, s->children[i]);
+        arm64_pop_scope(cg);
+        return;
+    case AST_DECLARATION:
+        arm64_declaration(cg, s);
+        return;
+    case AST_DECL_LIST:
+        for (i = 0; i < s->child_count; i++)
+            arm64_declaration(cg, s->children[i]);
+        return;
+    case AST_EXPRESSION_STMT:
+        if (s->child_count > 0) arm64_expr(cg, s->children[0]);
+        return;
+    case AST_RETURN_STATEMENT:
+        if (s->child_count != 1)
+            arm64_unsupported(s, "return without a value");
+        arm64_expr_as(cg, s->children[0], cg->ret_is_long);
+        fprintf(cg->output, "\tb\tL%s_epilogue\n", cg->func_name);
+        return;
+    default:
+        arm64_unsupported(s, arm64_construct_name(s->type));
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Functions                                                           */
+/* ------------------------------------------------------------------ */
 
 static ASTNode *arm64_function_body(ASTNode *func) {
     int i;
@@ -127,7 +511,7 @@ static ASTNode *arm64_function_body(ASTNode *func) {
 
 static void arm64_function(CodeGenArm64 *cg, ASTNode *func, ASTNode *body) {
     int i;
-    ASTNode *ret;
+    int frame = 0;
 
     /* Parameters are not supported yet (an empty `()`/`(void)` list
      * produces no AST_PARAM children). */
@@ -135,21 +519,24 @@ static void arm64_function(CodeGenArm64 *cg, ASTNode *func, ASTNode *body) {
         if (func->children[i]->type == AST_PARAM)
             arm64_unsupported(func->children[i], "function parameter");
     }
-    /* Report the first statement that is not a return, by construct. */
-    for (i = 0; i < body->child_count; i++) {
-        ASTNode *s = body->children[i];
-        if (s->type == AST_DECLARATION)
-            arm64_unsupported(s, "local variable declaration");
-        if (s->type != AST_RETURN_STATEMENT)
-            arm64_unsupported(s, arm64_construct_name(s->type));
+    if (func->decl_type != TYPE_INT && !arm64_kind_is_long(func->decl_type))
+        arm64_unsupported_type(func, func->decl_type, 0, " return type");
+
+    /* Pre-scan: one slot per declaration, frame rounded up to 16. */
+    arm64_prescan(body, &frame);
+    frame = (frame + 15) / 16 * 16;
+    if (frame > 4095) {
+        arm64_mark(func);
+        compile_error("error: arm64-macos: stack frame larger than 4095 "
+                      "bytes not yet supported\n");
     }
-    if (body->child_count != 1)
-        arm64_unsupported(body, body->child_count == 0
-                                ? "empty function body"
-                                : "multi-statement function body");
-    ret = body->children[0];
-    if (ret->child_count != 1)
-        arm64_unsupported(ret, "return without a value");
+
+    vec_clear(&cg->locals);
+    cg->scope_depth = 0;
+    cg->next_offset = 0;
+    cg->frame_size = frame;
+    cg->func_name = func->value;
+    cg->ret_is_long = arm64_kind_is_long(func->decl_type);
 
     if (func->storage_class != SC_STATIC)
         fprintf(cg->output, "\t.globl\t_%s\n", func->value);
@@ -157,7 +544,16 @@ static void arm64_function(CodeGenArm64 *cg, ASTNode *func, ASTNode *body) {
     fprintf(cg->output, "_%s:\n", func->value);
     fprintf(cg->output, "\tstp\tx29, x30, [sp, #-16]!\n");
     fprintf(cg->output, "\tmov\tx29, sp\n");
-    arm64_expr_to_w0(cg, ret->children[0]);
+    if (frame > 0)
+        fprintf(cg->output, "\tsub\tsp, sp, #%d\n", frame);
+
+    arm64_statement(cg, body);
+
+    /* Falling off the end: main returns 0 (C99 5.1.2.2.3); other
+     * functions get the same harmless value. */
+    fprintf(cg->output, "\tmov\tw0, #0\n");
+    fprintf(cg->output, "L%s_epilogue:\n", func->value);
+    fprintf(cg->output, "\tmov\tsp, x29\n");
     fprintf(cg->output, "\tldp\tx29, x30, [sp], #16\n");
     fprintf(cg->output, "\tret\n");
 }
