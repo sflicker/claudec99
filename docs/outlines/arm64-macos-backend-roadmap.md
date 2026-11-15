@@ -207,6 +207,17 @@ based on the constant value.
 
 **Tests unlocked:** `ARM64_TIER=2` — `arithmetic/`, `assignment/`, `expressions/`.
 
+**Stage 182 scope (see `docs/stages/ClaudeC99-spec-stage-182-arm64-arithmetic-locals.md`):**
+- Signed `int`/`long` locals (pre-scanned frame slots, scope stack for nested blocks and
+  shadowing), `+ - * / %`, `& | ^ << >>`, unary `- ~ +`, assignment (compound forms come
+  pre-lowered from the parser), `++`/`--`, comma, `movz`/`movk` constants, and an
+  epilogue label (implicit `return 0` from `main`). Expressions use stack-machine
+  evaluation: result in `w0`/`x0`, operands pushed with `str x0, [sp, #-16]!`.
+- Tier 2 is **file-level, not whole directories**. AST analysis found only 65 of the 166
+  tests in these three directories use Phase 2 constructs. The rest need comparisons
+  (Phase 3), calls (Phase 4), pointers, arrays and structs (Phase 6), or char/short/FP
+  (Phases 7–8). They join the manifest when those phases land.
+
 ---
 
 ## Phase 3 — Comparisons and Control Flow
