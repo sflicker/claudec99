@@ -127,6 +127,10 @@ progressive ARM64 test enablement.
 | 9    | `varargs/`, `stdlib/`                                                |
 | 10   | `enums/`, `typedefs/`, `unions/`, `misc/`, `preprocessor/`, full `integration/` |
 
+Since Stage 181 this mapping is enforced by the manifest `test/valid/arm64_tiers.txt`
+(`<tier> <file-or-dir>` lines). Each phase adds its tier's entries as it lands. Under
+`TARGET=arm64-macos` the `integration/` suite is skipped entirely until tier 10.
+
 ---
 
 ## Phase 1 — ARM64 Codegen Skeleton ✅ Stage 181
@@ -169,6 +173,12 @@ ret
   `arm64_tier_includes`.
 - `arm64-macos` predefines `__aarch64__`/`__arm64__` (not `__x86_64__`). macOS auto-detect
   stays `x86_64-macos` until Phase 10.
+- Result: `CodeGenArm64` is a minimal independent struct (`output` only), and later phases
+  add fields as needed. Phase 1 accepts only a function body that is a single
+  `return <integer literal 0..65535>`, and rejects anything else with
+  `arm64-macos: <construct> not yet supported`. `TARGET=arm64-macos` tier 1 passes 5/5
+  natively (the first native Apple Silicon binaries). The default macOS suite passes
+  2166/2166, and the C0→C1→C2 self-host passes on macOS.
 
 ---
 
@@ -369,6 +379,17 @@ spec and implementation are committed.
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
 **Next up:** Phase 2 (stage 182) — ARM64 integer arithmetic and local variables.
+
+### Open items (as of Stage 181)
+
+- **Linux self-host pending.** Stages 180–181 were self-hosted on macOS ARM64 only.
+  Linux-target `.asm` was verified byte-identical to the previous stage instead.
+- **Error line numbers off by ~5.** Compile errors in both backends report lines about
+  5 too high (e.g. `file.c:7` for line 2), likely from the injected preamble.
+- **macOS `ld` warnings (harmless).** `pointer not aligned`: data pointer tables are not
+  8-byte aligned. `no platform load command`: NASM Mach-O objects lack
+  `LC_BUILD_VERSION`.
+- **`bin/cc99`** has no macOS/ARM64 support yet.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase
