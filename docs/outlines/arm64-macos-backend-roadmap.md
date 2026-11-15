@@ -129,7 +129,7 @@ progressive ARM64 test enablement.
 
 ---
 
-## Phase 1 — ARM64 Codegen Skeleton
+## Phase 1 — ARM64 Codegen Skeleton ✅ Stage 181
 
 **New files:** `src/codegen_arm64.c`, `include/codegen_arm64.h`
 
@@ -357,7 +357,7 @@ spec and implementation are committed.
 | 0A    | 178   | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     | [x]  |
 | 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [x]  |
 | 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [x]  |
-| 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [ ]  |
+| 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [x]  |
 | 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
 | 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
 | 4     | 184   | Functions and calls                                  | Tier 4 — functions                            | [ ]  |
@@ -368,7 +368,7 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 1 (stage 181) — ARM64 codegen skeleton + `ARM64_TIER` gating.
+**Next up:** Phase 2 (stage 182) — ARM64 integer arithmetic and local variables.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase

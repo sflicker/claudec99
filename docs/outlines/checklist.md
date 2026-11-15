@@ -2580,6 +2580,27 @@ TODO items completed this stage:
 
 ---
 
+## Stage 181 - ARM64 Codegen Skeleton + ARM64_TIER Gating (Phase 1)
+
+- [x] `include/codegen_arm64.h` / `src/codegen_arm64.c` (new): `CodeGenArm64` with `codegen_arm64_init`, `codegen_arm64_translation_unit`, `codegen_arm64_free`. Each function with a body must be exactly one `return <integer literal>` in 0..65535; typedefs and bodiless prototypes are skipped. Emits `.section __TEXT,__text`, `.globl _name` (unless static), `.p2align 2`, and an AAPCS64 frame.
+- [x] Unsupported constructs are rejected with `arm64-macos: <construct> not yet supported` (locals, parameters, globals, multi-statement and empty bodies); out-of-range literals with `arm64-macos: integer literal <v> out of range for this stage`.
+- [x] `src/compiler.c`: `arm64-macos` accepted (old "not yet implemented" error removed); output is `<name>.s` via `make_output_path_ext` (`include/util.h`, `src/util.c`); `-O2` peephole skipped and `-g` ignored for arm64; `--help` lists `arm64-macos (experimental)`. macOS auto-detect unchanged.
+- [x] `src/preprocessor.c`: `arm64-macos` predefines `__aarch64__` and `__arm64__` (not `__x86_64__`), plus `__APPLE__`/`__MACH__`.
+- [x] `CMakeLists.txt` and `build.sh`: `src/codegen_arm64.c` added to source lists. `src/version.c`: `VERSION_STAGE` set to `01810000`.
+- [x] `test/lib/platform.sh`: `TARGET=arm64-macos` allowed on Darwin; `ASM_EXT`, `assemble`, `LINK_CMD` (`clang -arch arm64`), `ARM64_TIER` (default 1), `arm64_tier_includes`.
+- [x] `test/valid/arm64_tiers.txt` (new manifest, tier 1: five return-only tests). `test/valid/run_tests.sh` tier-gates under arm64 and prints `ARM64_TIER=<n>: <k> of <N> tests in scope`. Integration suite prints SKIP and 0/0/0 under arm64 (enabled at tier 10).
+- [x] Runners and custom multi-file scripts switched to `ASM_EXT` and `assemble`.
+- [x] New tests: `test/valid/misc/test_return_zero__0.c`, `test/valid/misc/test_return_255__255.c`; `test/integration/test_arm64_skeleton_asm/` (host-independent text checks for `.s` output, `_main`, `mov w0, #42`, `ret`, and both error paths); `test_target_predefined_macros` extended with arm64 checks.
+- [x] Verification: native ARM64 `TARGET=arm64-macos ARM64_TIER=1` 5 of 1289 in scope, 5/5 pass (first native Apple Silicon binaries, no Rosetta). Portable 2166/2166 (249 unit, 1289 valid, 261 invalid, 196 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Linux-target `.asm` byte-identical to Stage 180 (except `__TIME__` test and new tests).
+- [x] Self-host on macOS ARM64: C0 `.01314`, C1 `.01315` (built by C0), C2 `.01316` (built by C1); each stage 2166/2166. Checkpoint commits `82e47d2` (C0), `37c9ee3` (C1); report `4e1834c`.
+- [ ] Self-host on Linux x86-64 not run (pending).
+- [ ] Follow-ups: compile-error line numbers offset by ~5 lines in both backends (pre-existing, likely from the injected preamble); macOS `ld` warnings; `bin/cc99` macOS support; Phase 2 (Stage 182) arithmetic, locals, and `movz`/`movk` immediates.
+
+TODO items completed this stage:
+- No existing TODO items completed (Phase 1 roadmap item; see `docs/outlines/arm64-macos-backend-roadmap.md`)
+
+---
+
 ## TODO
 
 ### Preprocessor

@@ -147,7 +147,7 @@ ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-W
 - `-std=<std>` / `-ansi`: accepted and ignored (always compiles as C99).
 - `-isystem <dir>`: treated as `-I<dir>` (system include path).
 - `-w`: suppress all warnings (no-op until warning diagnostics are implemented).
-- `--target=<target>`: code generation target. `x86_64-linux` (ELF64, `main` symbols, `.note.GNU-stack` footer) or `x86_64-macos` (Mach-O64, `_`-prefixed C symbols, no `.note.GNU-stack` footer). `arm64-macos` is accepted, but reports "not yet implemented" and exits 1. Default: the host platform (`x86_64-macos` on macOS, `x86_64-linux` otherwise).
+- `--target=<target>`: code generation target. `x86_64-linux` (ELF64, `main` symbols, `.note.GNU-stack` footer), `x86_64-macos` (Mach-O64, `_`-prefixed C symbols, no `.note.GNU-stack` footer), or `arm64-macos` (experimental) — native ARM64 backend, writes `<name>.s` (assemble/link with `clang -arch arm64`); currently only `return <integer literal 0..65535>` function bodies. Default: the host platform (`x86_64-macos` on macOS, `x86_64-linux` otherwise).
 
 End-to-end build and run:
 
@@ -248,6 +248,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 181 (ARM64 codegen skeleton):
+
+> Stage 181 adds the first native ARM64 backend, selected with `--target=arm64-macos` (Phase 1 of the ARM64/macOS roadmap). It is experimental and deliberately narrow: a function is accepted only if its body is exactly one `return <integer literal>` with a value in 0..65535. The backend emits an AAPCS64 frame and `.globl _name` symbols, writes `<name>.s`, and is assembled and linked with `clang -arch arm64`. Other constructs are rejected with `arm64-macos: <construct> not yet supported`. Test gating uses `ARM64_TIER` (manifest `test/valid/arm64_tiers.txt`, default tier 1). Native tier-1 run: 5 of 1289 tests in scope, 5/5 pass, the first native Apple Silicon binaries from this compiler (no Rosetta). Portable suite: 2166/2166 on macOS (249 unit, 1289 valid, 261 invalid, 196 integration, 50 print-AST, 100 print-tokens, 21 print-asm). The C0→C1→C2 self-host passes on macOS ARM64. No tokenizer, parser, AST, or grammar changes. Linux output is byte-identical to Stage 180 for all test sources, except the `__TIME__` test and new tests.
 
 Through Stage 180 (macOS-aware test infrastructure):
 
@@ -918,7 +922,7 @@ Run everything from the project root after building:
 
 The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 174 all 2074 portable tests pass (1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 191/191; the optional-library suite passes 2/2 (test_sdl2_init, test_zlib_compress).
 
-Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`. Test runners honor a `TARGET=<target>` environment variable, and `test/lib/platform.sh` is the shared runner config.
+Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`. Test runners honor a `TARGET=<target>` environment variable, and `test/lib/platform.sh` is the shared runner config. `TARGET=arm64-macos` runs only the `test/valid` tests in scope for `ARM64_TIER` (manifest `test/valid/arm64_tiers.txt`, default tier 1).
 
 ## Optional library tests
 
