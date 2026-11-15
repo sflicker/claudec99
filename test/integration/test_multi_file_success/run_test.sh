@@ -6,6 +6,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK="$PROJECT_DIR/build/test_tmp_integration/test_multi_file_success"
 IFLAGS="-I${PROJECT_DIR}/test/include"
@@ -14,7 +16,7 @@ mkdir -p "$WORK"
 cd "$WORK" || exit 1
 
 # Single invocation compiling two files at once.
-if ! "$COMPILER" $IFLAGS \
+if ! "$COMPILER" "$COMPILER_TARGET_FLAG" $IFLAGS \
         "$SCRIPT_DIR/file_a.c" "$SCRIPT_DIR/file_b.c" 2>/dev/null; then
     echo "FAIL: ccompiler rejected two-file invocation" >&2
     exit 1
@@ -27,21 +29,21 @@ if [ ! -f "file_a.asm" ] || [ ! -f "file_b.asm" ]; then
 fi
 
 # Compile main.c separately.
-if ! "$COMPILER" $IFLAGS "$SCRIPT_DIR/main.c" 2>/dev/null; then
+if ! "$COMPILER" "$COMPILER_TARGET_FLAG" $IFLAGS "$SCRIPT_DIR/main.c" 2>/dev/null; then
     echo "FAIL: could not compile main.c" >&2
     exit 1
 fi
 
 # Assemble all three.
 for base in file_a file_b main; do
-    if ! nasm -f elf64 "${base}.asm" -o "${base}.o" 2>/dev/null; then
+    if ! nasm -f "$NASM_FMT" "${base}.asm" -o "${base}.o" 2>/dev/null; then
         echo "FAIL: nasm failed for ${base}" >&2
         exit 1
     fi
 done
 
 # Link.
-if ! cc -no-pie file_a.o file_b.o main.o \
+if ! "${LINK_CMD[@]}" file_a.o file_b.o main.o \
         -o test_multi_file_success 2>/dev/null; then
     echo "FAIL: link failed" >&2
     exit 1

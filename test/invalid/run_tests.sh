@@ -10,6 +10,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
@@ -34,7 +36,7 @@ for src in $(find "$SCRIPT_DIR" -name 'test_*.c' | sort); do
     # Compile — should fail. The compiler may have already opened/written
     # a partial .asm in the caller's cwd before detecting the error, so
     # remove any leftover file unconditionally.
-    output=$(timeout "$TIMEOUT" "$COMPILER" "$src" 2>&1)
+    output=$(run_timeout "$TIMEOUT" "$COMPILER" "$src" 2>&1)
     rc=$?
     rm -f "${name}.asm"
 

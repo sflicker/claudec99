@@ -2382,6 +2382,13 @@ static char *preprocess_internal(const char *source, const char *source_path,
     return out.data;
 }
 
+/* Stage 180: target selecting the platform predefined macros. */
+static Target g_pp_target = TARGET_X86_64_LINUX;
+
+void preprocess_set_target(Target target) {
+    g_pp_target = target;
+}
+
 char *preprocess(const char *source, const char *source_path) {
     return preprocess_with_defines(source, source_path, NULL, 0);
 }
@@ -2420,10 +2427,17 @@ char *preprocess_with_defines_and_includes(const char *source,
         macro_define(&macros, "__TIME__", strlen("__TIME__"), NULL, -1, 0, NULL, time_buf, strlen(time_buf));
     }
 
-    /* Target/ABI predefined macros — x86_64 Linux LP64. */
+    /* Target/ABI predefined macros — x86_64 LP64.
+     * Stage 180: OS macros depend on the target — __linux__/__unix__ for
+     * x86_64-linux, __APPLE__/__MACH__ for x86_64-macos. */
     macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, NULL, "1", 1);
-    macro_define(&macros, "__linux__",           strlen("__linux__"),           NULL, -1, 0, NULL, "1", 1);
-    macro_define(&macros, "__unix__",            strlen("__unix__"),            NULL, -1, 0, NULL, "1", 1);
+    if (g_pp_target == TARGET_X86_64_MACOS) {
+        macro_define(&macros, "__APPLE__",       strlen("__APPLE__"),           NULL, -1, 0, NULL, "1", 1);
+        macro_define(&macros, "__MACH__",        strlen("__MACH__"),            NULL, -1, 0, NULL, "1", 1);
+    } else {
+        macro_define(&macros, "__linux__",       strlen("__linux__"),           NULL, -1, 0, NULL, "1", 1);
+        macro_define(&macros, "__unix__",        strlen("__unix__"),            NULL, -1, 0, NULL, "1", 1);
+    }
     macro_define(&macros, "__LP64__",            strlen("__LP64__"),            NULL, -1, 0, NULL, "1", 1);
     macro_define(&macros, "_LP64",               strlen("_LP64"),               NULL, -1, 0, NULL, "1", 1);
     macro_define(&macros, "__CHAR_BIT__",        strlen("__CHAR_BIT__"),        NULL, -1, 0, NULL, "8", 1);

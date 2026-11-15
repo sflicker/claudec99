@@ -562,20 +562,59 @@ static void emit_store_fp_local(CodeGen *cg, int offset, TypeKind kind) {
         fprintf(cg->output, "    movsd [rbp - %d], xmm0\n", offset);
 }
 
+/* Stage 180: on Mach-O, a data object declared `extern` may live in a
+ * shared library (e.g. libSystem's __stdoutp), which a direct RIP-relative
+ * reference cannot reach — ld rejects it ("does not have address").  Such
+ * objects are accessed through their GOT entry instead.  Internal labels
+ * (empty prefix) and ELF output are never affected. */
+static int global_via_got(CodeGen *cg, const char *pfx, const char *name) {
+    GlobalVar *gv;
+    if (!cg->target_macho || pfx[0] == '\0') return 0;
+    gv = codegen_find_global(cg, name);
+    return gv != NULL && gv->is_extern;
+}
+
+/* Stage 180: prepare a memory operand "[<rel><pfx><name>]" for a global.
+ * Normally returns "rel " and leaves pfx/name alone.  For a GOT-accessed
+ * object, loads its address into r11 and rewrites the operand to "[r11]". */
+static const char *global_rel_or_got(CodeGen *cg, const char **pfx,
+                                     const char **name) {
+    if (!global_via_got(cg, *pfx, *name)) return "rel ";
+    fprintf(cg->output, "    mov r11, [rel %s%s wrt ..gotpcrel]\n", *pfx, *name);
+    *pfx = "";
+    *name = "r11";
+    return "";
+}
+
+/* Stage 180: rax = address of global `gv` plus `offset`. */
+static void emit_global_addr(CodeGen *cg, GlobalVar *gv, int offset) {
+    if (global_via_got(cg, sp(cg), gv->name)) {
+        fprintf(cg->output, "    mov rax, [rel %s%s wrt ..gotpcrel]\n", sp(cg), gv->name);
+        if (offset != 0)
+            fprintf(cg->output, "    add rax, %d\n", offset);
+    } else if (offset != 0) {
+        fprintf(cg->output, "    lea rax, [rel %s%s + %d]\n", sp(cg), gv->name, offset);
+    } else {
+        fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+    }
+}
+
 /* Stage 109: load an FP global (RIP-relative) into xmm0. */
 static void emit_load_fp_global(CodeGen *cg, const char *pfx, const char *name, TypeKind kind) {
+    const char *rel = global_rel_or_got(cg, &pfx, &name);
     if (kind == TYPE_FLOAT)
-        fprintf(cg->output, "    movss xmm0, [rel %s%s]\n", pfx, name);
+        fprintf(cg->output, "    movss xmm0, [%s%s%s]\n", rel, pfx, name);
     else
-        fprintf(cg->output, "    movsd xmm0, [rel %s%s]\n", pfx, name);
+        fprintf(cg->output, "    movsd xmm0, [%s%s%s]\n", rel, pfx, name);
 }
 
 /* Stage 109: store xmm0 into an FP global (RIP-relative). */
 static void emit_store_fp_global(CodeGen *cg, const char *pfx, const char *name, TypeKind kind) {
+    const char *rel = global_rel_or_got(cg, &pfx, &name);
     if (kind == TYPE_FLOAT)
-        fprintf(cg->output, "    movss [rel %s%s], xmm0\n", pfx, name);
+        fprintf(cg->output, "    movss [%s%s%s], xmm0\n", rel, pfx, name);
     else
-        fprintf(cg->output, "    movsd [rel %s%s], xmm0\n", pfx, name);
+        fprintf(cg->output, "    movsd [%s%s%s], xmm0\n", rel, pfx, name);
 }
 
 /* Stage 109/110: coerce the value currently in xmm0 (if src is FP) or rax (if
@@ -820,42 +859,44 @@ static Type *struct_field_type(StructField *f) {
 }
 
 static void emit_load_global(CodeGen *cg, const char *pfx, const char *name, int size, int is_unsigned) {
+    const char *rel = global_rel_or_got(cg, &pfx, &name);
     switch (size) {
     case 1:
         if (is_unsigned)
-            fprintf(cg->output, "    movzx eax, byte [rel %s%s]\n", pfx, name);
+            fprintf(cg->output, "    movzx eax, byte [%s%s%s]\n", rel, pfx, name);
         else
-            fprintf(cg->output, "    movsx eax, byte [rel %s%s]\n", pfx, name);
+            fprintf(cg->output, "    movsx eax, byte [%s%s%s]\n", rel, pfx, name);
         break;
     case 2:
         if (is_unsigned)
-            fprintf(cg->output, "    movzx eax, word [rel %s%s]\n", pfx, name);
+            fprintf(cg->output, "    movzx eax, word [%s%s%s]\n", rel, pfx, name);
         else
-            fprintf(cg->output, "    movsx eax, word [rel %s%s]\n", pfx, name);
+            fprintf(cg->output, "    movsx eax, word [%s%s%s]\n", rel, pfx, name);
         break;
-    case 8: fprintf(cg->output, "    mov rax, [rel %s%s]\n", pfx, name); break;
+    case 8: fprintf(cg->output, "    mov rax, [%s%s%s]\n", rel, pfx, name); break;
     case 4:
     default:
-        fprintf(cg->output, "    mov eax, [rel %s%s]\n", pfx, name);
+        fprintf(cg->output, "    mov eax, [%s%s%s]\n", rel, pfx, name);
         break;
     }
 }
 
 static void emit_store_global(CodeGen *cg, const char *pfx, const char *name, int size,
                               int src_is_long) {
+    const char *rel = global_rel_or_got(cg, &pfx, &name);
     switch (size) {
-    case 1: fprintf(cg->output, "    mov [rel %s%s], al\n", pfx, name); break;
-    case 2: fprintf(cg->output, "    mov [rel %s%s], ax\n", pfx, name); break;
+    case 1: fprintf(cg->output, "    mov [%s%s%s], al\n", rel, pfx, name); break;
+    case 2: fprintf(cg->output, "    mov [%s%s%s], ax\n", rel, pfx, name); break;
     case 8:
         /* src_is_long=1 for both 64-bit values and unsigned 32-bit values
          * (x86-64 zero-extends 32-bit writes automatically). */
         if (!src_is_long)
             fprintf(cg->output, "    movsxd rax, eax\n");
-        fprintf(cg->output, "    mov [rel %s%s], rax\n", pfx, name);
+        fprintf(cg->output, "    mov [%s%s%s], rax\n", rel, pfx, name);
         break;
     case 4:
     default:
-        fprintf(cg->output, "    mov [rel %s%s], eax\n", pfx, name);
+        fprintf(cg->output, "    mov [%s%s%s], eax\n", rel, pfx, name);
         break;
     }
 }
@@ -1248,7 +1289,7 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
     } else {
         if (gv->kind == TYPE_ARRAY) {
             element = gv->full_type->base;
-            fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+            emit_global_addr(cg, gv, 0);
         } else if (gv->kind == TYPE_POINTER) {
             element = gv->full_type->base;
             /* Stage 38: subscript on void * is not allowed. */
@@ -1257,7 +1298,7 @@ static Type *emit_array_index_addr(CodeGen *cg, ASTNode *node) {
                         "error: cannot subscript void pointer '%s'\n",
                         base_node->value);
             }
-            fprintf(cg->output, "    mov rax, [rel %s%s]\n", sp(cg), gv->name);
+            emit_load_global(cg, sp(cg), gv->name, 8, 0);
         } else {
             compile_error(
                     "error: subscript base '%s' is not an array or pointer\n",
@@ -1452,10 +1493,7 @@ static StructField *emit_member_addr(CodeGen *cg, ASTNode *node) {
         compile_error( "error: '%s' has no member '%s'\n",
                 type_kind_name(gv->kind), field_name);
     }
-    if (f->offset != 0)
-        fprintf(cg->output, "    lea rax, [rel %s%s + %d]\n", sp(cg), gv->name, f->offset);
-    else
-        fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+    emit_global_addr(cg, gv, f->offset);
     return f;
 }
 
@@ -1549,7 +1587,7 @@ static StructField *emit_arrow_addr(CodeGen *cg, ASTNode *node) {
             compile_error( "error: '%s' has no member '%s'\n",
                     type_kind_name(st->kind), field_name);
         }
-        fprintf(cg->output, "    mov rax, [rel %s%s]\n", sp(cg), gv->name);
+        emit_load_global(cg, sp(cg), gv->name, 8, 0);
         if (f->offset != 0)
             fprintf(cg->output, "    add rax, %d\n", f->offset);
         return f;
@@ -1580,7 +1618,7 @@ static Type *emit_struct_addr(CodeGen *cg, ASTNode *node) {
         GlobalVar *gv = codegen_find_global(cg, node->value);
         if (!gv || !is_struct_or_union_kind(gv->kind) || !gv->full_type)
             compile_error( "error: '%s' is not a struct/union value\n", node->value);
-        fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+        emit_global_addr(cg, gv, 0);
         return gv->full_type;
     }
     case AST_MEMBER_ACCESS: {
@@ -2638,7 +2676,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
             compile_error( "error: undeclared variable '%s'\n", node->value);
         }
         if (gv->kind == TYPE_ARRAY) {
-            fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+            emit_global_addr(cg, gv, 0);
             node->result_type = TYPE_POINTER;
             node->full_type = type_pointer(gv->full_type->base);
             return;
@@ -3253,7 +3291,7 @@ static void codegen_expression(CodeGen *cg, ASTNode *node) {
         if (!gv) {
             compile_error( "error: undeclared variable '%s'\n", operand->value);
         }
-        fprintf(cg->output, "    lea rax, [rel %s%s]\n", sp(cg), gv->name);
+        emit_global_addr(cg, gv, 0);
         node->result_type = TYPE_POINTER;
         node->full_type = type_pointer(global_var_type(gv));
         return;

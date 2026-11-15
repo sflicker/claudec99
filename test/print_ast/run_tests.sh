@@ -7,6 +7,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 
@@ -25,7 +27,7 @@ for src in $(find "$SCRIPT_DIR" -name 'test_*.c' | sort); do
     fi
 
     # Run compiler with --print-ast
-    actual=$(timeout "$TIMEOUT" "$COMPILER" --print-ast "$src" 2>&1)
+    actual=$(run_timeout "$TIMEOUT" "$COMPILER" --print-ast "$src" 2>&1)
     rc=$?
 
     if [ "$rc" -ne 0 ]; then

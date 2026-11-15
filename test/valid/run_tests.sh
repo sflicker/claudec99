@@ -6,6 +6,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp"
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
@@ -30,7 +32,7 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     fi
 
     # Compile .c -> .asm
-    if ! timeout "$TIMEOUT" "$COMPILER" "${DEFAULT_IFLAGS[@]}" "$src" >/dev/null 2>&1; then
+    if ! run_timeout "$TIMEOUT" "$COMPILER" "$COMPILER_TARGET_FLAG" "${DEFAULT_IFLAGS[@]}" "$src" >/dev/null 2>&1; then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue
@@ -42,7 +44,7 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     mv "$asm_file" "$WORK_DIR/" 2>/dev/null
 
     # Assemble
-    if ! nasm -f elf64 "$WORK_DIR/${name}.asm" -o "$WORK_DIR/${name}.o" 2>/dev/null; then
+    if ! nasm -f "$NASM_FMT" "$WORK_DIR/${name}.asm" -o "$WORK_DIR/${name}.o" 2>/dev/null; then
         echo "FAIL  $name  (nasm error)"
         fail=$((fail + 1))
         continue
@@ -61,7 +63,7 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     # and libc, so external libc symbols like `puts` resolve. Our
     # generated `main` exits via direct syscall, which is compatible
     # with crt0 (it never returns to `_start`).
-    if ! gcc -no-pie "$WORK_DIR/${name}.o" "${extra_libs[@]}" -o "$WORK_DIR/${name}" 2>/dev/null; then
+    if ! "${LINK_CMD[@]}" "$WORK_DIR/${name}.o" "${extra_libs[@]}" -o "$WORK_DIR/${name}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue
@@ -71,7 +73,7 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     # don't pollute the runner's PASS/FAIL output, and so the optional
     # .expected-file comparison below can use it.
     stdout_file="$WORK_DIR/${name}.stdout"
-    { timeout "$TIMEOUT" "$WORK_DIR/${name}" >"$stdout_file" 2>/dev/null; } 2>/dev/null
+    { run_timeout "$TIMEOUT" "$WORK_DIR/${name}" >"$stdout_file" 2>/dev/null; } 2>/dev/null
     actual=$?
 
     if [ "$actual" -ne "$expected" ]; then

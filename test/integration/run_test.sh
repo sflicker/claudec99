@@ -17,6 +17,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
@@ -66,17 +68,17 @@ for src in "$SOURCE_DIR"/*.c; do
     [ -f "$src" ] || continue
     src_name=$(basename "$src" .c)
     echo "compiling: $src"
-    "$COMPILER" "${COMPILER_FLAGS[@]}" "${DEFAULT_IFLAGS[@]}" "$src"
+    "$COMPILER" "$COMPILER_TARGET_FLAG" "${COMPILER_FLAGS[@]}" "${DEFAULT_IFLAGS[@]}" "$src"
 
     echo "assembling: ${src_name}.asm"
-    nasm -f elf64 "${src_name}.asm" -o "${src_name}.o"
+    nasm -f "$NASM_FMT" "${src_name}.asm" -o "${src_name}.o"
 
     OBJ_FILES+=("${src_name}.o")
 done
 
 # Link all objects -> executable
 echo "linking: $BASENAME"
-cc -no-pie "${OBJ_FILES[@]}" -o "$BASENAME" "${EXTRA_LIBS[@]}"
+"${LINK_CMD[@]}" "${OBJ_FILES[@]}" -o "$BASENAME" "${EXTRA_LIBS[@]}"
 
 # Run with optional stdin redirection
 echo "running: ./${BASENAME}"

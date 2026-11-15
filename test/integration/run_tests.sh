@@ -19,6 +19,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/test_tmp_integration"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
@@ -94,7 +96,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
     if [ -f "$error_file" ]; then
         expected_error="$(cat "$error_file")"
         compile_exit=0
-        (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
+        (cd "$test_dir" && run_timeout "$TIMEOUT" "$COMPILER" "$COMPILER_TARGET_FLAG" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$test_dir/${name}.c") >/dev/null 2>"$test_work/${name}.stderr" || compile_exit=$?
         if [ "$compile_exit" -eq 0 ]; then
             echo "FAIL  $name  (expected compile error, but succeeded)"
             fail=$((fail + 1))
@@ -120,7 +122,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
         [ -f "$src" ] || continue
         src_name=$(basename "$src" .c)
 
-        if ! (cd "$test_dir" && timeout "$TIMEOUT" "$COMPILER" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$src") 2>/dev/null; then
+        if ! (cd "$test_dir" && run_timeout "$TIMEOUT" "$COMPILER" "$COMPILER_TARGET_FLAG" "${compiler_flags[@]}" "${DEFAULT_IFLAGS[@]}" "$src") 2>/dev/null; then
             echo "FAIL  $name  (compiler error: $src_name.c)"
             fail=$((fail + 1))
             compile_failed=1
@@ -134,7 +136,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
             break
         fi
 
-        if ! nasm -f elf64 "${nasm_debug_flags[@]}" "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
+        if ! nasm -f "$NASM_FMT" "${nasm_debug_flags[@]}" "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
             echo "FAIL  $name  (nasm error: $src_name)"
             fail=$((fail + 1))
             compile_failed=1
@@ -146,7 +148,7 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     [ "$compile_failed" -eq 1 ] && continue
 
-    if ! cc -no-pie "${obj_files[@]}" -o "$test_work/$name" "${extra_libs[@]}" 2>/dev/null; then
+    if ! "${LINK_CMD[@]}" "${obj_files[@]}" -o "$test_work/$name" "${extra_libs[@]}" 2>/dev/null; then
         echo "FAIL  $name  (link error)"
         fail=$((fail + 1))
         continue
@@ -154,9 +156,9 @@ for test_dir in "$SCRIPT_DIR"/*/; do
 
     stdout_file="$test_work/${name}.stdout"
     if [ -f "$input_file" ]; then
-        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
+        (cd "$test_work" && run_timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" <"$input_file" >"$stdout_file")
     else
-        (cd "$test_work" && timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
+        (cd "$test_work" && run_timeout "$TIMEOUT" "$test_work/$name" "${extra_args[@]}" >"$stdout_file")
     fi
     actual=$?
 

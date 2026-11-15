@@ -32,6 +32,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Stage 179: host platform detection (selects assembler format and linker).
 HOST_OS=$(uname -s)   # Linux or Darwin
 HOST_ARCH=$(uname -m) # x86_64 or arm64
+
+# Stage 180: portable timeout (macOS has no `timeout`): timeout -> gtimeout ->
+# perl alarm fallback.  Same logic as test/lib/platform.sh.
+run_timeout() {   # usage: run_timeout <seconds> <cmd> [args...]
+    if command -v timeout >/dev/null 2>&1; then timeout "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"
+    else perl -e 'alarm shift; exec @ARGV or exit 127' "$@"
+    fi
+}
+
 MODE="normal"
 BUILD_TIMEOUT=300
 
@@ -79,7 +89,7 @@ do_bootstrap_build() {
 
     # Derive a clean single-token BuiltBy value from the --version output.
     local version_line
-    version_line=$(timeout 10 "$ccompiler" --version 2>&1 | head -1 || true)
+    version_line=$(run_timeout 10 "$ccompiler" --version 2>&1 | head -1 || true)
     # Extract the full dotted version (e.g. "00.02.00940000.00656") — all four
     # groups including the build number — and convert dots to underscores.
     local version_num
@@ -125,7 +135,7 @@ do_bootstrap_build() {
 
         echo "  Compiling $src ..."
         # Run the compiler from the output dir so the .asm lands there.
-        if ! (cd "$outdir" && timeout "$BUILD_TIMEOUT" "$ccompiler" \
+        if ! (cd "$outdir" && run_timeout "$BUILD_TIMEOUT" "$ccompiler" \
                 "$COMPILER_TARGET" \
                 -I "$SCRIPT_DIR/include" \
                 -I "$SCRIPT_DIR/test/include" \

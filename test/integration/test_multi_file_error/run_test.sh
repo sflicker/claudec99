@@ -7,6 +7,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK="$PROJECT_DIR/build/test_tmp_integration/test_multi_file_error"
 IFLAGS="-I${PROJECT_DIR}/test/include"
@@ -15,7 +17,7 @@ mkdir -p "$WORK"
 cd "$WORK" || exit 1
 
 # Expect non-zero exit (bad.c has a syntax error).
-"$COMPILER" --max-errors=0 $IFLAGS \
+"$COMPILER" "$COMPILER_TARGET_FLAG" --max-errors=0 $IFLAGS \
     "$SCRIPT_DIR/bad.c" "$SCRIPT_DIR/good.c" 2>/dev/null
 status=$?
 

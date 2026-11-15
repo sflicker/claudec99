@@ -8,9 +8,19 @@
 typedef long fpos_t;
 typedef struct FILE FILE;
 
+/* Stage 180: macOS libc exports the standard streams as __stdinp/__stdoutp/__stderrp. */
+#if defined(__APPLE__)
+extern FILE *__stdinp;
+extern FILE *__stdoutp;
+extern FILE *__stderrp;
+#define stdin  __stdinp
+#define stdout __stdoutp
+#define stderr __stderrp
+#else
 extern FILE *stdin;
 extern FILE *stdout;
 extern FILE *stderr;
+#endif
 
 #define EOF (-1)
 

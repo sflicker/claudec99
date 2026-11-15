@@ -571,6 +571,8 @@ int main(int argc, char **argv) {
         free(defines); free(include_dirs); free(source_files);
         return 1;
     }
+    /* Stage 180: target-dependent predefined macros (__APPLE__ vs __linux__). */
+    preprocess_set_target(target);
 
     if (n_source_files == 0) {
         fprintf(stderr, "ccompiler: no input files. Run 'ccompiler --help' for usage.\n");

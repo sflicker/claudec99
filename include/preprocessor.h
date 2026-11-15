@@ -1,6 +1,13 @@
 #ifndef CCOMPILER_PREPROCESSOR_H
 #define CCOMPILER_PREPROCESSOR_H
 
+#include "target.h"
+
+/* Stage 180: select target-dependent predefined macros for subsequent
+ * preprocess*() calls.  x86_64-macos predefines __APPLE__ and __MACH__
+ * (and not __linux__ / __unix__).  Default: TARGET_X86_64_LINUX. */
+void preprocess_set_target(Target target);
+
 /* Run the preprocessing pass on source text.
  * source_path is the path of the file being compiled (used to resolve
  * relative #include paths).  Pass NULL if there is no filesystem context.

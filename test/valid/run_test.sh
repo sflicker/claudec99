@@ -3,6 +3,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
@@ -26,15 +28,15 @@ fi
 
 # Compile C -> ASM
 echo "compiling: $SOURCE"
-"$COMPILER" "${DEFAULT_IFLAGS[@]}" "$SOURCE"
+"$COMPILER" "$COMPILER_TARGET_FLAG" "${DEFAULT_IFLAGS[@]}" "$SOURCE"
 
 # Assemble ASM -> object
 echo "assembling: ${BASENAME}.asm"
-nasm -f elf64 "${BASENAME}.asm" -o "${BASENAME}.o"
+nasm -f "$NASM_FMT" "${BASENAME}.asm" -o "${BASENAME}.o"
 
 # Link object -> executable
 echo "linking: ${BASENAME}"
-ld "${BASENAME}.o" -o "${BASENAME}" -e main
+"${LINK_CMD[@]}" "${BASENAME}.o" -o "${BASENAME}"
 
 # Run
 echo "running: ./${BASENAME}"

@@ -9,6 +9,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Stage 180: host/target settings (TARGET, NASM_FMT, LINK_CMD, run_timeout).
+. "$PROJECT_DIR/test/lib/platform.sh"
 COMPILER="$PROJECT_DIR/build/ccompiler"
 WORK_DIR="$PROJECT_DIR/build/print_asm_tmp"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
@@ -32,7 +34,7 @@ for src in $(find "$SCRIPT_DIR" -name 'test_*.c' | sort); do
     # Compile .c -> .asm. The compiler writes the .asm into the
     # current working directory using only the source basename, so
     # run from the work dir to keep the source tree clean.
-    if ! ( cd "$WORK_DIR" && timeout "$TIMEOUT" "$COMPILER" "$src" >/dev/null 2>&1 ); then
+    if ! ( cd "$WORK_DIR" && run_timeout "$TIMEOUT" "$COMPILER" --target=x86_64-linux "$src" >/dev/null 2>&1 ); then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue
