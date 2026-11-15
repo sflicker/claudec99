@@ -116,7 +116,7 @@ progressive ARM64 test enablement.
 
 | Tier | Newly unlocked `test/valid/` categories                              |
 |------|----------------------------------------------------------------------|
-| 1    | Simple `statements/` (return only)                                   |
+| 1    | Manifest-listed `return <literal>` programs (`test/valid/arm64_tiers.txt`) |
 | 2    | `arithmetic/`, `assignment/`, `expressions/`                         |
 | 3    | `comparisons/`, `control_flow/`, full `statements/`                  |
 | 4    | `functions/`                                                         |
@@ -157,7 +157,18 @@ ret
 
 **Assemble/link:** `clang -arch arm64 foo.s -o foo`
 
-**Tests unlocked:** `ARM64_TIER=1` — simple `statements/` return tests.
+**Tests unlocked:** `ARM64_TIER=1` — the `return <literal>` programs listed in
+`test/valid/arm64_tiers.txt`.
+
+**Stage 181 scope (see `docs/stages/ClaudeC99-spec-stage-181-arm64-skeleton.md`):**
+- `src/codegen_arm64.c` / `include/codegen_arm64.h`; `--target=arm64-macos` emits `<name>.s`
+  (Apple/GNU syntax, assembled and linked with `clang -arch arm64`).
+- `ARM64_TIER` gating (deferred from Phase 0C) uses a manifest, `test/valid/arm64_tiers.txt`
+  (`<tier> <file-or-dir>` lines), instead of a hardcoded directory table, because tier 1
+  cannot be a whole directory. `test/lib/platform.sh` gains `ASM_EXT`, `assemble` and
+  `arm64_tier_includes`.
+- `arm64-macos` predefines `__aarch64__`/`__arm64__` (not `__x86_64__`). macOS auto-detect
+  stays `x86_64-macos` until Phase 10.
 
 ---
 
