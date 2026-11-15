@@ -72,7 +72,7 @@ serves as a correctness baseline while the native ARM64 backend is built.
 
 ---
 
-## Phase 0C — macOS-Aware Test Infrastructure ⬜ Stage 180
+## Phase 0C — macOS-Aware Test Infrastructure ✅ Stage 180
 
 **Goal:** Test runners detect platform, select the right assembler/linker, and support
 progressive ARM64 test enablement.
@@ -108,6 +108,9 @@ progressive ARM64 test enablement.
 - Defers: `ARM64_TIER` gating to Stage 181 (no ARM64 backend to exercise yet; tier 1
   "simple `statements/`" does not match the tree — `test/valid/statements/` holds only
   6 switch tests).
+- Also added during implementation: Mach-O GOT access for `extern` data objects
+  (dylib data such as `__stdoutp` is not RIP-reachable). Result: 2163/2163 portable
+  tests and C0→C1→C2 self-host pass on macOS ARM64 via Rosetta 2.
 
 ### Tier-to-category mapping
 
@@ -342,7 +345,7 @@ spec and implementation are committed.
 |-------|-------|------------------------------------------------------|-----------------------------------------------|------|
 | 0A    | 178   | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     | [x]  |
 | 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [x]  |
-| 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [ ]  |
+| 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [x]  |
 | 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [ ]  |
 | 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
 | 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
@@ -354,7 +357,7 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 0C (stage 180) — macOS-aware test infrastructure.
+**Next up:** Phase 1 (stage 181) — ARM64 codegen skeleton + `ARM64_TIER` gating.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase

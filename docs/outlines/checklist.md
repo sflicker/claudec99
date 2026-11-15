@@ -2559,6 +2559,27 @@ TODO items completed this stage:
 
 ---
 
+## Stage 180 - macOS-Aware Test Infrastructure (Phase 0C)
+
+- [x] `test/lib/platform.sh` (new): shared runner config. `HOST_OS`/`HOST_ARCH`, `TARGET` (env override; default `x86_64-macos` on Darwin, else `x86_64-linux`), `COMPILER_TARGET_FLAG`, `NASM_FMT` (`elf64`/`macho64`), `LINK_CMD` (`gcc -no-pie` / `clang -arch x86_64`), and `run_timeout` (`timeout` → `gtimeout` → perl alarm). `TARGET=arm64-macos` is rejected until Stage 181.
+- [x] Test runners sourcing `platform.sh`: `test/valid`, `test/integration`, `test/invalid`, `test/print_ast`, `test/print_tokens` (timeout only), `test/print_asm` (timeout, pinned to `--target=x86_64-linux` because its `.expected` files are Linux asm text), plus the four custom multi-file integration scripts. `run_test.sh` scripts use `LINK_CMD` in place of the legacy `ld -e main` link.
+- [x] `include/preprocessor.h` / `src/preprocessor.c`: `preprocess_set_target(Target)`; `x86_64-macos` predefines `__APPLE__` and `__MACH__` instead of `__linux__` and `__unix__`. `src/compiler.c` calls it after target resolution, so self-hosted macOS binaries auto-detect `x86_64-macos`.
+- [x] `test/include/stdio.h` and `test/include/errno.h`: `__APPLE__` branches (`stdin`/`stdout`/`stderr` → `__stdinp`/`__stdoutp`/`__stderrp`; `errno` via `__error()`).
+- [x] `src/codegen.c` (Mach-O only): `extern` data objects are accessed through the GOT (`mov r11, [rel _x wrt ..gotpcrel]`), since dylib data such as `__stdoutp` is not RIP-reachable. Linux output is byte-identical. Approved beyond the spec.
+- [x] `build.sh`: inline `run_timeout` replaces its two `timeout` calls.
+- [x] `src/version.c`: `VERSION_STAGE` set to `01800000`.
+- [x] New tests: `test/valid/preprocessor/test_target_platform_macros__42.c` (host-default target; exactly one OS family predefined, macros paired, `__x86_64__` present); `test/integration/test_target_predefined_macros/` (runs `--print-tokens` under both explicit `--target` values; host-independent). Two existing tests, `test_pp_predef_linux_ifdef__42` and `test_pp_predef_unix_ifdef__42`, gained an `#if defined(__APPLE__)` pass-through returning 42; their Linux assertions are unchanged.
+- [x] Verification: macOS ARM64 (Rosetta 2) portable suite 2163/2163 (249 unit, 1287 valid, 261 invalid, 195 integration, 50 print-AST, 100 print-tokens, 21 print-asm), up from 250 passed / 1911 failed before this stage. Linux-target `.asm` for all test sources is byte-identical to Stage 179 (except the `__TIME__` test and new tests).
+- [x] Self-host on macOS ARM64: C0 (AppleClang, arm64) → C1 (x86-64 Mach-O, built by C0) → C2 (built by C1); each stage 2163/2163 portable. Checkpoint commits `af02927` (C0), `291d8b5` (C1).
+- [ ] Self-host on Linux x86-64 not run (not runnable from the macOS host).
+- [ ] System-include, optional-library, and build-tool suites not run on macOS (Linux-only).
+- [ ] Follow-ups: `ld` warnings on macOS link (`pointer not aligned` in `peephole.o`/`codegen.o` data tables; `no platform load command` for NASM Mach-O objects lacking `LC_BUILD_VERSION`), both harmless; `bin/cc99` macOS support; `ARM64_TIER` and ARM64 skeleton (Stage 181).
+
+TODO items completed this stage:
+- No existing TODO items completed (Phase 0C roadmap item; see `docs/outlines/arm64-macos-backend-roadmap.md`)
+
+---
+
 ## TODO
 
 ### Preprocessor

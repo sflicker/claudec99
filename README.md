@@ -55,7 +55,7 @@ This produces `build/ccompiler`.
 |------|--------------|
 | `normal` | cmake build via GCC/Clang (default) |
 | `bootstrap` | Single self-hosted build: compiles all sources with `build/ccompiler` (passing `--target` for the host), assembles with `nasm` (`-f macho64` on macOS, `-f elf64` on Linux), links with `clang -arch x86_64` on macOS or `gcc -no-pie` on Linux. Requires a prior normal build. |
-| `self-host` | Full C0→C1→C2 cycle (self-contained): archives old named binaries to `build/previous/`, runs a fresh cmake build to produce `ccompiler-c0` (always GCC-built), bootstraps to `ccompiler-c1` (runs test suite, commits checkpoint), bootstraps to `ccompiler-c2` (runs test suite). `build/ccompiler` is left as C2. |
+| `self-host` | Full C0→C1→C2 cycle (self-contained): archives old named binaries to `build/previous/`, runs a fresh cmake build to produce `ccompiler-c0` (GCC on Linux, AppleClang on macOS), bootstraps to `ccompiler-c1` (runs test suite, commits checkpoint), bootstraps to `ccompiler-c2` (runs test suite). On macOS ARM64, C1 and C2 are x86-64 Mach-O binaries that run under Rosetta 2. `build/ccompiler` is left as C2. |
 | `fallback` | Uses `build/ccompiler` if present, otherwise normal cmake build. |
 
 `--timeout=N` sets the per-file compilation timeout for bootstrap builds (default: 300 s).
@@ -63,7 +63,7 @@ This produces `build/ccompiler`.
 The standard self-hosting workflow is:
 
 ```
-./build.sh --mode=self-host   # full C0→C1→C2 cycle with tests (GCC build included)
+./build.sh --mode=self-host   # full C0→C1→C2 cycle with tests (GCC or AppleClang build included)
 ```
 
 ## Compiler limits
@@ -248,6 +248,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 180 (macOS-aware test infrastructure):
+
+> Stage 180 makes the test harness and preprocessor target-aware so the full portable suite runs on an Apple Silicon host (macOS ARM64, executing x86-64 Mach-O under Rosetta 2). The shared runner config `test/lib/platform.sh` selects the target (`TARGET` env override, default `x86_64-macos` on Darwin and `x86_64-linux` elsewhere), NASM format, link command, and timeout wrapper; all runners source it. `x86_64-macos` predefines `__APPLE__` and `__MACH__` instead of `__linux__` and `__unix__`, so self-hosted macOS binaries auto-detect the correct target. Mach-O codegen reaches `extern` data through the GOT. Linux output is byte-identical to Stage 179. No tokenizer, parser, AST, or grammar changes. `TARGET=arm64-macos` is rejected until Stage 181. Portable suite: 2163/2163 on macOS ARM64, and the C0→C1→C2 self-host passes on macOS. The Linux x86-64 self-host is still pending.
 
 Through Stage 179 (x86-64 Mach-O cross-compile target):
 
@@ -914,7 +918,7 @@ Run everything from the project root after building:
 
 The runner aggregates per-suite results and prints a `Portable: P passed, F failed, T total` line. On Linux x86_64 it also runs `test/integration/run_tests_sysinclude.sh` (system-include suite) and `test/integration_sysinclude/run_tests.sh` (optional-library suite). As of stage 174 all 2074 portable tests pass (1286 valid, 261 invalid, 191 integration, 50 print-AST, 100 print-tokens, 21 print-asm; 165 unit); the system-include suite passes 191/191; the optional-library suite passes 2/2 (test_sdl2_init, test_zlib_compress).
 
-Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`.
+Individual suites can be run directly, e.g. `./test/valid/run_tests.sh`. Test runners honor a `TARGET=<target>` environment variable, and `test/lib/platform.sh` is the shared runner config.
 
 ## Optional library tests
 
