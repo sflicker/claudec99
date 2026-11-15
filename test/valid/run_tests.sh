@@ -18,9 +18,17 @@ mkdir -p "$WORK_DIR"
 pass=0
 fail=0
 total=0
+all_tests=0
 
 for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
     name=$(basename "$src" .c)
+    all_tests=$((all_tests + 1))
+
+    # Stage 181: under TARGET=arm64-macos only tests in ARM64_TIER scope
+    # (test/valid/arm64_tiers.txt) run; out-of-scope tests are not counted.
+    if [ "$TARGET" = "arm64-macos" ] && ! arm64_tier_includes "${src#"$SCRIPT_DIR"/}"; then
+        continue
+    fi
     total=$((total + 1))
 
     # Extract expected exit code from filename: test_<name>__<expected>.c
@@ -31,20 +39,20 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
         continue
     fi
 
-    # Compile .c -> .asm
+    # Compile .c -> .$ASM_EXT
     if ! run_timeout "$TIMEOUT" "$COMPILER" "$COMPILER_TARGET_FLAG" "${DEFAULT_IFLAGS[@]}" "$src" >/dev/null 2>&1; then
         echo "FAIL  $name  (compiler error)"
         fail=$((fail + 1))
         continue
     fi
 
-    asm_file="${name}.asm"
+    asm_file="${name}.${ASM_EXT}"
 
-    # Move .asm into work dir
+    # Move the assembly output into work dir
     mv "$asm_file" "$WORK_DIR/" 2>/dev/null
 
     # Assemble
-    if ! nasm -f "$NASM_FMT" "$WORK_DIR/${name}.asm" -o "$WORK_DIR/${name}.o" 2>/dev/null; then
+    if ! assemble "$WORK_DIR/${asm_file}" "$WORK_DIR/${name}.o" 2>/dev/null; then
         echo "FAIL  $name  (nasm error)"
         fail=$((fail + 1))
         continue
@@ -105,6 +113,9 @@ for src in $(find "$SCRIPT_DIR" -name '*.c' | sort); do
 done
 
 echo ""
+if [ "$TARGET" = "arm64-macos" ]; then
+    echo "ARM64_TIER=$ARM64_TIER: $total of $all_tests tests in scope"
+fi
 echo "Results: $pass passed, $fail failed, $total total"
 
 # Cleanup

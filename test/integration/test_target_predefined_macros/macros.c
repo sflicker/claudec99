@@ -15,3 +15,9 @@ int has_mach;
 #if defined(__x86_64__)
 int has_x86_64;
 #endif
+#if defined(__aarch64__)
+int has_aarch64;
+#endif
+#if defined(__arm64__)
+int has_arm64;
+#endif

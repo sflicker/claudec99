@@ -29,7 +29,7 @@ fi
 
 # Assemble all three.
 for base in globals_a globals_b main; do
-    if ! nasm -f "$NASM_FMT" "${base}.asm" -o "${base}.o" 2>/dev/null; then
+    if ! assemble "${base}.${ASM_EXT}" "${base}.o" 2>/dev/null; then
         echo "FAIL: nasm failed for ${base}" >&2
         exit 1
     fi

@@ -70,8 +70,8 @@ for src in "$SOURCE_DIR"/*.c; do
     echo "compiling: $src"
     "$COMPILER" "$COMPILER_TARGET_FLAG" "${COMPILER_FLAGS[@]}" "${DEFAULT_IFLAGS[@]}" "$src"
 
-    echo "assembling: ${src_name}.asm"
-    nasm -f "$NASM_FMT" "${src_name}.asm" -o "${src_name}.o"
+    echo "assembling: ${src_name}.${ASM_EXT}"
+    assemble "${src_name}.${ASM_EXT}" "${src_name}.o"
 
     OBJ_FILES+=("${src_name}.o")
 done
@@ -115,6 +115,6 @@ fi
 for src in "$SOURCE_DIR"/*.c; do
     [ -f "$src" ] || continue
     src_name=$(basename "$src" .c)
-    rm -f "${src_name}.asm" "${src_name}.o"
+    rm -f "${src_name}.${ASM_EXT}" "${src_name}.o"
 done
 rm -f "$BASENAME" "$STDOUT_FILE"

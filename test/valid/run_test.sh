@@ -31,8 +31,8 @@ echo "compiling: $SOURCE"
 "$COMPILER" "$COMPILER_TARGET_FLAG" "${DEFAULT_IFLAGS[@]}" "$SOURCE"
 
 # Assemble ASM -> object
-echo "assembling: ${BASENAME}.asm"
-nasm -f "$NASM_FMT" "${BASENAME}.asm" -o "${BASENAME}.o"
+echo "assembling: ${BASENAME}.${ASM_EXT}"
+assemble "${BASENAME}.${ASM_EXT}" "${BASENAME}.o"
 
 # Link object -> executable
 echo "linking: ${BASENAME}"
@@ -73,4 +73,4 @@ if [ -f "$EXPECTED_FILE" ]; then
 fi
 
 # Clean up
-rm -f "${BASENAME}.asm" "${BASENAME}.o" "${BASENAME}" "$STDOUT_FILE"
+rm -f "${BASENAME}.${ASM_EXT}" "${BASENAME}.o" "${BASENAME}" "$STDOUT_FILE"

@@ -26,6 +26,15 @@ WORK_DIR="$PROJECT_DIR/build/test_tmp_integration"
 TIMEOUT=${CLAUDEC99_TEST_TIMEOUT:-30}
 DEFAULT_IFLAGS=("-I${PROJECT_DIR}/test/include")
 
+# Stage 181: the integration suite needs the full backend; the ARM64 backend
+# reaches it at tier 10.
+if [ "$TARGET" = "arm64-macos" ]; then
+    echo "SKIP  integration suite (TARGET=arm64-macos; enabled at tier 10)"
+    echo ""
+    echo "Results: 0 passed, 0 failed, 0 total"
+    exit 0
+fi
+
 mkdir -p "$WORK_DIR"
 
 pass=0
@@ -129,14 +138,14 @@ for test_dir in "$SCRIPT_DIR"/*/; do
             break
         fi
 
-        if ! mv "$test_dir/${src_name}.asm" "$test_work/" 2>/dev/null; then
-            echo "FAIL  $name  (asm output missing: ${src_name}.asm)"
+        if ! mv "$test_dir/${src_name}.${ASM_EXT}" "$test_work/" 2>/dev/null; then
+            echo "FAIL  $name  (asm output missing: ${src_name}.${ASM_EXT})"
             fail=$((fail + 1))
             compile_failed=1
             break
         fi
 
-        if ! nasm -f "$NASM_FMT" "${nasm_debug_flags[@]}" "$test_work/${src_name}.asm" -o "$test_work/${src_name}.o" 2>/dev/null; then
+        if ! assemble "$test_work/${src_name}.${ASM_EXT}" "$test_work/${src_name}.o" "${nasm_debug_flags[@]}" 2>/dev/null; then
             echo "FAIL  $name  (nasm error: $src_name)"
             fail=$((fail + 1))
             compile_failed=1

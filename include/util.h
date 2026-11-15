@@ -18,6 +18,10 @@
 
 char *read_file(const char *path);
 void make_output_path(char *out, size_t out_size, const char *input_path);
+/* Stage 181: like make_output_path, but with a caller-chosen extension
+ * (including the dot), e.g. ".s" for the arm64-macos target. */
+void make_output_path_ext(char *out, size_t out_size, const char *input_path,
+                          const char *ext);
 
 /* Stage 83: ISO C99 replacement for POSIX strdup (not in C99). Returns a
  * malloc'd copy of s, or NULL if s is NULL or allocation fails. */

@@ -11,6 +11,7 @@
 #include "ast.h"
 #include "ast_pretty_printer.h"
 #include "codegen.h"
+#include "codegen_arm64.h"
 #include "lexer.h"
 #include "optimize.h"
 #include "parser.h"
@@ -325,7 +326,10 @@ static int compile_one_file(const char *source_file,
 
     /* Generate output */
     char output_path[512];
-    make_output_path(output_path, sizeof(output_path), source_file);
+    /* Stage 181: arm64-macos emits Apple/GNU-syntax assembly as <name>.s
+     * (assembled by clang); the x86 targets keep NASM <name>.asm. */
+    make_output_path_ext(output_path, sizeof(output_path), source_file,
+                         target == TARGET_ARM64_MACOS ? ".s" : ".asm");
 
     FILE *out = fopen(output_path, "w");
     if (!out) {
@@ -337,18 +341,28 @@ static int compile_one_file(const char *source_file,
         return 1;
     }
 
-    CodeGen cg;
-    codegen_init(&cg, out);
-    cg.warnings_are_errors = warnings_are_errors;
-    cg.emit_debug = emit_debug;
-    /* Stage 179: Mach-O symbol conventions for the x86_64-macos target. */
-    cg.target_macho = (target == TARGET_X86_64_MACOS);
-    codegen_translation_unit(&cg, ast);
-    codegen_free(&cg);
+    if (target == TARGET_ARM64_MACOS) {
+        /* Stage 181: ARM64 backend (Phase 1 skeleton).  -g is accepted
+         * and ignored (no ARM64 debug directives yet). */
+        CodeGenArm64 acg;
+        codegen_arm64_init(&acg, out);
+        codegen_arm64_translation_unit(&acg, ast);
+        codegen_arm64_free(&acg);
+    } else {
+        CodeGen cg;
+        codegen_init(&cg, out);
+        cg.warnings_are_errors = warnings_are_errors;
+        cg.emit_debug = emit_debug;
+        /* Stage 179: Mach-O symbol conventions for the x86_64-macos target. */
+        cg.target_macho = (target == TARGET_X86_64_MACOS);
+        codegen_translation_unit(&cg, ast);
+        codegen_free(&cg);
+    }
 
     fclose(out);
 
-    if (opt_level >= 2) {
+    /* Stage 181: the peephole pass matches x86 NASM text; skipped for arm64. */
+    if (opt_level >= 2 && target != TARGET_ARM64_MACOS) {
         int n_pats;
         const PeepholePattern *pats = peephole_builtin_patterns(&n_pats);
         if (peephole_run_file(output_path, pats, n_pats) != 0) {
@@ -416,8 +430,8 @@ int main(int argc, char **argv) {
                 "  -O1                Enable AST-level optimization\n"
                 "  -O2                Enable peephole optimization\n"
                 "  -g                 Emit DWARF debug information\n"
-                "  --target=<target>  Code generation target: x86_64-linux, x86_64-macos\n"
-                "                     (default: host platform)\n"
+                "  --target=<target>  Code generation target: x86_64-linux, x86_64-macos,\n"
+                "                     arm64-macos (experimental) (default: host platform)\n"
                 "  -std=<std>         Language standard (accepted; always compiled as C99)\n"
                 "  -isystem <dir>     System include path (treated as -I)\n"
                 "  -w                 Suppress all warnings\n"
@@ -565,11 +579,6 @@ int main(int argc, char **argv) {
 #else
         target = TARGET_X86_64_LINUX;
 #endif
-    }
-    if (target == TARGET_ARM64_MACOS) {
-        fprintf(stderr, "error: target 'arm64-macos' is not yet implemented\n");
-        free(defines); free(include_dirs); free(source_files);
-        return 1;
     }
     /* Stage 180: target-dependent predefined macros (__APPLE__ vs __linux__). */
     preprocess_set_target(target);

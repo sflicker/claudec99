@@ -22,9 +22,9 @@ if ! "$COMPILER" "$COMPILER_TARGET_FLAG" $IFLAGS \
     exit 1
 fi
 
-# Check both .asm files were produced in the working directory.
-if [ ! -f "file_a.asm" ] || [ ! -f "file_b.asm" ]; then
-    echo "FAIL: expected file_a.asm and file_b.asm" >&2
+# Check both assembly files were produced in the working directory.
+if [ ! -f "file_a.${ASM_EXT}" ] || [ ! -f "file_b.${ASM_EXT}" ]; then
+    echo "FAIL: expected file_a.${ASM_EXT} and file_b.${ASM_EXT}" >&2
     exit 1
 fi
 
@@ -36,7 +36,7 @@ fi
 
 # Assemble all three.
 for base in file_a file_b main; do
-    if ! nasm -f "$NASM_FMT" "${base}.asm" -o "${base}.o" 2>/dev/null; then
+    if ! assemble "${base}.${ASM_EXT}" "${base}.o" 2>/dev/null; then
         echo "FAIL: nasm failed for ${base}" >&2
         exit 1
     fi

@@ -65,6 +65,7 @@ SRC_FILES=(
     src/ast.c
     src/ast_pretty_printer.c
     src/codegen.c
+    src/codegen_arm64.c
     src/lexer.c
     src/parser.c
     src/preprocessor.c

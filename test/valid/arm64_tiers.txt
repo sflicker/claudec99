@@ -1,0 +1,8 @@
+# ARM64 test tiers — see docs/outlines/arm64-macos-backend-roadmap.md.
+# Format: <tier> <path relative to test/valid>   (a file, or a directory = all tests under it)
+# A test runs under TARGET=arm64-macos when an entry with tier <= ARM64_TIER matches it.
+1 misc/test_return__42.c
+1 control_flow/test_return__42.c
+1 arithmetic/test_octal_zero__0.c
+1 misc/test_return_zero__0.c
+1 misc/test_return_255__255.c

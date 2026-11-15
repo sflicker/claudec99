@@ -2427,11 +2427,18 @@ char *preprocess_with_defines_and_includes(const char *source,
         macro_define(&macros, "__TIME__", strlen("__TIME__"), NULL, -1, 0, NULL, time_buf, strlen(time_buf));
     }
 
-    /* Target/ABI predefined macros — x86_64 LP64.
+    /* Target/ABI predefined macros — LP64.
      * Stage 180: OS macros depend on the target — __linux__/__unix__ for
-     * x86_64-linux, __APPLE__/__MACH__ for x86_64-macos. */
-    macro_define(&macros, "__x86_64__",         strlen("__x86_64__"),         NULL, -1, 0, NULL, "1", 1);
-    if (g_pp_target == TARGET_X86_64_MACOS) {
+     * x86_64-linux, __APPLE__/__MACH__ for the macOS targets.
+     * Stage 181: arch macros depend on the target — __aarch64__/__arm64__
+     * for arm64-macos, __x86_64__ otherwise. */
+    if (g_pp_target == TARGET_ARM64_MACOS) {
+        macro_define(&macros, "__aarch64__",     strlen("__aarch64__"),         NULL, -1, 0, NULL, "1", 1);
+        macro_define(&macros, "__arm64__",       strlen("__arm64__"),           NULL, -1, 0, NULL, "1", 1);
+    } else {
+        macro_define(&macros, "__x86_64__",      strlen("__x86_64__"),          NULL, -1, 0, NULL, "1", 1);
+    }
+    if (g_pp_target == TARGET_X86_64_MACOS || g_pp_target == TARGET_ARM64_MACOS) {
         macro_define(&macros, "__APPLE__",       strlen("__APPLE__"),           NULL, -1, 0, NULL, "1", 1);
         macro_define(&macros, "__MACH__",        strlen("__MACH__"),            NULL, -1, 0, NULL, "1", 1);
     } else {

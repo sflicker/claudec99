@@ -26,9 +26,9 @@ if [ "$status" -eq 0 ]; then
     exit 1
 fi
 
-# good.asm must have been produced despite the earlier error.
-if [ ! -f "good.asm" ]; then
-    echo "FAIL: good.asm not produced after bad.c error" >&2
+# good.$ASM_EXT must have been produced despite the earlier error.
+if [ ! -f "good.${ASM_EXT}" ]; then
+    echo "FAIL: good.${ASM_EXT} not produced after bad.c error" >&2
     exit 1
 fi
 

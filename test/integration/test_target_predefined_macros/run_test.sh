@@ -26,4 +26,6 @@ check() {    # usage: check <target> <expected>
 
 check x86_64-linux "has_linux has_unix has_x86_64 "
 check x86_64-macos "has_apple has_mach has_x86_64 "
+# Stage 181: arm64-macos — Apple OS macros, ARM64 arch macros, no __x86_64__.
+check arm64-macos  "has_apple has_mach has_aarch64 has_arm64 "
 exit 0

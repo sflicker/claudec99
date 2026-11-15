@@ -93,12 +93,13 @@ char *read_file(const char *path) {
     return buf;
 }
 
-void make_output_path(char *out, size_t out_size, const char *input_path) {
+void make_output_path_ext(char *out, size_t out_size, const char *input_path,
+                          const char *ext) {
     /* Find the basename: skip any directory separators */
     const char *base = strrchr(input_path, '/');
     base = base ? base + 1 : input_path;
 
-    /* Copy basename and replace extension with .asm */
+    /* Copy basename and replace extension with ext */
     strncpy(out, base, out_size - 1);
     out[out_size - 1] = '\0';
 
@@ -106,7 +107,11 @@ void make_output_path(char *out, size_t out_size, const char *input_path) {
     if (dot) {
         *dot = '\0';
     }
-    strncat(out, ".asm", out_size - strlen(out) - 1);
+    strncat(out, ext, out_size - strlen(out) - 1);
+}
+
+void make_output_path(char *out, size_t out_size, const char *input_path) {
+    make_output_path_ext(out, out_size, input_path, ".asm");
 }
 
 /* Stage 96: reset per-file error state between files in a multi-file

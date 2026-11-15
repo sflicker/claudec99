@@ -23,7 +23,7 @@ if ! "$COMPILER" "$COMPILER_TARGET_FLAG" "$SCRIPT_DIR/main.c" 2>/dev/null; then
 fi
 
 for base in shapes main; do
-    if ! nasm -f "$NASM_FMT" "${base}.asm" -o "${base}.o" 2>/dev/null; then
+    if ! assemble "${base}.${ASM_EXT}" "${base}.o" 2>/dev/null; then
         echo "FAIL: nasm failed for ${base}" >&2
         exit 1
     fi
