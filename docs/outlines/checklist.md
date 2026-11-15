@@ -2542,6 +2542,23 @@ TODO items completed this stage:
 
 ---
 
+## Stage 179 - x86-64 Mach-O Cross-Compile Target (Phase 0B)
+
+- [x] `include/target.h`: new `Target` enum (`TARGET_X86_64_LINUX`, `TARGET_X86_64_MACOS`, `TARGET_ARM64_MACOS`).
+- [x] `src/compiler.c`: `--target=x86_64-linux|x86_64-macos|arm64-macos`; unknown target is an error (exit 1); `arm64-macos` parses but exits with "not yet implemented" (exit 1); auto-detect via `#if defined(__APPLE__)` when omitted; `cg.target_macho` set after `codegen_init`; `--target` listed in `--help`.
+- [x] `include/codegen.h` / `src/codegen.c`: `int target_macho` on `CodeGen`; `int init_label_is_internal` on `GlobalVar`; `sp(cg)` helper (`_` on Mach-O, empty otherwise) applied to global/extern directives, function and global label definitions, `call`, `[rel name]` references, and `dq` address-constant initializers. Shared global load/store helpers take an explicit prefix argument so `Lstatic_` labels are never prefixed. Internal labels (`Lstr`, `Lfc`, `Lfp_*`, `Lstatic_*`, `Lcompound_*`, `.L*`) are never prefixed.
+- [x] `src/codegen.c`: `.note.GNU-stack` footer omitted when `target_macho` is set.
+- [x] `build.sh`: `HOST_OS` / `HOST_ARCH` via `uname`; bootstrap selects `macho64` + `clang -arch x86_64` + `--target=x86_64-macos` on Darwin, and `elf64` + `gcc -no-pie` + `--target=x86_64-linux` elsewhere.
+- [x] Version update: `src/version.c` set to `01790000` (stage 178 left it at `01770000`).
+- [x] Verification: Linux `.asm` output byte-identical to the pre-change compiler across all test and source files (1523 files; only the expected `__TIME__` test differs). macOS end-to-end under Rosetta 2: 1282/1286 `test/valid` programs pass; the 4 failures are glibc-only symbol names in test stubs (out of scope).
+- [x] Test results: no new tests; portable totals unchanged from Stage 177. Standard suite on macOS: 250 passed / 1911 failed, identical to pre-change baseline (host issues: no `timeout`, ELF-only runners; Phase 0C).
+- [ ] Self-host C0→C1→C2 not run on this macOS host; deferred to a Linux host or Phase 0C.
+
+TODO items completed this stage:
+- No existing TODO items completed (Phase 0B roadmap item; see `docs/outlines/arm64-macos-backend-roadmap.md`)
+
+---
+
 ## TODO
 
 ### Preprocessor

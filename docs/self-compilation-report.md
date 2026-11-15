@@ -1,5 +1,34 @@
 # Self-Compilation Diagnostic Report
 
+## Stage 179 self-hosting test — deferred
+
+**Date:** 2026-11-15
+**Method:** not run (`./build.sh --mode=self-host` deferred to a Linux host)
+
+Stage 179 was implemented on a macOS ARM64 host, where the self-host cycle
+cannot run yet: macOS has no `timeout` command (used by `build.sh` and the
+test runners), and the test runners are still ELF/Linux-only (Phase 0C,
+stage 180). A macOS self-build via `--target=x86_64-macos` would also fail
+to link because the `test/include` stub headers use glibc-only symbol
+names (`stderr`, `__errno_location`).
+
+Substitute verification on this host:
+
+- Linux-target regression: every test source and every compiler source
+  not modified this stage compiled with `--target=x86_64-linux` produced
+  `.asm` byte-identical to the pre-change compiler (sole difference: the
+  `__TIME__` test).
+- macOS target: 1282/1286 `test/valid` programs pass under Rosetta 2
+  (4 link failures from glibc-only stub header names).
+
+| Step | Binary | Version | Tests |
+|------|--------|---------|-------|
+| C0 | `build/ccompiler` (AppleClang) | `00.03.01790000.01300` | Linux asm byte-identical; 1282/1286 valid via Rosetta |
+| C1 | — | — | deferred to Linux |
+| C2 | — | — | deferred to Linux |
+
+---
+
 ## Issues found during stage 176 self-hosting test
 
 None. The fix adds one new branch to `parse_statement` (`src/parser.c`) that

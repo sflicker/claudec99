@@ -1,7 +1,7 @@
 # ClaudeC99
 
 A staged, educational C99 compiler built using Claude Code. The compiler
-translates a growing subset of C99 to x86_64 assembly (NASM, ELF64, Linux).
+translates a growing subset of C99 to x86_64 assembly (NASM; ELF64 on Linux, and Mach-O64 on macOS via `--target=x86_64-macos`).
 
 ## Pipeline
 
@@ -54,7 +54,7 @@ This produces `build/ccompiler`.
 | Mode | What it does |
 |------|--------------|
 | `normal` | cmake build via GCC/Clang (default) |
-| `bootstrap` | Single self-hosted build: compiles all sources with `build/ccompiler`, assembles with `nasm`, links with `gcc -no-pie`. Requires a prior normal build. |
+| `bootstrap` | Single self-hosted build: compiles all sources with `build/ccompiler` (passing `--target` for the host), assembles with `nasm` (`-f macho64` on macOS, `-f elf64` on Linux), links with `clang -arch x86_64` on macOS or `gcc -no-pie` on Linux. Requires a prior normal build. |
 | `self-host` | Full C0→C1→C2 cycle (self-contained): archives old named binaries to `build/previous/`, runs a fresh cmake build to produce `ccompiler-c0` (always GCC-built), bootstraps to `ccompiler-c1` (runs test suite, commits checkpoint), bootstraps to `ccompiler-c2` (runs test suite). `build/ccompiler` is left as C2. |
 | `fallback` | Uses `build/ccompiler` if present, otherwise normal cmake build. |
 
@@ -125,7 +125,7 @@ fixed-capacity writes anywhere, and the only other tabled entries are
 ## Usage
 
 ```
-ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-Wall] [-Wextra] [-w] [--max-errors=N] [--sysroot=<dir>] [-std=<std>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] [-isystem <dir>] <source.c> [<source2.c> ...]
+ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-Wall] [-Wextra] [-w] [--max-errors=N] [--target=<target>] [--sysroot=<dir>] [-std=<std>] [-O0|-O1|-O2] [-g] [-DNAME[=VAL]] [-I<dir>] [-isystem <dir>] <source.c> [<source2.c> ...]
 ```
 
 - Default: writes `<name>.asm` for each source file next to the invocation directory.
@@ -147,6 +147,7 @@ ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-W
 - `-std=<std>` / `-ansi`: accepted and ignored (always compiles as C99).
 - `-isystem <dir>`: treated as `-I<dir>` (system include path).
 - `-w`: suppress all warnings (no-op until warning diagnostics are implemented).
+- `--target=<target>`: code generation target. `x86_64-linux` (ELF64, `main` symbols, `.note.GNU-stack` footer) or `x86_64-macos` (Mach-O64, `_`-prefixed C symbols, no `.note.GNU-stack` footer). `arm64-macos` is accepted, but reports "not yet implemented" and exits 1. Default: the host platform (`x86_64-macos` on macOS, `x86_64-linux` otherwise).
 
 End-to-end build and run:
 
@@ -247,6 +248,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 179 (x86-64 Mach-O cross-compile target):
+
+> Stage 179 adds an `x86_64-macos` code generation target (Phase 0B of the ARM64/macOS roadmap). `ccompiler --target=x86_64-macos` emits x86-64 NASM that `nasm -f macho64` assembles into Mach-O64 objects, which `clang -arch x86_64` links and which run under Rosetta 2 on Apple Silicon. The instruction selection, register model, and section layout are unchanged from the Linux backend. Two output details differ: C-visible symbols get a `_` prefix (`main` becomes `_main`), and the ELF-only `section .note.GNU-stack` footer is omitted. Internal labels (`Lstr*`, `Lfc*`, `Lstatic_*`, `.L*`) are never prefixed. `--target` accepts `x86_64-linux`, `x86_64-macos`, and `arm64-macos`; `arm64-macos` is parsed but not yet implemented. When `--target` is omitted, the host platform is used. `build.sh` passes the target explicitly. No tokenizer, parser, AST, or grammar changes, and no new tests: portable suite totals are unchanged from Stage 177. Verification was a byte-identical Linux `.asm` regression and macOS end-to-end runs under Rosetta 2 (1282/1286 `test/valid` programs; the 4 failures are glibc-only symbol names in test stubs). The self-host cycle has not been run on macOS yet.
 
 Through Stage 177 (assembler: lexer and parser infrastructure):
 

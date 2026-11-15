@@ -38,7 +38,7 @@ no assembly step), and integration tests with `.error` files (compile-error chec
 
 ---
 
-## Phase 0B — x86-64 Mach-O Cross-Compile Target ⬜ Stage 179
+## Phase 0B — x86-64 Mach-O Cross-Compile Target ✅ Stage 179
 
 **Goal:** ARM64-hosted compiler emits x86-64 Mach-O binaries that run under Rosetta 2.
 
@@ -332,7 +332,7 @@ spec and implementation are committed.
 | Phase | Stage | Key deliverable                                      | Test tier unlocked                            | Done |
 |-------|-------|------------------------------------------------------|-----------------------------------------------|------|
 | 0A    | 178   | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     | [x]  |
-| 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [ ]  |
+| 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [x]  |
 | 0C    | 180   | macOS-aware test runner with `ARM64_TIER`            | Infrastructure only                           | [ ]  |
 | 1     | 181   | ARM64 skeleton, `return 0` works natively            | Tier 1 — simple return                        | [ ]  |
 | 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
@@ -345,7 +345,7 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 0B (stage 179) — x86-64 Mach-O cross-compile target.
+**Next up:** Phase 0C (stage 180) — macOS-aware test infrastructure.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase
