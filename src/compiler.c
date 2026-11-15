@@ -16,6 +16,7 @@
 #include "parser.h"
 #include "peephole.h"
 #include "preprocessor.h"
+#include "target.h"
 #include "token.h"
 #include "util.h"
 #include "version.h"
@@ -272,6 +273,7 @@ static int compile_one_file(const char *source_file,
                             int warnings_are_errors,
                             int opt_level,
                             int emit_debug,
+                            Target target,
                             const char **defines, int n_defines,
                             const char **include_dirs, int n_include_dirs) {
     /* Read source and preprocess.
@@ -339,6 +341,8 @@ static int compile_one_file(const char *source_file,
     codegen_init(&cg, out);
     cg.warnings_are_errors = warnings_are_errors;
     cg.emit_debug = emit_debug;
+    /* Stage 179: Mach-O symbol conventions for the x86_64-macos target. */
+    cg.target_macho = (target == TARGET_X86_64_MACOS);
     codegen_translation_unit(&cg, ast);
     codegen_free(&cg);
 
@@ -372,6 +376,9 @@ int main(int argc, char **argv) {
     int warn_level = 0;
     int opt_level = 0;
     int emit_debug = 0;
+    /* Stage 179: code generation target; auto-detected when --target is omitted. */
+    Target target = TARGET_X86_64_LINUX;
+    int target_set = 0;
     const char *sysroot = NULL;
     const char **defines = NULL;
     int n_defines = 0;
@@ -409,6 +416,8 @@ int main(int argc, char **argv) {
                 "  -O1                Enable AST-level optimization\n"
                 "  -O2                Enable peephole optimization\n"
                 "  -g                 Emit DWARF debug information\n"
+                "  --target=<target>  Code generation target: x86_64-linux, x86_64-macos\n"
+                "                     (default: host platform)\n"
                 "  -std=<std>         Language standard (accepted; always compiled as C99)\n"
                 "  -isystem <dir>     System include path (treated as -I)\n"
                 "  -w                 Suppress all warnings\n"
@@ -494,6 +503,22 @@ int main(int argc, char **argv) {
             /* suppress all warnings — no-op until warning diagnostics land */
         } else if (strcmp(argv[i], "-g") == 0) {
             emit_debug = 1;
+        } else if (strncmp(argv[i], "--target=", 9) == 0) {
+            const char *tname = argv[i] + 9;
+            if (strcmp(tname, "x86_64-linux") == 0) {
+                target = TARGET_X86_64_LINUX;
+            } else if (strcmp(tname, "x86_64-macos") == 0) {
+                target = TARGET_X86_64_MACOS;
+            } else if (strcmp(tname, "arm64-macos") == 0) {
+                target = TARGET_ARM64_MACOS;
+            } else {
+                fprintf(stderr, "error: unknown target '%s' "
+                        "(expected x86_64-linux, x86_64-macos, or arm64-macos)\n",
+                        tname);
+                free(defines); free(include_dirs); free(source_files);
+                return 1;
+            }
+            target_set = 1;
         } else if (strncmp(argv[i], "-I", 2) == 0) {
             const char *ipath;
             if (argv[i][2] != '\0') {
@@ -531,6 +556,20 @@ int main(int argc, char **argv) {
             }
             source_files[n_source_files++] = argv[i];
         }
+    }
+
+    /* Stage 179: auto-detect the target from the host when --target is omitted. */
+    if (!target_set) {
+#if defined(__APPLE__)
+        target = TARGET_X86_64_MACOS;
+#else
+        target = TARGET_X86_64_LINUX;
+#endif
+    }
+    if (target == TARGET_ARM64_MACOS) {
+        fprintf(stderr, "error: target 'arm64-macos' is not yet implemented\n");
+        free(defines); free(include_dirs); free(source_files);
+        return 1;
     }
 
     if (n_source_files == 0) {
@@ -580,6 +619,7 @@ int main(int argc, char **argv) {
                              warnings_are_errors,
                              opt_level,
                              emit_debug,
+                             target,
                              defines, n_defines,
                              include_dirs, n_include_dirs) != 0)
             overall_status = 1;

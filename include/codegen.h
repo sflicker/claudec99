@@ -71,6 +71,10 @@ typedef struct {
      * Stage 95-11: pointer into lexer-owned storage or util_strdup'd buffer. */
     int is_label_init;
     const char *init_label;
+    /* Stage 179: set when init_label is an internal compiler label (Lstr%d
+     * from a string-literal initializer) rather than a C symbol, so it
+     * must not receive the Mach-O `_` prefix. */
+    int init_label_is_internal;
     /* Stage 39: set when the variable itself is const-qualified. */
     int is_const;
     /* Stage 40: set when the variable has an unsigned integer type. */
@@ -215,6 +219,9 @@ typedef struct {
     /* Last emitted %line position — used to suppress duplicate directives. */
     const char *debug_last_file;
     int         debug_last_line;
+    /* Stage 179: 1 when emitting Mach-O64 output (x86_64-macos target).
+     * Affects C symbol prefix (_ required) and .note.GNU-stack suppression. */
+    int target_macho;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *output);

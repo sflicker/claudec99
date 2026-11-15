@@ -28,6 +28,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Stage 179: host platform detection (selects assembler format and linker).
+HOST_OS=$(uname -s)   # Linux or Darwin
+HOST_ARCH=$(uname -m) # x86_64 or arm64
 MODE="normal"
 BUILD_TIMEOUT=300
 
@@ -93,6 +97,20 @@ do_bootstrap_build() {
     build_num=$(git -C "$SCRIPT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
     echo "Build number: $build_num"
 
+    # Stage 179: Mach-O64 + clang on macOS (runs under Rosetta 2 on Apple
+    # Silicon); ELF64 + gcc -no-pie on Linux.
+    local NASM_FMT LINK_CMD COMPILER_TARGET
+    if [ "$HOST_OS" = "Darwin" ]; then
+        NASM_FMT="macho64"
+        LINK_CMD=(clang -arch x86_64)
+        COMPILER_TARGET="--target=x86_64-macos"
+    else
+        NASM_FMT="elf64"
+        LINK_CMD=(gcc -no-pie)
+        COMPILER_TARGET="--target=x86_64-linux"
+    fi
+    echo "Host: $HOST_OS $HOST_ARCH ($COMPILER_TARGET)"
+
     local outdir="$SCRIPT_DIR/build/bootstrap_tmp"
     mkdir -p "$outdir"
 
@@ -108,6 +126,7 @@ do_bootstrap_build() {
         echo "  Compiling $src ..."
         # Run the compiler from the output dir so the .asm lands there.
         if ! (cd "$outdir" && timeout "$BUILD_TIMEOUT" "$ccompiler" \
+                "$COMPILER_TARGET" \
                 -I "$SCRIPT_DIR/include" \
                 -I "$SCRIPT_DIR/test/include" \
                 "-DVERSION_BUILTBY=${builtby}" \
@@ -119,7 +138,7 @@ do_bootstrap_build() {
         fi
 
         # Assemble.
-        if ! nasm -f elf64 "$asm_file" -o "$obj_file"; then
+        if ! nasm -f "$NASM_FMT" "$asm_file" -o "$obj_file"; then
             echo "FAIL: nasm failed for $name" >&2
             rm -rf "$outdir"
             return 1
@@ -129,7 +148,7 @@ do_bootstrap_build() {
     done
 
     echo "  Linking ..."
-    if ! gcc -no-pie "${obj_files[@]}" -o "$SCRIPT_DIR/build/ccompiler"; then
+    if ! "${LINK_CMD[@]}" "${obj_files[@]}" -o "$SCRIPT_DIR/build/ccompiler"; then
         echo "FAIL: link failed" >&2
         rm -rf "$outdir"
         return 1
