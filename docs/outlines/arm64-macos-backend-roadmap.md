@@ -12,7 +12,7 @@ The front-end (lexer, parser, AST, optimizer, preprocessor) is pure C99 standard
 
 ---
 
-## Phase 0A — Build the Compiler on macOS ARM64
+## Phase 0A — Build the Compiler on macOS ARM64 ✅ Stage 178
 
 **Goal:** `bin/ccompiler` builds and runs on macOS ARM64.
 
@@ -38,7 +38,7 @@ no assembly step), and integration tests with `.error` files (compile-error chec
 
 ---
 
-## Phase 0B — x86-64 Mach-O Cross-Compile Target
+## Phase 0B — x86-64 Mach-O Cross-Compile Target ⬜ Stage 179
 
 **Goal:** ARM64-hosted compiler emits x86-64 Mach-O binaries that run under Rosetta 2.
 
@@ -72,7 +72,7 @@ serves as a correctness baseline while the native ARM64 backend is built.
 
 ---
 
-## Phase 0C — macOS-Aware Test Infrastructure
+## Phase 0C — macOS-Aware Test Infrastructure ⬜ Stage 180
 
 **Goal:** Test runners detect platform, select the right assembler/linker, and support
 progressive ARM64 test enablement.
@@ -324,23 +324,28 @@ Then run the C0→C1→C2 self-hosting bootstrap with the ARM64 backend:
 
 ---
 
-## Implementation Summary
+## Implementation Progress
 
-| Phase | Key deliverable                                      | Test tier unlocked                            |
-|-------|------------------------------------------------------|-----------------------------------------------|
-| 0A    | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     |
-| 0B    | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                |
-| 0C    | macOS-aware test runner with `ARM64_TIER`            | Infrastructure only                           |
-| 1     | ARM64 skeleton, `return 0` works natively            | Tier 1 — simple return                        |
-| 2     | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    |
-| 3     | Control flow                                         | Tier 3 — comparisons/control_flow             |
-| 4     | Functions and calls                                  | Tier 4 — functions                            |
-| 5     | Globals, string literals                             | Tier 5 — strings/declarations                 |
-| 6     | Pointers, arrays, structs                            | Tier 6 — pointers/arrays/structs              |
-| 7     | Type-width loads, sign extension                     | Tier 7 — chars/casting/bitwise                |
-| 8     | Float and double                                     | Tier 8 — floating_point                       |
-| 9     | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       |
-| 10    | Full test suite + ARM64 self-host                    | Tier 10 — complete                            |
+Each phase has a spec document in `docs/stages/` and is checked off here when both
+spec and implementation are committed.
+
+| Phase | Stage | Key deliverable                                      | Test tier unlocked                            | Done |
+|-------|-------|------------------------------------------------------|-----------------------------------------------|------|
+| 0A    | 178   | Compiler binary runs natively on M1                  | `print_tokens/`, `print_ast/`, `invalid/`     | [x]  |
+| 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [ ]  |
+| 0C    | 180   | macOS-aware test runner with `ARM64_TIER`            | Infrastructure only                           | [ ]  |
+| 1     | 181   | ARM64 skeleton, `return 0` works natively            | Tier 1 — simple return                        | [ ]  |
+| 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
+| 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
+| 4     | 184   | Functions and calls                                  | Tier 4 — functions                            | [ ]  |
+| 5     | 185   | Globals, string literals                             | Tier 5 — strings/declarations                 | [ ]  |
+| 6     | 186   | Pointers, arrays, structs                            | Tier 6 — pointers/arrays/structs              | [ ]  |
+| 7     | 187   | Type-width loads, sign extension                     | Tier 7 — chars/casting/bitwise                | [ ]  |
+| 8     | 188   | Float and double                                     | Tier 8 — floating_point                       | [ ]  |
+| 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
+| 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
+
+**Next up:** Phase 0B (stage 179) — x86-64 Mach-O cross-compile target.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase
