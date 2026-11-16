@@ -2601,6 +2601,26 @@ TODO items completed this stage:
 
 ---
 
+## Stage 182 - ARM64 Integer Arithmetic and Local Variables (Phase 2)
+
+- [x] `include/codegen_arm64.h` / `src/codegen_arm64.c`: `CodeGenArm64` gains local tracking (`Arm64Local`, scope stack, frame size, return width). Straight-line signed `int`/`long`/`long long` code in parameterless functions: block-scope locals with initializers, nested blocks with shadowing, `return <expr>;`, expression statements, integer literals of any size, parentheses.
+- [x] Operators: binary `+ - * / %`, `& | ^`, `<< >>` (`asr`); unary `-`, `~`, `+`; assignment (named and general lvalue forms, local `VAR_REF` only); prefix and postfix `++`/`--` on locals; comma. Values use a stack machine in `w0`/`x0`, with int to long `sxtw` and long to int truncation.
+- [x] Constants: `mov` for 0..65535, otherwise `movz` plus `movk` per non-zero 16-bit chunk. The Stage 181 out-of-range literal error is removed.
+- [x] Frame: each declaration gets its own slot (int 4 bytes, long 8 bytes, never reused), frame rounded to 16 bytes, `[x29, #-off]` addressing (deeper than 256 bytes via `sub x9, x29, #off`), error `stack frame larger than 4095 bytes not yet supported` above the limit. Fall-through returns 0 through `L<func>_epilogue`.
+- [x] Unsupported constructs are rejected with `arm64-macos: <construct> not yet supported`, including comparisons, logical operators, unsigned, char, short, pointer, array, struct, floating-point, globals, static and extern locals, function parameters, and return without a value. Empty function bodies are accepted.
+- [x] `test/valid/arm64_tiers.txt`: `# Tier 2 — Phase 2 (stage 182)` section, 68 entries (64 existing plus 4 new; `test_octal_zero__0` stays tier 1).
+- [x] New tests: `test/valid/arithmetic/test_large_literals__17.c`, `test/valid/arithmetic/test_long_to_int_truncate__42.c`, `test/valid/arithmetic/test_main_falls_off_end__0.c`, `test/valid/expressions/test_nested_block_shadow__42.c`. `test/integration/test_arm64_skeleton_asm/`: `big_literal.c` is a positive `movz`/`movk` check; `local_var.c` replaced by `comparison.c` (`return 1 < 2;`) as the unsupported-construct case.
+- [x] `src/version.c`: `VERSION_STAGE` set to `01820000`. No tokenizer, parser, AST, or grammar changes.
+- [x] Verification: native ARM64 `TARGET=arm64-macos ARM64_TIER=2` 73 of 1293 in scope, 73/73 pass; `ARM64_TIER=1` 5/5. Portable 2170/2170 (249 unit, 1293 valid, 261 invalid, 196 integration, 50 print-AST, 100 print-tokens, 21 print-asm). Linux-target `.asm` byte-identical to Stage 181 (1706 sources with output, 0 differences).
+- [x] Self-host on macOS ARM64: C0 `.01323`, C1 `.01324`, C2 `.01325`; each stage 2170/2170, and C2 drives the tier-2 run 73/73. Checkpoint commits `082da5b` (C0), `5e1ce1b` (C1); report `f65d7c5`.
+- [ ] Self-host on Linux x86-64 not run (pending).
+- [ ] Follow-ups: unsigned arithmetic (`udiv`, `lsr`, Phase 7); control flow (Phase 3); parameters and calls (Phase 4); compile-error line numbers offset by ~5 lines in both backends (pre-existing); macOS `ld` warnings; `bin/cc99` macOS support.
+
+TODO items completed this stage:
+- No existing TODO items completed (Phase 2 roadmap item; see `docs/outlines/arm64-macos-backend-roadmap.md`)
+
+---
+
 ## TODO
 
 ### Preprocessor

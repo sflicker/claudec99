@@ -147,7 +147,7 @@ ccompiler [--help] [--version] [--print-ast | --print-tokens] [-v] [-Werror] [-W
 - `-std=<std>` / `-ansi`: accepted and ignored (always compiles as C99).
 - `-isystem <dir>`: treated as `-I<dir>` (system include path).
 - `-w`: suppress all warnings (no-op until warning diagnostics are implemented).
-- `--target=<target>`: code generation target. `x86_64-linux` (ELF64, `main` symbols, `.note.GNU-stack` footer), `x86_64-macos` (Mach-O64, `_`-prefixed C symbols, no `.note.GNU-stack` footer), or `arm64-macos` (experimental) — native ARM64 backend, writes `<name>.s` (assemble/link with `clang -arch arm64`); currently only `return <integer literal 0..65535>` function bodies. Default: the host platform (`x86_64-macos` on macOS, `x86_64-linux` otherwise).
+- `--target=<target>`: code generation target. `x86_64-linux` (ELF64, `main` symbols, `.note.GNU-stack` footer), `x86_64-macos` (Mach-O64, `_`-prefixed C symbols, no `.note.GNU-stack` footer), or `arm64-macos` (experimental) — native ARM64 backend, writes `<name>.s` (assemble/link with `clang -arch arm64`); currently straight-line signed `int`/`long` code (locals, arithmetic/bitwise/shift, unary, assignment, `++`/`--`, comma) in parameterless functions. Default: the host platform (`x86_64-macos` on macOS, `x86_64-linux` otherwise).
 
 End-to-end build and run:
 
@@ -248,6 +248,10 @@ int main() {
 ```
 
 ## What the compiler currently supports
+
+Through Stage 182 (ARM64 integer arithmetic and local variables):
+
+> Stage 182 extends the experimental `arm64-macos` backend (Phase 2 of the ARM64/macOS roadmap) from a single `return <integer literal>` to straight-line signed integer code in parameterless functions. Supported: `int`, `long`, and `long long` block-scope locals with initializers, nested blocks with shadowing, `return <expr>;`, expression statements, integer literals of any size (`mov`/`movz`/`movk`), binary `+ - * / %`, `& | ^`, `<< >>`, unary `-`, `~`, `+`, assignment, prefix and postfix `++`/`--` on locals, and the comma operator. Each declaration gets its own stack slot in a frame limited to 4095 bytes. Control flow, calls, and unsigned arithmetic remain rejected with `arm64-macos: <construct> not yet supported`. Native tier-2 run: 73 of 1293 tests in scope, 73/73 pass; tier 1 remains 5/5. Portable suite: 2170/2170 on macOS (249 unit, 1293 valid, 261 invalid, 196 integration, 50 print-AST, 100 print-tokens, 21 print-asm). The C0→C1→C2 self-host passes on macOS ARM64. No tokenizer, parser, AST, or grammar changes. Linux output is byte-identical to Stage 181 for all test sources.
 
 Through Stage 181 (ARM64 codegen skeleton):
 
