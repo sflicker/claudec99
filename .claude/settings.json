@@ -8,6 +8,7 @@
          "Bash(git branch *)",
          "Bash(cmake --build *)",
          "Bash(cmake *)",
+	 "Bash(git push)",
          "Bash(make *)",
          "Bash(ninja *)",
          "Bash(./test/run_all_tests.sh)",
