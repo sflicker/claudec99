@@ -117,7 +117,7 @@ progressive ARM64 test enablement.
 | Tier | Newly unlocked `test/valid/` categories                              |
 |------|----------------------------------------------------------------------|
 | 1    | Manifest-listed `return <literal>` programs (`test/valid/arm64_tiers.txt`) |
-| 2    | `arithmetic/`, `assignment/`, `expressions/`                         |
+| 2    | Manifest-listed `arithmetic/`, `assignment/`, `expressions/` files (68 entries) |
 | 3    | `comparisons/`, `control_flow/`, full `statements/`                  |
 | 4    | `functions/`                                                         |
 | 5    | `strings/`, global `declarations/`                                   |
@@ -182,7 +182,7 @@ ret
 
 ---
 
-## Phase 2 — Integer Arithmetic and Local Variables
+## Phase 2 — Integer Arithmetic and Local Variables ✅ Stage 182
 
 **Goal:** Compile arithmetic expressions and local variable reads/writes.
 
@@ -217,6 +217,19 @@ based on the constant value.
   tests in these three directories use Phase 2 constructs. The rest need comparisons
   (Phase 3), calls (Phase 4), pointers, arrays and structs (Phase 6), or char/short/FP
   (Phases 7–8). They join the manifest when those phases land.
+- Result: `CodeGenArm64` gains a locals table (`Vec` of `Arm64Local {name, offset,
+  is_long, scope_depth}`), the scope depth, the current function's name and return width,
+  and the frame size. Every declaration gets its own slot (int 4 bytes, long 8 bytes),
+  and the frame is rounded up to 16. Frames above 4095 bytes are rejected. Slots deeper
+  than 256 bytes are addressed through `sub x9, x29, #off`, because the `ldur`/`stur`
+  forms only reach -256. Comparisons, logical operators, unsigned types and literals,
+  `char`/`short`, pointers, globals, parameters and calls are rejected with specific
+  `not yet supported` phrases. The Stage 181 literal-range error is gone. The manifest
+  gains 68 tier-2 entries (64 existing tests and 4 new ones). `TARGET=arm64-macos
+  ARM64_TIER=2` passes 73/73 natively (73 of 1293 tests in scope), and tier 1 still
+  passes 5/5. The default macOS suite passes 2170/2170, and Linux-target `.asm` is
+  byte-identical to Stage 181 (1706 sources, 0 differences). The C0→C1→C2 self-host
+  passes on macOS, and the self-hosted C2 also passes tier 2 at 73/73.
 
 ---
 
@@ -379,7 +392,7 @@ spec and implementation are committed.
 | 0B    | 179   | `x86_64-macos` target, Rosetta 2 execution           | All existing tests via Rosetta                | [x]  |
 | 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [x]  |
 | 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [x]  |
-| 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [ ]  |
+| 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [x]  |
 | 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
 | 4     | 184   | Functions and calls                                  | Tier 4 — functions                            | [ ]  |
 | 5     | 185   | Globals, string literals                             | Tier 5 — strings/declarations                 | [ ]  |
@@ -389,11 +402,11 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 2 (stage 182) — ARM64 integer arithmetic and local variables.
+**Next up:** Phase 3 (stage 183) — comparisons and control flow.
 
-### Open items (as of Stage 181)
+### Open items (as of Stage 182)
 
-- **Linux self-host pending.** Stages 180–181 were self-hosted on macOS ARM64 only.
+- **Linux self-host pending.** Stages 180–182 were self-hosted on macOS ARM64 only.
   Linux-target `.asm` was verified byte-identical to the previous stage instead.
 - **Error line numbers off by ~5.** Compile errors in both backends report lines about
   5 too high (e.g. `file.c:7` for line 2), likely from the injected preamble.
@@ -401,6 +414,12 @@ spec and implementation are committed.
   8-byte aligned. `no platform load command`: NASM Mach-O objects lack
   `LC_BUILD_VERSION`.
 - **`bin/cc99`** has no macOS/ARM64 support yet.
+- **Unsigned function return types are not recorded.** The parser does not mark a
+  function node as unsigned, so the ARM64 backend cannot reject `unsigned` return types.
+  This is harmless for now, because the int → long conversion is a sign extension either
+  way. It needs a parser field by Phase 7.
+- **ARM64 frame limit.** Frames above 4095 bytes (the `sub sp, sp, #imm` range) are
+  rejected. Large arrays in Phase 6 will need a multi-instruction `sub`.
 
 The Rosetta 2 path (Phase 0B) gives a fully working compiler on M1 with no new ISA
 work, acting as a correctness baseline while the native ARM64 backend is built phase
