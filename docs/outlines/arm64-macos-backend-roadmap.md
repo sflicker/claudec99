@@ -118,7 +118,7 @@ progressive ARM64 test enablement.
 |------|----------------------------------------------------------------------|
 | 1    | Manifest-listed `return <literal>` programs (`test/valid/arm64_tiers.txt`) |
 | 2    | Manifest-listed `arithmetic/`, `assignment/`, `expressions/` files (68 entries) |
-| 3    | `comparisons/`, `control_flow/`, full `statements/`                  |
+| 3    | Phase ≤3 files from all of `test/valid` (366 entries; see Stage 183 spec) |
 | 4    | `functions/`                                                         |
 | 5    | `strings/`, global `declarations/`                                   |
 | 6    | `pointers/`, `arrays/`, `structs/`                                   |
@@ -244,6 +244,25 @@ based on the constant value.
 - Short-circuit zero/non-zero: `cbz x0, label` / `cbnz x0, label`
 
 **Tests unlocked:** `ARM64_TIER=3` — `comparisons/`, `control_flow/`, full `statements/`.
+
+**Stage 183 scope (see `docs/stages/ClaudeC99-spec-stage-183-arm64-control-flow.md`):**
+- Comparisons (`cmp` + `cset`), short-circuit `&&`/`||`, `!`, `?:` (each branch
+  converted to the result width), `if`/`while`/`do`/`for` (`cbz`/`cbnz` on the
+  condition, no branch fusion), `break`/`continue` through a jump stack, `switch` as a
+  compare chain straight from `w0`/`x0` (nothing spilled), and `goto`/labels
+  (`L<func>_usr_<name>`). Internal labels are `L<n>_<kind>`, which cannot collide
+  with `L<func>_epilogue` because C identifiers cannot start with a digit. The frame
+  pre-scan now descends every statement child.
+- **Tier 3 is drawn from all of `test/valid`, not only these directories.** AST
+  classification of every program found 199 Phase-2-only tests outside the Stage 182
+  set. All 199 already pass natively. Another 163 tests need Phase 3. With 4 new
+  tests, that is 366 tier-3 entries, 439 tests in scope in total. The x86-only
+  macro tests `test_pp_predef_x86_64_ifdef` and `test_target_platform_macros` are
+  never ARM64 entries.
+- Planning found two pre-existing **x86** bugs: a 64-bit `case` value is truncated
+  in `cmp`, and the `int` branch of a mixed-width `?:` is not sign-extended. They
+  are written up in `docs/defects/ClaudeC99-defect-2-…` for a follow-up x86 stage,
+  and Stage 183 leaves x86 byte-identical.
 
 ---
 
@@ -402,7 +421,7 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 3 (stage 183) — comparisons and control flow.
+**Next up:** Phase 3 (stage 183) — comparisons and control flow (spec written).
 
 ### Open items (as of Stage 182)
 
@@ -418,6 +437,8 @@ spec and implementation are committed.
   function node as unsigned, so the ARM64 backend cannot reject `unsigned` return types.
   This is harmless for now, because the int → long conversion is a sign extension either
   way. It needs a parser field by Phase 7.
+- **x86 defect 2** (found while planning Stage 183): 64-bit `case` values outside the
+  imm32 range and mixed-width `?:` sign extension. See `docs/defects/`.
 - **ARM64 frame limit.** Frames above 4095 bytes (the `sub sp, sp, #imm` range) are
   rejected. Large arrays in Phase 6 will need a multi-instruction `sub`.
 
