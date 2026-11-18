@@ -20,6 +20,25 @@ typedef struct {
     int scope_depth;   /* block nesting depth that declared it */
 } Arm64Local;
 
+/* Stage 183: one break/continue target.  Loops push {n, n}; a switch
+ * pushes {n, -1} (continue passes through it to the enclosing loop). */
+typedef struct {
+    int break_label;
+    int continue_label;
+} Arm64Jump;
+
+/* Stage 183: one case/default label of a switch. */
+typedef struct {
+    ASTNode *node;
+    int label;
+} Arm64SwitchLabel;
+
+/* Stage 183: per-switch label table. */
+typedef struct {
+    Vec entries;             /* Arm64SwitchLabel, in source order */
+    int default_label;       /* -1 when there is no default */
+} Arm64Switch;
+
 typedef struct {
     FILE *output;
     /* Stage 182: per-function state. */
@@ -29,6 +48,11 @@ typedef struct {
     int frame_size;          /* local area size, multiple of 16 */
     const char *func_name;   /* current function (for the epilogue label) */
     int ret_is_long;         /* current function returns a 64-bit value */
+    /* Stage 183: control flow. */
+    int label_count;         /* translation-unit-wide internal label counter */
+    Vec jumps;               /* Arm64Jump, innermost last */
+    Vec switches;            /* Arm64Switch, innermost last */
+    Vec user_labels;         /* const char *, labels of the current function */
 } CodeGenArm64;
 
 void codegen_arm64_init(CodeGenArm64 *cg, FILE *output);

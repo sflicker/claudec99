@@ -17,6 +17,13 @@
  * other construct is rejected with "arm64-macos: <construct> not yet
  * supported"; later phases extend this file construct by construct.
  *
+ * Stage 183 (Phase 3): comparisons (cmp + cset), && || ! (short-circuit
+ * via cbz/cbnz), ?:, if/else, while, do-while, for, break, continue,
+ * switch/case/default and goto/labels.  Internal labels are
+ * L<n>_<kind>, numbered by a translation-unit-wide counter; user labels
+ * are L<func>_usr_<name>.  At every statement boundary sp equals
+ * x29 - frame_size, so every jump is a plain branch.
+ *
  * Value model: every expression leaves its result in w0 (int) or x0
  * (long); arm64_expr_is_long() gives an expression's width.  Binary
  * operators use a stack machine: the left operand is pushed with
@@ -153,10 +160,22 @@ void codegen_arm64_init(CodeGenArm64 *cg, FILE *output) {
     cg->frame_size = 0;
     cg->func_name = NULL;
     cg->ret_is_long = 0;
+    cg->label_count = 0;
+    vec_init(&cg->jumps, sizeof(Arm64Jump));
+    vec_init(&cg->switches, sizeof(Arm64Switch));
+    vec_init(&cg->user_labels, sizeof(const char *));
 }
 
 void codegen_arm64_free(CodeGenArm64 *cg) {
+    size_t i;
     vec_free(&cg->locals);
+    vec_free(&cg->jumps);
+    for (i = 0; i < cg->switches.len; i++) {
+        Arm64Switch *sw = (Arm64Switch *)vec_get(&cg->switches, i);
+        vec_free(&sw->entries);
+    }
+    vec_free(&cg->switches);
+    vec_free(&cg->user_labels);
 }
 
 /* ------------------------------------------------------------------ */
@@ -204,7 +223,11 @@ static int arm64_alloc_slot(int *next_offset, int is_long) {
     return *next_offset;
 }
 
-/* Pre-scan: size every declaration in a statement tree. */
+/* Pre-scan: size every declaration in a statement tree.  Stage 183:
+ * descends every non-NULL child (if/else branches, loop bodies, for
+ * init, case/default/label bodies, switch bodies), in child order, which
+ * is the emitter's visiting order.  Expressions never hold declarations
+ * (compound literals are rejected), so descending them is harmless. */
 static void arm64_prescan(ASTNode *node, int *next_offset) {
     int i;
     if (!node) return;
@@ -212,10 +235,8 @@ static void arm64_prescan(ASTNode *node, int *next_offset) {
         arm64_alloc_slot(next_offset, arm64_kind_is_long(node->decl_type));
         return;
     }
-    if (node->type == AST_BLOCK || node->type == AST_DECL_LIST) {
-        for (i = 0; i < node->child_count; i++)
-            arm64_prescan(node->children[i], next_offset);
-    }
+    for (i = 0; i < node->child_count; i++)
+        arm64_prescan(node->children[i], next_offset);
 }
 
 /* Emit a load or store of w0/x0 (or w1/x1) to a frame slot.  ldr/str with
@@ -255,6 +276,21 @@ static int arm64_is_shift(const char *op) {
     return strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0;
 }
 
+/* Stage 183: condition code of a comparison operator, or NULL. */
+static const char *arm64_compare_cc(const char *op) {
+    if (strcmp(op, "==") == 0) return "eq";
+    if (strcmp(op, "!=") == 0) return "ne";
+    if (strcmp(op, "<") == 0)  return "lt";
+    if (strcmp(op, "<=") == 0) return "le";
+    if (strcmp(op, ">") == 0)  return "gt";
+    if (strcmp(op, ">=") == 0) return "ge";
+    return NULL;
+}
+
+static int arm64_is_logical(const char *op) {
+    return strcmp(op, "&&") == 0 || strcmp(op, "||") == 0;
+}
+
 /* Pure width helper: 1 if the expression's value is 64-bit. */
 static int arm64_expr_is_long(CodeGenArm64 *cg, ASTNode *e) {
     Arm64Local *l;
@@ -266,12 +302,19 @@ static int arm64_expr_is_long(CodeGenArm64 *cg, ASTNode *e) {
         l = arm64_find_local(cg, e->value);
         return l ? l->is_long : 0;
     case AST_BINARY_OP:
+        /* Stage 183: comparisons and && || yield int. */
+        if (arm64_compare_cc(e->value) || arm64_is_logical(e->value))
+            return 0;
         if (arm64_is_shift(e->value))
             return arm64_expr_is_long(cg, e->children[0]);
         return arm64_expr_is_long(cg, e->children[0]) ||
                arm64_expr_is_long(cg, e->children[1]);
     case AST_UNARY_OP:
+        if (strcmp(e->value, "!") == 0) return 0;
         return arm64_expr_is_long(cg, e->children[0]);
+    case AST_CONDITIONAL_EXPR:
+        return arm64_expr_is_long(cg, e->children[1]) ||
+               arm64_expr_is_long(cg, e->children[2]);
     case AST_ASSIGNMENT:
         if (!e->value && e->children[0]->type != AST_VAR_REF) return 0;
         l = arm64_find_local(cg, arm64_assign_target(e, &rhs));
@@ -286,23 +329,24 @@ static int arm64_expr_is_long(CodeGenArm64 *cg, ASTNode *e) {
     }
 }
 
-/* Load a 64-bit bit pattern into w0 (low 32 bits) or x0: `mov` for
- * 0..65535, otherwise movz + movk for each further non-zero chunk. */
-static void arm64_emit_load_imm(CodeGenArm64 *cg, unsigned long bits,
+/* Load a 64-bit bit pattern into w<reg> (low 32 bits) or x<reg>: `mov`
+ * for 0..65535, otherwise movz + movk for each further non-zero chunk. */
+static void arm64_emit_load_imm(CodeGenArm64 *cg, int reg, unsigned long bits,
                                 int is_long) {
     char r = is_long ? 'x' : 'w';
     int top = is_long ? 48 : 16;
     int shift;
     if (!is_long) bits &= 0xFFFFFFFFUL;
     if (bits <= 65535UL) {
-        fprintf(cg->output, "\tmov\t%c0, #%lu\n", r, bits);
+        fprintf(cg->output, "\tmov\t%c%d, #%lu\n", r, reg, bits);
         return;
     }
-    fprintf(cg->output, "\tmovz\t%c0, #%lu\n", r, bits & 0xFFFFUL);
+    fprintf(cg->output, "\tmovz\t%c%d, #%lu\n", r, reg, bits & 0xFFFFUL);
     for (shift = 16; shift <= top; shift += 16) {
         unsigned long chunk = (bits >> shift) & 0xFFFFUL;
         if (chunk)
-            fprintf(cg->output, "\tmovk\t%c0, #%lu, lsl #%d\n", r, chunk, shift);
+            fprintf(cg->output, "\tmovk\t%c%d, #%lu, lsl #%d\n",
+                    r, reg, chunk, shift);
     }
 }
 
@@ -316,18 +360,73 @@ static void arm64_expr_as(CodeGenArm64 *cg, ASTNode *e, int want_long) {
         fprintf(cg->output, "\tsxtw\tx0, w0\n");
 }
 
+/* Stage 183: evaluate e and branch to L<n>_<kind> with `insn` (cbz or
+ * cbnz), testing w0 or x0 by e's own width. */
+static void arm64_cond_branch(CodeGenArm64 *cg, ASTNode *e, const char *insn,
+                              int n, const char *kind) {
+    arm64_expr(cg, e);
+    fprintf(cg->output, "\t%s\t%c0, L%d_%s\n", insn,
+            arm64_expr_is_long(cg, e) ? 'x' : 'w', n, kind);
+}
+
+/* Stage 183: a < b etc.  Both operands at the common width, then
+ * cmp + cset (signed condition codes). */
+static void arm64_compare(CodeGenArm64 *cg, ASTNode *e, const char *cc) {
+    int is_long = arm64_expr_is_long(cg, e->children[0]) ||
+                  arm64_expr_is_long(cg, e->children[1]);
+    char r = is_long ? 'x' : 'w';
+    arm64_expr_as(cg, e->children[0], is_long);
+    fprintf(cg->output, "\tstr\tx0, [sp, #-16]!\n");
+    arm64_expr_as(cg, e->children[1], is_long);
+    fprintf(cg->output, "\tmov\tx1, x0\n");
+    fprintf(cg->output, "\tldr\tx0, [sp], #16\n");
+    fprintf(cg->output, "\tcmp\t%c0, %c1\n", r, r);
+    fprintf(cg->output, "\tcset\tw0, %s\n", cc);
+}
+
+/* Stage 183: short-circuit a && b / a || b; the result is int 0 or 1. */
+static void arm64_logical(CodeGenArm64 *cg, ASTNode *e) {
+    int n = cg->label_count++;
+    int is_and = strcmp(e->value, "&&") == 0;
+    const char *insn = is_and ? "cbz" : "cbnz";
+    const char *kind = is_and ? "false" : "true";
+    arm64_cond_branch(cg, e->children[0], insn, n, kind);
+    arm64_cond_branch(cg, e->children[1], insn, n, kind);
+    fprintf(cg->output, "\tmov\tw0, #%d\n", is_and ? 1 : 0);
+    fprintf(cg->output, "\tb\tL%d_end\n", n);
+    fprintf(cg->output, "L%d_%s:\n", n, kind);
+    fprintf(cg->output, "\tmov\tw0, #%d\n", is_and ? 0 : 1);
+    fprintf(cg->output, "L%d_end:\n", n);
+}
+
+/* Stage 183: c ? a : b.  Only the selected branch runs; each branch is
+ * converted to the result width before the join. */
+static void arm64_conditional(CodeGenArm64 *cg, ASTNode *e) {
+    int n = cg->label_count++;
+    int is_long = arm64_expr_is_long(cg, e);
+    arm64_cond_branch(cg, e->children[0], "cbz", n, "else");
+    arm64_expr_as(cg, e->children[1], is_long);
+    fprintf(cg->output, "\tb\tL%d_end\n", n);
+    fprintf(cg->output, "L%d_else:\n", n);
+    arm64_expr_as(cg, e->children[2], is_long);
+    fprintf(cg->output, "L%d_end:\n", n);
+}
+
 static void arm64_binary(CodeGenArm64 *cg, ASTNode *e) {
     const char *op = e->value;
     int is_long = arm64_expr_is_long(cg, e);
     char r = is_long ? 'x' : 'w';
     const char *insn = NULL;
+    const char *cc = arm64_compare_cc(op);
 
-    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
-        strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
-        strcmp(op, ">") == 0 || strcmp(op, ">=") == 0)
-        arm64_unsupported(e, "comparison operator");
-    if (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0)
-        arm64_unsupported(e, "logical operator");
+    if (cc) {
+        arm64_compare(cg, e, cc);
+        return;
+    }
+    if (arm64_is_logical(op)) {
+        arm64_logical(cg, e);
+        return;
+    }
 
     if      (strcmp(op, "+") == 0)  insn = "add";
     else if (strcmp(op, "-") == 0)  insn = "sub";
@@ -365,8 +464,14 @@ static void arm64_binary(CodeGenArm64 *cg, ASTNode *e) {
 static void arm64_unary(CodeGenArm64 *cg, ASTNode *e) {
     const char *op = e->value;
     char r;
-    if (strcmp(op, "!") == 0)
-        arm64_unsupported(e, "logical not operator");
+    if (strcmp(op, "!") == 0) {
+        /* Stage 183: !a is (a == 0), tested at a's full width. */
+        arm64_expr(cg, e->children[0]);
+        fprintf(cg->output, "\tcmp\t%c0, #0\n",
+                arm64_expr_is_long(cg, e->children[0]) ? 'x' : 'w');
+        fprintf(cg->output, "\tcset\tw0, eq\n");
+        return;
+    }
     arm64_expr(cg, e->children[0]);
     r = arm64_expr_is_long(cg, e) ? 'x' : 'w';
     if (strcmp(op, "-") == 0)
@@ -406,7 +511,7 @@ static void arm64_expr(CodeGenArm64 *cg, ASTNode *e) {
     case AST_INT_LITERAL:
         if (e->is_unsigned)
             arm64_unsupported(e, "unsigned integer literal");
-        arm64_emit_load_imm(cg, strtoul(e->value, NULL, 0),
+        arm64_emit_load_imm(cg, 0, strtoul(e->value, NULL, 0),
                             arm64_kind_is_long(e->decl_type));
         return;
     case AST_VAR_REF:
@@ -432,6 +537,9 @@ static void arm64_expr(CodeGenArm64 *cg, ASTNode *e) {
     case AST_COMMA_EXPR:
         arm64_expr(cg, e->children[0]);
         arm64_expr(cg, e->children[1]);
+        return;
+    case AST_CONDITIONAL_EXPR:
+        arm64_conditional(cg, e);
         return;
     default:
         arm64_unsupported(e, arm64_construct_name(e->type));
@@ -466,10 +574,249 @@ static void arm64_declaration(CodeGenArm64 *cg, ASTNode *d) {
     }
 }
 
+static void arm64_statement(CodeGenArm64 *cg, ASTNode *s);
+
+/* Stage 183: push a break/continue target (continue_label -1 = switch). */
+static void arm64_push_jump(CodeGenArm64 *cg, int break_label,
+                            int continue_label) {
+    Arm64Jump j;
+    j.break_label = break_label;
+    j.continue_label = continue_label;
+    vec_push(&cg->jumps, &j);
+}
+
+/* Stage 183: loop body, with n as its break/continue target. */
+static void arm64_loop_body(CodeGenArm64 *cg, ASTNode *body, int n) {
+    arm64_push_jump(cg, n, n);
+    arm64_statement(cg, body);
+    vec_pop(&cg->jumps);
+}
+
+/* Stage 183: collect every case/default label of a switch body in source
+ * order, without descending into nested switches (their labels belong to
+ * them).  Mirrors collect_switch_labels in codegen.c. */
+static void arm64_collect_switch_labels(CodeGenArm64 *cg, ASTNode *node,
+                                        Arm64Switch *sw) {
+    int i;
+    Arm64SwitchLabel entry;
+    if (!node) return;
+    if (node->type == AST_SWITCH_STATEMENT) return;
+    if (node->type == AST_CASE_SECTION || node->type == AST_DEFAULT_SECTION) {
+        entry.node = node;
+        entry.label = cg->label_count++;
+        vec_push(&sw->entries, &entry);
+        if (node->type == AST_DEFAULT_SECTION) {
+            sw->default_label = entry.label;
+            if (node->child_count > 0)
+                arm64_collect_switch_labels(cg, node->children[0], sw);
+        } else if (node->child_count > 1) {
+            arm64_collect_switch_labels(cg, node->children[1], sw);
+        }
+        return;
+    }
+    for (i = 0; i < node->child_count; i++)
+        arm64_collect_switch_labels(cg, node->children[i], sw);
+}
+
+/* Stage 183: label number of a case/default node in the innermost
+ * switch. */
+static int arm64_switch_label(CodeGenArm64 *cg, ASTNode *node) {
+    Arm64Switch *sw = (Arm64Switch *)vec_get(&cg->switches,
+                                             cg->switches.len - 1);
+    size_t i;
+    for (i = 0; i < sw->entries.len; i++) {
+        Arm64SwitchLabel *e = (Arm64SwitchLabel *)vec_get(&sw->entries, i);
+        if (e->node == node) return e->label;
+    }
+    arm64_unsupported(node, arm64_construct_name(node->type));
+    return -1;
+}
+
+/* Stage 183: switch.  The discriminant is evaluated into w0/x0 and
+ * dispatched immediately by a linear compare-and-branch chain; it is
+ * never spilled, so nothing stays on the stack across the body. */
+static void arm64_switch(CodeGenArm64 *cg, ASTNode *s) {
+    int n = cg->label_count++;
+    int is_long = arm64_expr_is_long(cg, s->children[0]);
+    char r = is_long ? 'x' : 'w';
+    Arm64Switch sw;
+    Arm64Switch *top;
+    size_t i;
+
+    vec_init(&sw.entries, sizeof(Arm64SwitchLabel));
+    sw.default_label = -1;
+    arm64_collect_switch_labels(cg, s->children[1], &sw);
+
+    arm64_expr(cg, s->children[0]);
+    for (i = 0; i < sw.entries.len; i++) {
+        Arm64SwitchLabel *e = (Arm64SwitchLabel *)vec_get(&sw.entries, i);
+        unsigned long bits;
+        if (e->node->type != AST_CASE_SECTION) continue;
+        /* Case values convert to the promoted controlling type
+         * (C99 6.8.4.2p5): an int discriminant compares 32 bits. */
+        bits = (unsigned long)strtol(e->node->children[0]->value, NULL, 0);
+        if (!is_long) bits &= 0xFFFFFFFFUL;
+        if (bits <= 4095UL) {
+            fprintf(cg->output, "\tcmp\t%c0, #%lu\n", r, bits);
+        } else {
+            arm64_emit_load_imm(cg, 1, bits, is_long);
+            fprintf(cg->output, "\tcmp\t%c0, %c1\n", r, r);
+        }
+        fprintf(cg->output, "\tb.eq\tL%d_case\n", e->label);
+    }
+    if (sw.default_label >= 0)
+        fprintf(cg->output, "\tb\tL%d_case\n", sw.default_label);
+    else
+        fprintf(cg->output, "\tb\tL%d_switch_end\n", n);
+
+    /* The Vec header is bit-copied onto the stack; the copy owns it. */
+    vec_push(&cg->switches, &sw);
+    arm64_push_jump(cg, n, -1);
+    arm64_statement(cg, s->children[1]);
+    vec_pop(&cg->jumps);
+    /* Re-fetch: nested switches may have reallocated the stack. */
+    top = (Arm64Switch *)vec_get(&cg->switches, cg->switches.len - 1);
+    vec_free(&top->entries);
+    vec_pop(&cg->switches);
+    fprintf(cg->output, "L%d_switch_end:\n", n);
+}
+
+/* Stage 183: pre-walk a function body for user labels, rejecting
+ * duplicates (message matches the x86 backend). */
+static void arm64_collect_user_labels(CodeGenArm64 *cg, ASTNode *node) {
+    int i;
+    size_t j;
+    if (!node) return;
+    if (node->type == AST_LABEL_STATEMENT) {
+        for (j = 0; j < cg->user_labels.len; j++) {
+            const char **pp = (const char **)vec_get(&cg->user_labels, j);
+            if (strcmp(*pp, node->value) == 0) {
+                arm64_mark(node);
+                compile_error("error: duplicate label '%s' in function '%s'\n",
+                              node->value, cg->func_name);
+            }
+        }
+        vec_push(&cg->user_labels, &node->value);
+    }
+    for (i = 0; i < node->child_count; i++)
+        arm64_collect_user_labels(cg, node->children[i]);
+}
+
+static int arm64_user_label_defined(CodeGenArm64 *cg, const char *name) {
+    size_t j;
+    for (j = 0; j < cg->user_labels.len; j++) {
+        const char **pp = (const char **)vec_get(&cg->user_labels, j);
+        if (strcmp(*pp, name) == 0) return 1;
+    }
+    return 0;
+}
+
 static void arm64_statement(CodeGenArm64 *cg, ASTNode *s) {
     int i;
+    int n;
+    size_t j;
+    Arm64Jump *jp;
     arm64_mark(s);
     switch (s->type) {
+    case AST_IF_STATEMENT:
+        n = cg->label_count++;
+        if (s->child_count == 3) {
+            arm64_cond_branch(cg, s->children[0], "cbz", n, "else");
+            arm64_statement(cg, s->children[1]);
+            fprintf(cg->output, "\tb\tL%d_end\n", n);
+            fprintf(cg->output, "L%d_else:\n", n);
+            arm64_statement(cg, s->children[2]);
+        } else {
+            arm64_cond_branch(cg, s->children[0], "cbz", n, "end");
+            arm64_statement(cg, s->children[1]);
+        }
+        fprintf(cg->output, "L%d_end:\n", n);
+        return;
+    case AST_WHILE_STATEMENT:
+        n = cg->label_count++;
+        fprintf(cg->output, "L%d_loop_cond:\n", n);
+        arm64_cond_branch(cg, s->children[0], "cbz", n, "loop_end");
+        arm64_loop_body(cg, s->children[1], n);
+        fprintf(cg->output, "\tb\tL%d_loop_cond\n", n);
+        fprintf(cg->output, "L%d_loop_end:\n", n);
+        return;
+    case AST_DO_WHILE_STATEMENT:
+        /* children: [0]=body, [1]=condition */
+        n = cg->label_count++;
+        fprintf(cg->output, "L%d_loop_body:\n", n);
+        arm64_loop_body(cg, s->children[0], n);
+        fprintf(cg->output, "L%d_loop_cond:\n", n);
+        arm64_cond_branch(cg, s->children[1], "cbnz", n, "loop_body");
+        fprintf(cg->output, "L%d_loop_end:\n", n);
+        return;
+    case AST_FOR_STATEMENT:
+        /* children: [0]=init, [1]=cond, [2]=update, [3]=body; the first
+         * three may be NULL.  An init declaration is scoped to the loop. */
+        n = cg->label_count++;
+        cg->scope_depth++;
+        if (s->children[0]) {
+            if (s->children[0]->type == AST_DECLARATION ||
+                s->children[0]->type == AST_DECL_LIST)
+                arm64_statement(cg, s->children[0]);
+            else
+                arm64_expr(cg, s->children[0]);
+        }
+        fprintf(cg->output, "L%d_loop_top:\n", n);
+        if (s->children[1])
+            arm64_cond_branch(cg, s->children[1], "cbz", n, "loop_end");
+        arm64_loop_body(cg, s->children[3], n);
+        fprintf(cg->output, "L%d_loop_cond:\n", n);
+        if (s->children[2])
+            arm64_expr(cg, s->children[2]);
+        fprintf(cg->output, "\tb\tL%d_loop_top\n", n);
+        fprintf(cg->output, "L%d_loop_end:\n", n);
+        arm64_pop_scope(cg);
+        return;
+    case AST_SWITCH_STATEMENT:
+        arm64_switch(cg, s);
+        return;
+    case AST_CASE_SECTION:
+        /* children: [0]=value, [1]=statement (optional) */
+        fprintf(cg->output, "L%d_case:\n", arm64_switch_label(cg, s));
+        if (s->child_count > 1) arm64_statement(cg, s->children[1]);
+        return;
+    case AST_DEFAULT_SECTION:
+        /* children: [0]=statement (optional) */
+        fprintf(cg->output, "L%d_case:\n", arm64_switch_label(cg, s));
+        if (s->child_count > 0) arm64_statement(cg, s->children[0]);
+        return;
+    case AST_BREAK_STATEMENT:
+        /* The parser guarantees an enclosing loop or switch. */
+        jp = (Arm64Jump *)vec_get(&cg->jumps, cg->jumps.len - 1);
+        if (jp->continue_label < 0)
+            fprintf(cg->output, "\tb\tL%d_switch_end\n", jp->break_label);
+        else
+            fprintf(cg->output, "\tb\tL%d_loop_end\n", jp->break_label);
+        return;
+    case AST_CONTINUE_STATEMENT:
+        /* Innermost loop, passing through any enclosing switch. */
+        j = cg->jumps.len;
+        while (j > 0) {
+            j--;
+            jp = (Arm64Jump *)vec_get(&cg->jumps, j);
+            if (jp->continue_label >= 0) {
+                fprintf(cg->output, "\tb\tL%d_loop_cond\n",
+                        jp->continue_label);
+                return;
+            }
+        }
+        arm64_unsupported(s, arm64_construct_name(s->type));
+        return;
+    case AST_LABEL_STATEMENT:
+        fprintf(cg->output, "L%s_usr_%s:\n", cg->func_name, s->value);
+        if (s->child_count > 0) arm64_statement(cg, s->children[0]);
+        return;
+    case AST_GOTO_STATEMENT:
+        if (!arm64_user_label_defined(cg, s->value))
+            compile_error("error: undefined label '%s' in function '%s'\n",
+                          s->value, cg->func_name);
+        fprintf(cg->output, "\tb\tL%s_usr_%s\n", cg->func_name, s->value);
+        return;
     case AST_BLOCK:
         cg->scope_depth++;
         for (i = 0; i < s->child_count; i++)
@@ -537,6 +884,9 @@ static void arm64_function(CodeGenArm64 *cg, ASTNode *func, ASTNode *body) {
     cg->frame_size = frame;
     cg->func_name = func->value;
     cg->ret_is_long = arm64_kind_is_long(func->decl_type);
+    vec_clear(&cg->jumps);
+    vec_clear(&cg->user_labels);
+    arm64_collect_user_labels(cg, body);
 
     if (func->storage_class != SC_STATIC)
         fprintf(cg->output, "\t.globl\t_%s\n", func->value);

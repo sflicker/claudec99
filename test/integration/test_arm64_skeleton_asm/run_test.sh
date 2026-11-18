@@ -3,8 +3,9 @@
 # runs on any host:
 #   1. return42.c compiles to return42.s (not .asm) containing the expected
 #      ARM64 symbol, immediate load and return.
-#   2. An unsupported construct (comparison) is rejected with
-#      "arm64-macos: ... not yet supported".
+#   2. An unsupported construct is rejected with
+#      "arm64-macos: ... not yet supported".  Stage 183: comparisons are now
+#      supported, so this uses a floating-point local (Phase 8).
 #   3. Stage 182: a literal outside 0..65535 compiles and is loaded with
 #      movz/movk.
 
@@ -33,11 +34,11 @@ for want in ".globl _main" "_main:" "mov w0, #42" "ret"; do
 done
 
 # 2. Unsupported construct.
-err=$(run_timeout 30 "$COMPILER" --target=arm64-macos "$SCRIPT_DIR/comparison.c" 2>&1 >/dev/null)
-[ $? -ne 0 ] || fail "comparison.c should be rejected"
+err=$(run_timeout 30 "$COMPILER" --target=arm64-macos "$SCRIPT_DIR/floating_point.c" 2>&1 >/dev/null)
+[ $? -ne 0 ] || fail "floating_point.c should be rejected"
 case "$err" in
     *"arm64-macos:"*"not yet supported"*) ;;
-    *) fail "unexpected comparison.c error: $err" ;;
+    *) fail "unexpected floating_point.c error: $err" ;;
 esac
 
 # 3. Large literal (Stage 182): compiles, loaded with movz + movk.
