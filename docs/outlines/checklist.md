@@ -2621,6 +2621,28 @@ TODO items completed this stage:
 
 ---
 
+## Stage 183 - ARM64 Comparisons and Control Flow (Phase 3)
+
+- [x] `include/codegen_arm64.h` / `src/codegen_arm64.c`: `CodeGenArm64` gains `label_count`, a jump stack (`Arm64Jump`), a switch stack (`Arm64Switch`, `Arm64SwitchLabel`), and `user_labels`. Width helper treats comparisons, `&&`, `||`, and `!` as `int`, and a conditional as `long` if either branch is `long`.
+- [x] Comparisons `== != < <= > >=` on signed `int`/`long` operands (common width, `cmp` plus `cset`). `&&`/`||` short-circuit with `cbz`/`cbnz`; `!` is `cmp #0` plus `cset eq`; `?:` converts each branch to the result width and evaluates only the selected branch.
+- [x] Statements: `if`, `if`/`else`, `while`, `do`-`while`, and `for` with a declaration or declaration-list init scoped to the loop. Conditions branch on zero with `cbz`.
+- [x] Jumps: `break` and `continue` through the jump stack (`continue` passes through enclosing switches); `goto` and labels as `L<func>_usr_<name>`, with duplicate and undefined label errors matching x86.
+- [x] `switch`/`case`/`default`: linear compare dispatch with `cmp #imm` for 0..4095 and a loaded register otherwise; `int` discriminants truncate case values to 32 bits; the discriminant is never spilled; fallthrough, nested switches, and statements before the first label.
+- [x] Frame pre-scan descends every non-NULL child, so declarations in nested statements get slots. Removed the Stage 182 `comparison operator`, `logical operator`, and `logical not operator` rejections.
+- [x] `src/version.c`: `VERSION_STAGE` set to `01830000`. No tokenizer, parser, AST, or grammar changes.
+- [x] `test/valid/arm64_tiers.txt`: `# Tier 3 — Phase 3 (stage 183)` section, 366 entries (199 phase-2-only, 163 phase-3, 4 new).
+- [x] New tests: `test/valid/comparisons/test_cmp_long_neg_vs_int__1.c`, `test/valid/control_flow/test_switch_large_case_values__3.c`, `test/valid/control_flow/test_continue_in_switch_in_loop__9.c`, `test/valid/declarations/test_many_locals_deep_slot__45.c`. `test/integration/test_arm64_skeleton_asm/`: `comparison.c` is now legal, so the unsupported-construct case becomes `floating_point.c`.
+- [x] Deferred: `control_flow/test_switch_long_discriminant__7.c` and `expressions/test_conditional_mixed_width__1.c` fail on x86 from defect 2 and are not added.
+- [x] Verification: native ARM64 `TARGET=arm64-macos ARM64_TIER=3` 439 of 1297 in scope, 439/439 pass; `ARM64_TIER=2` 73/73; `ARM64_TIER=1` 5/5. Portable 2174/2174 (249 unit, 1297 valid, 261 invalid, 196 integration, 50 print-AST, 100 print-tokens, 21 print-asm). No tier-3 manifest entries removed under the unexpected-failure rule.
+- [x] Self-host on macOS ARM64: C0 `.01333`, C1 `.01334`, C2 `.01335`; each stage 2174/2174. Checkpoint commits `938a0ac` (C0), `af4c557` (C1); report `6b0098c`.
+- [ ] Self-host on Linux x86-64 not run (pending).
+- [ ] Follow-ups: Linux `.asm` byte-identity check against Stage 182 (skipped); parameters and calls (Phase 4); globals and static/extern locals (Phase 5); unsigned arithmetic and narrow types (Phase 7); floating point (Phase 8); `bin/cc99` macOS support; compile-error line numbers offset by ~5 lines in both backends (pre-existing).
+
+TODO items completed this stage:
+- No existing TODO items completed (Phase 3 roadmap item; see `docs/outlines/arm64-macos-backend-roadmap.md`)
+
+---
+
 ## TODO
 
 ### Preprocessor
