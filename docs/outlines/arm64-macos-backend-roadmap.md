@@ -233,7 +233,7 @@ based on the constant value.
 
 ---
 
-## Phase 3 — Comparisons and Control Flow
+## Phase 3 — Comparisons and Control Flow ✅ Stage 183
 
 **Goal:** Compile if/else, while, for, do-while, break, continue, switch, goto.
 
@@ -263,6 +263,22 @@ based on the constant value.
   in `cmp`, and the `int` branch of a mixed-width `?:` is not sign-extended. They
   are written up in `docs/defects/ClaudeC99-defect-2-…` for a follow-up x86 stage,
   and Stage 183 leaves x86 byte-identical.
+- Result: `CodeGenArm64` gains a translation-unit-wide `label_count`, a jump stack
+  (`Arm64Jump {break_label, continue_label}`, where a switch pushes `continue_label =
+  -1`), a switch stack (`Arm64Switch` holding a `Vec` of `Arm64SwitchLabel {node,
+  label}` and a `default_label`), and a per-function `user_labels` table.
+  `arm64_emit_load_imm` takes a destination register, so switch dispatch can load
+  case values outside 0..4095 into `w1`/`x1`. The Stage 182 `comparison operator`,
+  `logical operator` and `logical not operator` rejections are gone. All 366 tier-3
+  entries pass; none were removed under the unexpected-failure rule.
+  `TARGET=arm64-macos ARM64_TIER=3` passes 439/439 natively (439 of 1297 in scope),
+  and tiers 2 and 1 still pass 73/73 and 5/5. The default macOS suite passes
+  2174/2174. The integration test `test_arm64_skeleton_asm` used a comparison as its
+  "not yet supported" probe; it now uses a `double` local (Phase 8), so the probe
+  stays valid through Phase 7. The Linux-target `.asm` byte-identity check against
+  Stage 182 was **skipped** this stage. Only `src/codegen_arm64.c` changed among the
+  code generators. The C0→C1→C2 self-host passes on macOS, and the self-hosted C2
+  also passes tier 3 at 439/439.
 
 ---
 
@@ -412,7 +428,7 @@ spec and implementation are committed.
 | 0C    | 180   | macOS-aware test runners, macOS stub headers         | Infrastructure only                           | [x]  |
 | 1     | 181   | ARM64 skeleton + `ARM64_TIER` gating                 | Tier 1 — simple return                        | [x]  |
 | 2     | 182   | Arithmetic, local variables                          | Tier 2 — arithmetic/assignment/expressions    | [x]  |
-| 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [ ]  |
+| 3     | 183   | Control flow                                         | Tier 3 — comparisons/control_flow             | [x]  |
 | 4     | 184   | Functions and calls                                  | Tier 4 — functions                            | [ ]  |
 | 5     | 185   | Globals, string literals                             | Tier 5 — strings/declarations                 | [ ]  |
 | 6     | 186   | Pointers, arrays, structs                            | Tier 6 — pointers/arrays/structs              | [ ]  |
@@ -421,12 +437,16 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 3 (stage 183) — comparisons and control flow (spec written).
+**Next up:** Phase 4 (stage 184) — functions and calls.
 
-### Open items (as of Stage 182)
+### Open items (as of Stage 183)
 
-- **Linux self-host pending.** Stages 180–182 were self-hosted on macOS ARM64 only.
-  Linux-target `.asm` was verified byte-identical to the previous stage instead.
+- **Linux self-host pending.** Stages 180–183 were self-hosted on macOS ARM64 only.
+  For stages 180–182, Linux-target `.asm` was verified byte-identical to the previous
+  stage instead. That check was skipped for Stage 183.
+- **Skeleton-test probe.** `test_arm64_skeleton_asm` checks the "not yet supported"
+  path with a `double` local. Move it to a still-rejected construct (e.g. varargs)
+  when Phase 8 lands.
 - **Error line numbers off by ~5.** Compile errors in both backends report lines about
   5 too high (e.g. `file.c:7` for line 2), likely from the injected preamble.
 - **macOS `ld` warnings (harmless).** `pointer not aligned`: data pointer tables are not
