@@ -119,7 +119,7 @@ progressive ARM64 test enablement.
 | 1    | Manifest-listed `return <literal>` programs (`test/valid/arm64_tiers.txt`) |
 | 2    | Manifest-listed `arithmetic/`, `assignment/`, `expressions/` files (68 entries) |
 | 3    | Phase ≤3 files from all of `test/valid` (366 entries; see Stage 183 spec) |
-| 4    | `functions/`                                                         |
+| 4    | Phase-4 files from all of `test/valid` (65 entries; see Stage 184 spec) |
 | 5    | `strings/`, global `declarations/`                                   |
 | 6    | `pointers/`, `arrays/`, `structs/`                                   |
 | 7    | `chars/`, `casting/`, `bitwise/`                                     |
@@ -284,7 +284,8 @@ based on the constant value.
 
 ## Phase 4 — Functions and Calls
 
-**Goal:** Compile multi-parameter functions, direct and indirect calls.
+**Goal:** Compile multi-parameter functions and direct calls. (Indirect calls moved to
+Phase 6 by Stage 184.)
 
 ### AAPCS64 calling convention
 
@@ -302,6 +303,26 @@ based on the constant value.
 - Stack overflow args: pushed right-to-left below the caller's frame before `bl`
 
 **Tests unlocked:** `ARM64_TIER=4` — `functions/`.
+
+**Stage 184 scope (see `docs/stages/ClaudeC99-spec-stage-184-arm64-functions-calls.md`):**
+- `int`/`long` parameters (any number; slots allocated before the body's
+  declarations and stored from `w<n>`/`x<n>` in the prologue), `void` functions and
+  `return;`, and direct calls (`bl _name`) to local and external functions. Arguments
+  are pushed left to right on the stack machine, converted to the callee's prototype
+  types, and then loaded into `x0`–`x7`. The call's value has the callee's return
+  width. Block-scope function declarations emit nothing. Calls to variadic functions
+  (Phase 9) and non-`int`/`long` parameter or return types are rejected.
+- **Apple packs stack arguments by natural size and alignment**, not one 8-byte slot
+  each (checked with Apple clang: `int`s at +0 and +4, then a `long` at +8). The
+  outgoing area is rounded up to 16 bytes.
+- **Indirect calls move to Phase 6.** They need a pointer-typed callee value, which
+  arrives with pointers.
+- Tier 4 is drawn from all of `test/valid`: 61 existing tests (40 in `functions/`)
+  whose only blocker is Phase 4, plus 4 new tests, for 65 entries and 504 tests in
+  scope. Left out: the two variadic-definition tests (they call a variadic function,
+  Phase 9) and `stdlib/test_time_time` (pointer parameter, Phase 6).
+- The parser does not check `void` results; the x86 backend does, in `codegen.c`.
+  The ARM64 backend repeats its three checks with the same messages.
 
 ---
 
@@ -335,13 +356,16 @@ in the existing x86-64 backend.
 
 ## Phase 6 — Pointers, Arrays, and Structs
 
-**Goal:** Compile address-of, pointer dereference, array indexing, struct member access.
+**Goal:** Compile address-of, pointer dereference, array indexing, struct member access,
+and indirect calls through function pointers (moved here from Phase 4 by Stage 184).
 
 - Address-of local variable: `add x0, x29, #-offset`
 - Pointer dereference: `ldr x0, [x0]`
 - Indexed array access: `ldr x0, [x1, x2, lsl #3]` (scale by element size using `lsl`)
 - Struct member access: fixed positive offsets, same layout as x86-64 (no ABI difference
   for structs in memory on ARM64)
+- Indirect call: function address via `adrp`/`add` (`_f@PAGE`/`_f@PAGEOFF`), then
+  `blr x<n>`
 
 **Tests unlocked:** `ARM64_TIER=6` — `pointers/`, `arrays/`, `structs/`.
 
@@ -437,7 +461,7 @@ spec and implementation are committed.
 | 9     | 189   | Variadic functions, printf                           | Tier 9 — varargs/stdlib                       | [ ]  |
 | 10    | 190   | Full test suite + ARM64 self-host                    | Tier 10 — complete                            | [ ]  |
 
-**Next up:** Phase 4 (stage 184) — functions and calls.
+**Next up:** Phase 4 (stage 184) — functions and calls (spec written).
 
 ### Open items (as of Stage 183)
 
